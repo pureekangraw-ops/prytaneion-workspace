@@ -1,4 +1,4 @@
-const STAGES = Object.freeze(["PLAN", "BUILD", "ASSEMBLY", "CHECK", "MERGE", "OUTPUT"]);
+const STAGES = Object.freeze(["PLAN", "BUILD", "ASSEMBLY", "MERGE", "CHECK", "OUTPUT"]);
 const OUTPUT_TYPES = new Set(["FILE", "REF"]);
 const CHECK_STATUSES = new Set(["PENDING", "PASS", "FAIL", "UNKNOWN"]);
 const FOUNDRY_DISPLAY_NAME = "FOUNDRY";
@@ -113,7 +113,7 @@ export function enterFactoryV4({ work, form = {} } = {}) {
       expectedOutput: required(form.expectedOutput || work.expectedResult, "Expected Output"),
       criticalChecklist: normalizeChecklist(form.criticalChecklist),
       outputType,
-      mergeAuthority: "BIG_APPROVAL_REQUIRED",
+      mergeAuthority: "EXTERNAL_OWNER_GATE",
     },
     reality: null,
     build: null,
@@ -166,12 +166,6 @@ export function advanceFactory(state, { result = null, evidence = null } = {}) {
     if (incomplete.length) throw new Error("Critical Checklist is not PASS");
     const missingEvidence = state.form.criticalChecklist.filter(item => !hasEvidence(item.evidence));
     if (missingEvidence.length) throw new Error("Critical Checklist PASS requires evidence");
-  }
-
-  if (state.stage === "MERGE") {
-    if (result?.ownerApproval !== "BIG_APPROVED") {
-      throw new Error("FOUNDRY merge requires BIG approval");
-    }
   }
 
   if (state.stage === "OUTPUT") throw new Error("Factory is already at OUTPUT");
@@ -228,11 +222,7 @@ export function safeStopToPlan(state, { reason, reality = null } = {}) {
 }
 
 export function finishFactory(state, { file = null, ref = null, summary = null } = {}) {
-  if (state.stage !== "OUTPUT") throw new Error("Factory is not at OUTPUT");
-  if (state.form.mergeAuthority === "BIG_APPROVAL_REQUIRED" && state.merge?.ownerApproval !== "BIG_APPROVED") {
-    throw new Error("FOUNDRY output requires owner-approved merge receipt");
-  }
-  const value = state.form.outputType === "FILE" ? file : ref;
+  if (state.stage !== "OUTPUT") throw new Error("Factory is not at OUTPUT");  const value = state.form.outputType === "FILE" ? file : ref;
   if (!value) throw new Error(`${state.form.outputType} output is required`);
 
   const next = clone(state);
@@ -271,18 +261,38 @@ export function factoryLiveBoard(input = {}, options = {}) {
   });
 }
 
+function foundryFlowPhase(state = {}) {
+  if (state.stage === "PLAN") return "INTAKE_PLAN";
+  if (state.stage === "BUILD") return "BUILD";
+  if (state.stage === "ASSEMBLY") return "ASSEMBLY";
+  if (state.stage === "MERGE") return "WAIT_EXTERNAL_OWNER_GATE";
+  if (state.stage === "CHECK") return "POST_MERGE_VERIFY";
+  if (state.stage === "OUTPUT") return "OUTPUT_READBACK";
+  return "UNKNOWN";
+}
+
 export function factoryBoardView(state) {
   const ownerGate = state.stage === "MERGE"
-    ? { status: "WAIT_OWNER", required: "BIG_APPROVED" }
-    : state.merge?.ownerApproval === "BIG_APPROVED"
-      ? { status: "PASS", required: "BIG_APPROVED" }
-      : { status: "NOT_REACHED", required: "BIG_APPROVED" };
+    ? { status: "WAIT_EXTERNAL_OWNER_GATE", authority: "GO_HUB_MERGE_OWNER_TRUTH" }
+    : state.merge
+      ? { status: "RECEIPT_OBSERVED", authority: "GO_HUB_MERGE_OWNER_TRUTH" }
+      : { status: "NOT_REACHED", authority: "GO_HUB_MERGE_OWNER_TRUTH" };
 
   return snap({
     workId: state.workId,
     projectId: state.projectId || `FACTORY-${state.workId}`,
     displayName: state.displayName || FOUNDRY_DISPLAY_NAME,
     flowVersion: state.flowVersion || FOUNDRY_FLOW_VERSION,
+    flowPhase: foundryFlowPhase(state),
+    flowPath: [
+      "FORGE_HANDOFF",
+      "INTAKE_PLAN",
+      "BUILD",
+      "ASSEMBLY",
+      "WAIT_EXTERNAL_OWNER_GATE",
+      "POST_MERGE_VERIFY",
+      "OUTPUT_READBACK",
+    ],
     holder: state.holder,
     stage: state.stage,
     intake: state.intake || null,
