@@ -211,6 +211,225 @@ function assertRealityEvidence(value) {
   return { kind, reference, observedAt: String(value.observedAt || new Date().toISOString()) };
 }
 
+function missionSidecar(state) {
+  const source = state?.agentMission && typeof state.agentMission === "object" ? state.agentMission : {};
+  const memory = source.memory && typeof source.memory === "object" ? source.memory : {};
+  return {
+    version:1,
+    memory:{
+      mission:String(memory.mission || "").trim() || null,
+      requestedResult:String(memory.requestedResult || "").trim() || null,
+      selectedContext:Array.isArray(memory.selectedContext) ? clone(memory.selectedContext) : [],
+      contextRefs:Array.isArray(memory.contextRefs) ? [...new Set(memory.contextRefs.map(value => String(value || "").trim()).filter(Boolean))] : [],
+      notes:Array.isArray(memory.notes) ? clone(memory.notes) : [],
+      lightReplies:Array.isArray(memory.lightReplies) ? clone(memory.lightReplies) : [],
+      openedSpaces:memory.openedSpaces && typeof memory.openedSpaces === "object" && !Array.isArray(memory.openedSpaces) ? clone(memory.openedSpaces) : {},
+      latestReality:memory.latestReality && typeof memory.latestReality === "object" ? clone(memory.latestReality) : null,
+      returnHistory:Array.isArray(memory.returnHistory) ? clone(memory.returnHistory) : [],
+      revision:Number.isSafeInteger(memory.revision) && memory.revision >= 0 ? memory.revision : 0,
+      lastUpdated:String(memory.lastUpdated || "").trim() || null,
+    },
+    session:source.session && typeof source.session === "object" ? clone(source.session) : null,
+  };
+}
+
+function missionView(state) {
+  return clone(missionSidecar(state));
+}
+
+function missionUnique(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).map(value => String(value || "").trim()).filter(Boolean))];
+}
+
+function missionContextItem(value, index) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw Object.assign(new Error("HERMES_CONTEXT_CANDIDATE_INVALID"), { status:400 });
+  }
+  rejectSecretFields(value, "missionContext");
+  const contextId = String(value.contextId || value.id || "").trim();
+  if (!contextId) throw Object.assign(new Error("HERMES_CONTEXT_ID_REQUIRED"), { status:400 });
+  return {
+    contextId,
+    label:String(value.label || value.title || "").trim() || null,
+    summary:String(value.summary || value.detail || "").trim() || null,
+    ref:String(value.ref || value.url || "").trim() || null,
+    refs:missionUnique(value.refs),
+    source:String(value.source || "").trim() || null,
+    observedAt:String(value.observedAt || "").trim() || null,
+    order:index,
+  };
+}
+
+function activeMissionSession(state) {
+  const mission = missionSidecar(state);
+  if (!mission.session) throw Object.assign(new Error("HERMES_SESSION_REQUIRED"), { status:409 });
+  if (mission.session.status === "EXITED") throw Object.assign(new Error("HERMES_SESSION_EXITED"), { status:409 });
+  return mission;
+}
+
+function bumpMission(mission, at = new Date().toISOString()) {
+  mission.memory.revision += 1;
+  mission.memory.lastUpdated = at;
+  return mission;
+}
+
+function saveMission(state, mission, phase) {
+  state.agentMission = clone(mission);
+  state.phase = phase;
+  return state;
+}
+
+function v4MissionAction(state, action, input = {}) {
+  const at = new Date().toISOString();
+
+  if (action === "v4_mission_get") {
+    return { state, readOnly:true, mission:missionView(state) };
+  }
+
+  if (action === "v4_mission_enter") {
+    let mission = missionSidecar(state);
+    const current = mission.session;
+    if (current && current.status !== "EXITED") {
+      if (current.status === "RETURNED") {
+        throw Object.assign(new Error("HERMES_EXIT_REQUIRED_BEFORE_REENTER"), { status:409 });
+      }
+      if (String(current.agentId || "") !== String(input.agentId || "GO")) {
+        throw Object.assign(new Error("HERMES_SESSION_ALREADY_ACTIVE"), { status:409 });
+      }
+      return { state, mission, idempotent:true };
+    }
+    const sessionId = required(input.sessionId, "HERMES Session ID");
+    const agentId = required(input.agentId || "GO", "HERMES Agent ID");
+    const missionText = required(input.mission || state.work?.command || state.work?.name, "HERMES Mission");
+    if (!mission.memory.mission) mission.memory.mission = missionText;
+    if (!mission.memory.requestedResult) {
+      mission.memory.requestedResult = String(input.requestedResult || state.work?.expectedResult || "").trim() || null;
+    }
+    mission.session = {
+      sessionId,
+      agentId,
+      status:"ENTERED",
+      missionInput:missionText,
+      enteredAt:at,
+      returnedAt:null,
+      exitedAt:null,
+      lastDestination:null,
+    };
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_ENTERED"), mission };
+  }
+
+  if (action === "v4_mission_context") {
+    let mission = activeMissionSession(state);
+    const candidates = (Array.isArray(input.candidates) ? input.candidates : []).map(missionContextItem);
+    const selectedIds = new Set(missionUnique(input.selectedIds));
+    const selected = candidates.filter(item => selectedIds.has(item.contextId));
+    if (selected.length !== selectedIds.size) {
+      throw Object.assign(new Error("HERMES_CONTEXT_SELECTION_UNKNOWN_ID"), { status:400 });
+    }
+    mission.memory.selectedContext = selected.map(({ order, ...item }) => item);
+    mission.memory.contextRefs = missionUnique(selected.flatMap(item => [item.ref, ...(item.refs || [])]));
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_CONTEXT"), mission };
+  }
+
+  if (action === "v4_mission_note") {
+    let mission = activeMissionSession(state);
+    const note = required(input.note, "HERMES Note");
+    mission.memory.notes = [...mission.memory.notes, {
+      noteId:"NOTE-" + String(mission.memory.notes.length + 1),
+      source:String(input.source || "GO").trim() || "GO",
+      text:note,
+      at,
+    }].slice(-100);
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_NOTE"), mission };
+  }
+
+  if (action === "v4_mission_light") {
+    let mission = activeMissionSession(state);
+    if (!input.lightReply || typeof input.lightReply !== "object" || Array.isArray(input.lightReply)) {
+      throw Object.assign(new Error("HERMES_LIGHT_REPLY_REQUIRED"), { status:400 });
+    }
+    rejectSecretFields(input.lightReply, "lightReply");
+    mission.memory.lightReplies = [...mission.memory.lightReplies, clone(input.lightReply)].slice(-50);
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_LIGHT"), mission };
+  }
+
+  if (action === "v4_mission_first_open") {
+    let mission = activeMissionSession(state);
+    const destination = required(input.destination, "HERMES Destination");
+    const existing = mission.memory.openedSpaces[destination] || null;
+    const access = input.access && typeof input.access === "object" && !Array.isArray(input.access) ? clone(input.access) : {};
+    rejectSecretFields(access, "missionAccess");
+    mission.memory.openedSpaces[destination] = {
+      destination,
+      workspace:String(input.workspace || existing?.workspace || "").trim() || null,
+      firstOpenedAt:existing?.firstOpenedAt || at,
+      lastUsedAt:at,
+      firstOpen:existing ? false : input.firstOpen !== false,
+      openedBy:String(access.openedBy || existing?.openedBy || "heimdall").trim() || "heimdall",
+      access,
+    };
+    mission.session.status = "IN_MISSION";
+    mission.session.lastDestination = destination;
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_IN_PROGRESS"), mission };
+  }
+
+  if (action === "v4_mission_return") {
+    let mission = activeMissionSession(state);
+    if (mission.session.status === "RETURNED") return { state, mission, idempotent:true };
+    const exactStatus = required(input.missionStatus, "HERMES Return Status").toUpperCase();
+    if (!["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"].includes(exactStatus)) {
+      throw Object.assign(new Error("HERMES_RETURN_STATUS_INVALID"), { status:400 });
+    }
+    const reality = {
+      revision:mission.memory.revision + 1,
+      missionStatus:exactStatus,
+      sourceStatus:String(state.work?.status || "").trim() || null,
+      result:clone(input.result ?? null),
+      nextAction:String(input.nextAction || "").trim() || null,
+      evidence:Array.isArray(input.evidence) ? clone(input.evidence) : [],
+      unknowns:missionUnique(input.unknowns),
+      lastLocation:String(input.lastLocation || mission.session.lastDestination || "").trim() || null,
+      mode:String(input.mode || "NORMAL_RETURN").trim().toUpperCase(),
+      ownerReadback:{
+        workId:state.work?.workId || null,
+        checkpointId:state.work?.checkpointId || null,
+        sourceStatus:state.work?.status || null,
+        holder:state.work?.holder || null,
+        passState:state.work?.pass?.state || null,
+        lastUpdated:state.work?.lastUpdated || null,
+      },
+      returnedAt:at,
+    };
+    rejectSecretFields(reality, "missionReality");
+    mission.memory.latestReality = reality;
+    mission.memory.returnHistory = [...mission.memory.returnHistory, reality].slice(-50);
+    mission.session.status = "RETURNED";
+    mission.session.returnedAt = at;
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_RETURNED"), mission };
+  }
+
+  if (action === "v4_mission_exit") {
+    let mission = missionSidecar(state);
+    if (!mission.session) throw Object.assign(new Error("HERMES_SESSION_REQUIRED"), { status:409 });
+    if (mission.session.status === "EXITED") return { state, mission, idempotent:true };
+    if (mission.session.status !== "RETURNED") {
+      throw Object.assign(new Error("HERMES_RETURN_REQUIRED_BEFORE_EXIT"), { status:409 });
+    }
+    mission.session.status = "EXITED";
+    mission.session.exitedAt = at;
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_EXITED"), mission };
+  }
+
+  return null;
+}
+
 export class GoHubCentreState {
   constructor(ctx, env) {
     this.ctx = ctx;
@@ -354,6 +573,23 @@ export class GoHubCentreState {
     if (state.v4 === true) {
       if (action === "v4_inspect") return json({ ok: true, v4: true, work: clone(state.work) });
       if (action === "v4_board") return json({ ok: true, v4: true, board: v4BoardView([state.work]) });
+
+      const missionAction = v4MissionAction(state, action, input);
+      if (missionAction) {
+        if (missionAction.readOnly) {
+          return json({ ok:true, v4:true, work:clone(state.work), mission:clone(missionAction.mission) });
+        }
+        state = missionAction.state;
+        await this.save(state);
+        return json({
+          ok:true,
+          v4:true,
+          work:clone(state.work),
+          mission:clone(missionAction.mission),
+          ...(missionAction.idempotent ? { idempotent:true } : {}),
+        });
+      }
+
       if (action === "v4_claim") state.work = claimV4Work(state.work, { actor: input.actor });
       else if (action === "v4_open_pass") state.work = await this.v4Heimdall(state.work).openPass(state.work.workId, { kind: input.kind, destinations: input.destinations, scope: input.scope, holder: input.actor, actor: input.actor, expiresAt: input.expiresAt, closeCondition: input.closeCondition, returnAddress: input.returnAddress, reason: input.reason, audit: input.audit });
       else if (action === "v4_update_destinations") state.work = updateV4WorkDestinations(state.work, { destinations: input.destinations });
