@@ -35,6 +35,7 @@ async function advanceToCheck(m) {
   state = m.advanceFactory(state);
   state = m.advanceFactory(state, { result: { built: true } });
   state = m.advanceFactory(state, { result: { assembled: true } });
+  state = m.advanceFactory(state, { result: { pullRequest: 1, mergeReceiptRef: "github://merge/def" } });
   return state;
 }
 
@@ -72,33 +73,37 @@ test("FOUNDRY keeps Factory route compatibility while exposing the new identity"
   assert.equal(state.intake.workId, work.workId);
 });
 
-test("FOUNDRY follows PLAN BUILD ASSEMBLY CHECK MERGE OUTPUT", async () => {
+test("FOUNDRY preserves Factory stage compatibility and exposes the safer operator flow", async () => {
   const m = await mod();
-  let state = await advanceToCheck(m);
+  let state = m.enterFactoryV4({ work, form });
+  state = m.recordFactoryReality(state, {
+    repository: form.repository,
+    branch: form.branch,
+    headSha: "abc",
+    lastUpdated: "now",
+  });
+  state = m.advanceFactory(state);
+  assert.equal(state.stage, "BUILD");
+  state = m.advanceFactory(state, { result: { built: true } });
+  assert.equal(state.stage, "ASSEMBLY");
+  state = m.advanceFactory(state, { result: { assembled: true } });
+  assert.equal(state.stage, "MERGE");
+  assert.equal(m.factoryBoardView(state).flowPhase, "WAIT_EXTERNAL_OWNER_GATE");
+  assert.equal(m.factoryBoardView(state).ownerGate.authority, "GO_HUB_MERGE_OWNER_TRUTH");
+
+  state = m.advanceFactory(state, {
+    result: { pullRequest: 1, mergeReceiptRef: "github://merge/def" },
+  });
   assert.equal(state.stage, "CHECK");
 
   state = m.updateCriticalCheck(state, {
     id: "ci",
     status: "PASS",
-    evidence: { run: 2202, conclusion: "success", headSha: "abc" },
+    evidence: { run: 2202, conclusion: "success", headSha: "def" },
   });
   state = m.advanceFactory(state);
-  assert.equal(state.stage, "MERGE");
-
-  assert.throws(
-    () => m.advanceFactory(state, { result: { pullRequest: 1 } }),
-    /BIG approval/,
-  );
-
-  state = m.advanceFactory(state, {
-    result: {
-      ownerApproval: "BIG_APPROVED",
-      pullRequest: 1,
-      headSha: "abc",
-      mergeSha: "def",
-    },
-  });
   assert.equal(state.stage, "OUTPUT");
+  assert.equal(m.factoryBoardView(state).flowPhase, "OUTPUT_READBACK");
 
   state = m.finishFactory(state, { file: "artifact.apk" });
   assert.equal(state.output.value, "artifact.apk");
