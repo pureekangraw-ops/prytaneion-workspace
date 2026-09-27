@@ -53,7 +53,7 @@ test("Factory requires Centre Work Pass", async () => {
   );
 });
 
-test("FOUNDRY keeps Factory route compatibility while exposing the new identity", async () => {
+test("GO WORKS keeps Factory route compatibility while exposing the new identity", async () => {
   const { enterFactoryV4 } = await mod();
   const state = enterFactoryV4({
     work,
@@ -63,17 +63,17 @@ test("FOUNDRY keeps Factory route compatibility while exposing the new identity"
       forgeHandoff: { packetId: "FORGE-PACKET-1" },
     },
   });
-  assert.equal(state.displayName, "FOUNDRY");
-  assert.equal(state.flowVersion, "FOUNDRY_V1");
+  assert.equal(state.displayName, "GO WORKS");
+  assert.equal(state.flowVersion, "GO WORKS_V1");
   assert.equal(state.projectRef.type, "FACTORY");
   assert.equal(state.projectRef.destination, "destination://factory");
-  assert.equal(state.projectRef.displayName, "FOUNDRY");
+  assert.equal(state.projectRef.displayName, "GO WORKS");
   assert.equal(state.intake.source, "FORGE_LAB");
   assert.equal(state.intake.continuity, "SAME_WORK");
   assert.equal(state.intake.workId, work.workId);
 });
 
-test("FOUNDRY preserves Factory stage compatibility and exposes the safer operator flow", async () => {
+test("GO WORKS preserves Factory stage compatibility and exposes the safer operator flow", async () => {
   const m = await mod();
   let state = m.enterFactoryV4({ work, form });
   state = m.recordFactoryReality(state, {
@@ -177,7 +177,7 @@ test("durable Factory V4 service persists one project for the same Work", async 
   let body = await response.json();
   assert.equal(body.stage, "PLAN");
   assert.equal(body.projectId, "FACTORY-W-DURABLE");
-  assert.equal(body.board.displayName, "FOUNDRY");
+  assert.equal(body.board.displayName, "GO WORKS");
 
   response = await service({
     action: "record_reality",
