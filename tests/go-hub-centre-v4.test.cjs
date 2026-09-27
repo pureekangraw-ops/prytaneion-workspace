@@ -23,8 +23,12 @@ test("Maintenance Pass exposes all GO Hub owned areas but remains Work-bound", a
   const { createWorkRecord,claimWork,openWorkPass }=await mod();
   let work=createWorkRecord({workId:"WM",name:"Maintenance",command:"repair route",expectedResult:"route verified",requestedDestinations:["maintenance"]});
   work=claimWork(work,{actor:"GO"});
-  work=openWorkPass(work,{kind:"MAINTENANCE"});
+  assert.throws(()=>openWorkPass(work,{kind:"MAINTENANCE"}),/BIG-approved repair scope/);
+  assert.throws(()=>openWorkPass(work,{kind:"MAINTENANCE",audit:{ownerApproval:"BIG_APPROVED"}}),/repair scope/);
+  work=openWorkPass(work,{kind:"MAINTENANCE",audit:{ownerApproval:"BIG_APPROVED",approvedBy:"BIG",repairScope:["repair route"]}});
   assert.deepEqual(work.pass.allowedDestinations,["ALL_GO_HUB_OWNED_AREAS"]);
+  assert.equal(work.pass.audit.ownerApproval,"BIG_APPROVED");
+  assert.deepEqual(work.pass.audit.repairScope,["repair route"]);
 });
 
 test("Return can only be written by holder and closes Pass", async () => {
