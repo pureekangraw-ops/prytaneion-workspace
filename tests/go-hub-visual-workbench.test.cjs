@@ -101,6 +101,53 @@ test("storage contract is bounded instead of silently accepting an unbounded dra
   assert.throws(() => storagePayload(oversized), /STORAGE_BUDGET_EXCEEDED/);
 });
 
+test("explicit selection can return from a rendered version to the source", async () => {
+  const { createVisualWorkbenchState, addReference, promoteReferenceToSource, addVersion, activeVisual } = await model();
+  let state = createVisualWorkbenchState({});
+  state = addReference(state, { id:"REF-1", kind:"IMAGE", label:"Base", content:IMAGE });
+  state = promoteReferenceToSource(state, "REF-1");
+  state = addVersion(state, { id:"VER-1", label:"V1", content:IMAGE });
+  assert.equal(activeVisual(state).kind, "VERSION");
+  state = promoteReferenceToSource(state, "REF-1");
+  assert.equal(activeVisual(state).kind, "SOURCE");
+  assert.equal(activeVisual(state).id, "REF-1");
+});
+
+test("viewport state is bounded and resettable", async () => {
+  const { createVisualWorkbenchState, setViewport, resetViewport } = await model();
+  let state = createVisualWorkbenchState({});
+  state = setViewport(state, { zoom:99, panX:99999, panY:-99999 });
+  assert.equal(state.viewport.zoom, 4);
+  assert.equal(state.viewport.panX, 4000);
+  assert.equal(state.viewport.panY, -4000);
+  state = resetViewport(state);
+  assert.deepEqual(state.viewport, { zoom:1, panX:0, panY:0 });
+});
+
+test("PIXIE handshake maps local workbench state to existing visual commands without browser authority", async () => {
+  const { createVisualWorkbenchState, addReference, promoteReferenceToSource, attachPixieDraft, createPixieHandshake } = await model();
+  let state = createVisualWorkbenchState({});
+  state = addReference(state, { id:"REF-1", kind:"IMAGE", label:"Base", content:IMAGE });
+  state = promoteReferenceToSource(state, "REF-1");
+  const createHandshake = createPixieHandshake(state);
+  assert.equal(createHandshake.command, "visual_create");
+  assert.equal(createHandshake.mode, "PREPARE_CREATE");
+  assert.equal(createHandshake.args.sourceRef, "local-reference://REF-1");
+  assert.equal(createHandshake.args.sourceVersion, "unknown");
+  assert.equal(createHandshake.args.sourceHash, null);
+  assert.equal(createHandshake.externalDispatchRequired, true);
+  assert.equal(createHandshake.browserMutationAuthority, false);
+  assert.equal(createHandshake.imageGenerationAuthority, false);
+  assert.ok(createHandshake.unknowns.includes("PIXIE_DRAFT_NOT_LINKED"));
+  assert.ok(createHandshake.unknowns.includes("SOURCE_VERSION_UNKNOWN"));
+
+  state = attachPixieDraft(state, "VISUAL-REMOTE-1");
+  const compareHandshake = createPixieHandshake(state);
+  assert.equal(compareHandshake.command, "visual_compare");
+  assert.deepEqual(compareHandshake.args, { visualDraftId:"VISUAL-REMOTE-1" });
+  assert.equal(compareHandshake.browserMutationAuthority, false);
+});
+
 test("browser UI prepares/copies packets locally and has no direct image-generation or remote mutation path", () => {
   const source = read("pixie-visual-workbench.js");
   assert.match(source, /createRenderPacket/);
@@ -109,7 +156,11 @@ test("browser UI prepares/copies packets locally and has no direct image-generat
   assert.match(source, /promoteReferenceToSource/);
   assert.match(source, /appendReferenceTextToBrief/);
   assert.match(source, /addVersion/);
+  assert.match(source, /createPixieHandshake/);
+  assert.match(source, /pointerdown/);
+  assert.match(source, /dataTransfer/);
   assert.doesNotMatch(source, /\bfetch\s*\(/);
+  assert.doesNotMatch(source, /go_hub_pixie_command|visual_create\s*\(/i);
   assert.doesNotMatch(source, /generate[_-]?image/i);
   assert.doesNotMatch(source, /mergePull|deploy|externalWrite/i);
 });
@@ -120,6 +171,12 @@ test("Visual Workbench has responsive/mobile treatment and remains a dedicated p
   assert.match(css, /@media \(max-width: 780px\)/);
   assert.match(css, /\.visual-clipboards\s*\{\s*grid-template-columns:\s*1fr/);
   assert.match(css, /\.visual-canvas/);
+  assert.match(css, /touch-action:\s*none/);
+  const html = read("pixie-visual-workbench.html");
+  assert.match(html, /data-zoom-out/);
+  assert.match(html, /data-zoom-in/);
+  assert.match(html, /data-reset-view/);
+  assert.match(html, /data-copy-pixie-handshake/);
 });
 
 

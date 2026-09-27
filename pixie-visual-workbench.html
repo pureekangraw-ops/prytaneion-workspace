@@ -88,6 +88,15 @@
           <button type="button" class="visual-button" data-copy-packet>Copy render packet</button>
           <span class="visual-inline-status" data-packet-status role="status">ต้องมี source + intent + prompt</span>
         </div>
+
+        <div class="visual-pixie-handshake" aria-label="PIXIE synchronization handshake">
+          <label>
+            <span>PIXIE draft ID <small>(optional)</small></span>
+            <input type="text" maxlength="160" data-pixie-draft-id placeholder="ยังไม่ผูก draft — เตรียม visual_create">
+          </label>
+          <button type="button" class="visual-button visual-button--quiet" data-copy-pixie-handshake>Copy PIXIE handshake</button>
+          <span class="visual-inline-status" data-pixie-status role="status">PREPARE_CREATE · browser ไม่เขียน Pixie ตรง ๆ</span>
+        </div>
       </article>
     </section>
 
@@ -102,12 +111,19 @@
             Import render
             <input type="file" accept="image/png,image/jpeg,image/webp" data-render-file hidden>
           </label>
+          <div class="visual-view-controls" aria-label="Canvas view controls">
+            <button type="button" class="visual-button visual-button--quiet" data-zoom-out aria-label="Zoom out">−</button>
+            <output class="visual-zoom-level" data-zoom-level>100%</output>
+            <button type="button" class="visual-button visual-button--quiet" data-zoom-in aria-label="Zoom in">+</button>
+            <button type="button" class="visual-button visual-button--quiet" data-reset-view>Reset view</button>
+          </div>
           <button type="button" class="visual-button visual-button--quiet" data-verify>Verify</button>
+          <strong class="visual-state-pill" data-visual-selection>NO SELECTION</strong>
           <strong class="visual-state-pill" data-verify-state>IDLE</strong>
         </div>
       </div>
 
-      <div class="visual-canvas" data-main-dropzone tabindex="0" aria-label="Main image workspace. Drop a reference image here to use it as source.">
+      <div class="visual-canvas" data-main-dropzone tabindex="0" aria-label="Main image workspace. Drop a reference image here to use it as source. Use plus/minus to zoom and arrow keys to pan.">
         <div class="visual-canvas-placeholder" data-canvas-placeholder>
           <strong>Drop reference → source</strong>
           <span>หรือ import ผล render กลับมาที่โต๊ะ</span>

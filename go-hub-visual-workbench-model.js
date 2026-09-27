@@ -57,12 +57,36 @@ export function createVisualWorkbenchState(seed = {}) {
   const activeVersionId = versions.some(item => item.id === seed.activeVersionId)
     ? seed.activeVersionId
     : (versions.at(-1)?.id || null);
+  const requestedSelectionKind = String(seed.selection?.kind || "").toUpperCase();
+  const requestedSelectionId = text(seed.selection?.id);
+  const selection = requestedSelectionKind === "SOURCE" && references.some(item => item.id === requestedSelectionId && item.kind === "IMAGE")
+    ? { kind:"SOURCE", id:requestedSelectionId }
+    : requestedSelectionKind === "VERSION" && versions.some(item => item.id === requestedSelectionId)
+      ? { kind:"VERSION", id:requestedSelectionId }
+      : activeVersionId
+        ? { kind:"VERSION", id:activeVersionId }
+        : sourceReferenceId
+          ? { kind:"SOURCE", id:sourceReferenceId }
+          : null;
+  const rawZoom = Number(seed.viewport?.zoom);
+  const rawPanX = Number(seed.viewport?.panX);
+  const rawPanY = Number(seed.viewport?.panY);
+  const viewport = {
+    zoom:Number.isFinite(rawZoom) ? Math.min(4, Math.max(.5, rawZoom)) : 1,
+    panX:Number.isFinite(rawPanX) ? Math.min(4000, Math.max(-4000, rawPanX)) : 0,
+    panY:Number.isFinite(rawPanY) ? Math.min(4000, Math.max(-4000, rawPanY)) : 0,
+  };
 
   return {
     schemaVersion: 1,
     draftId: text(seed.draftId) || id("VISUAL-DRAFT"),
     references,
     sourceReferenceId,
+    selection,
+    viewport,
+    pixie:{
+      visualDraftId:text(seed.pixie?.visualDraftId) || null,
+    },
     brief: {
       intent: trimText(seed.brief?.intent, 1200),
       prompt: trimText(seed.brief?.prompt),
@@ -111,7 +135,11 @@ export function promoteReferenceToSource(state, referenceId) {
   const target = current.references.find(item => item.id === text(referenceId));
   if (!target) throw new Error("VISUAL_REFERENCE_NOT_FOUND");
   if (target.kind !== "IMAGE") throw new Error("VISUAL_SOURCE_IMAGE_REQUIRED");
-  return next(current, { sourceReferenceId: target.id, verification:{ status:"IDLE", checks:[] } });
+  return next(current, {
+    sourceReferenceId: target.id,
+    selection:{ kind:"SOURCE", id:target.id },
+    verification:{ status:"IDLE", checks:[] },
+  });
 }
 
 export function updateBrief(state, patch = {}) {
@@ -148,6 +176,7 @@ export function addVersion(state, input = {}) {
   return next(current, {
     versions,
     activeVersionId:version.id,
+    selection:{ kind:"VERSION", id:version.id },
     verification:{ status:"IDLE", checks:[] },
   });
 }
@@ -156,11 +185,39 @@ export function activateVersion(state, versionId) {
   const current = createVisualWorkbenchState(state);
   const target = current.versions.find(item => item.id === text(versionId));
   if (!target) throw new Error("VISUAL_VERSION_NOT_FOUND");
-  return next(current, { activeVersionId:target.id });
+  return next(current, { activeVersionId:target.id, selection:{ kind:"VERSION", id:target.id } });
+}
+
+export function setViewport(state, patch = {}) {
+  const current = createVisualWorkbenchState(state);
+  return next(current, {
+    viewport:{
+      zoom:Object.hasOwn(patch, "zoom") ? patch.zoom : current.viewport.zoom,
+      panX:Object.hasOwn(patch, "panX") ? patch.panX : current.viewport.panX,
+      panY:Object.hasOwn(patch, "panY") ? patch.panY : current.viewport.panY,
+    },
+  });
+}
+
+export function resetViewport(state) {
+  return setViewport(state, { zoom:1, panX:0, panY:0 });
+}
+
+export function attachPixieDraft(state, visualDraftId) {
+  const current = createVisualWorkbenchState(state);
+  return next(current, { pixie:{ visualDraftId:text(visualDraftId) || null } });
 }
 
 export function activeVisual(state) {
   const current = createVisualWorkbenchState(state);
+  if (current.selection?.kind === "SOURCE") {
+    const source = current.references.find(item => item.id === current.selection.id && item.kind === "IMAGE") || null;
+    if (source) return { kind:"SOURCE", id:source.id, label:source.label, content:source.content };
+  }
+  if (current.selection?.kind === "VERSION") {
+    const version = current.versions.find(item => item.id === current.selection.id) || null;
+    if (version) return { kind:"VERSION", id:version.id, label:version.label, content:version.content };
+  }
   const version = current.versions.find(item => item.id === current.activeVersionId) || null;
   if (version) return { kind:"VERSION", id:version.id, label:version.label, content:version.content };
   const source = current.references.find(item => item.id === current.sourceReferenceId && item.kind === "IMAGE") || null;
@@ -198,6 +255,43 @@ export function createRenderPacket(state, { packetId = null } = {}) {
     externalExecutionRequired:true,
     imageGenerationAuthority:false,
     productionAuthority:false,
+    approval:"NOT_AN_APPROVAL",
+  };
+}
+
+export function createPixieHandshake(state) {
+  const current = createVisualWorkbenchState(state);
+  const source = current.references.find(item => item.id === current.sourceReferenceId && item.kind === "IMAGE") || null;
+  const linkedDraftId = text(current.pixie?.visualDraftId) || null;
+  const unknowns = [];
+  if (!source) unknowns.push("SOURCE_IMAGE_NOT_SELECTED");
+  if (!linkedDraftId) {
+    unknowns.push("PIXIE_DRAFT_NOT_LINKED");
+    unknowns.push("SOURCE_VERSION_UNKNOWN");
+    unknowns.push("SOURCE_HASH_UNKNOWN");
+  }
+  return {
+    protocol:"PIXIE_VISUAL_HANDSHAKE_V1",
+    mode:linkedDraftId ? "COMPARE_EXISTING" : "PREPARE_CREATE",
+    command:linkedDraftId ? "visual_compare" : "visual_create",
+    args:linkedDraftId
+      ? { visualDraftId:linkedDraftId }
+      : {
+          visualDraftId:current.draftId,
+          sourceRef:source ? `local-reference://${source.id}` : null,
+          sourceVersion:"unknown",
+          sourceHash:null,
+          spec:{
+            brief:clone(current.brief),
+            sourceReferenceId:current.sourceReferenceId,
+            selectedVisual:clone(current.selection),
+            versionCount:current.versions.length,
+          },
+        },
+    unknowns,
+    externalDispatchRequired:true,
+    browserMutationAuthority:false,
+    imageGenerationAuthority:false,
     approval:"NOT_AN_APPROVAL",
   };
 }

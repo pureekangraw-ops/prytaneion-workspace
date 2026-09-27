@@ -11,6 +11,10 @@ import {
   createRenderPacket,
   verifyLocalDraft,
   storagePayload,
+  setViewport,
+  resetViewport,
+  attachPixieDraft,
+  createPixieHandshake,
 } from "./go-hub-visual-workbench-model.js";
 
 const STORAGE_KEY = "go-hub:pixie-visual-workbench:v1";
@@ -40,9 +44,18 @@ const sourceChip = q("[data-source-chip]");
 const historyTrack = q("[data-history-track]");
 const historyEmpty = q("[data-history-empty]");
 const storageStatus = q("[data-storage-status]");
+const zoomOutButton = q("[data-zoom-out]");
+const zoomInButton = q("[data-zoom-in]");
+const zoomLevel = q("[data-zoom-level]");
+const resetViewButton = q("[data-reset-view]");
+const selectionState = q("[data-visual-selection]");
+const pixieDraftInput = q("[data-pixie-draft-id]");
+const copyPixieHandshakeButton = q("[data-copy-pixie-handshake]");
+const pixieStatus = q("[data-pixie-status]");
 
 let state = loadState();
 let saveTimer = null;
+let panGesture = null;
 
 function loadState() {
   try {
@@ -153,6 +166,14 @@ function renderBrief() {
   packetStatus.textContent = ready
     ? "Render packet พร้อมส่งให้ GO image tool"
     : packet.unknowns.join(" · ");
+
+  if (pixieDraftInput && pixieDraftInput.value !== (state.pixie?.visualDraftId || "")) {
+    pixieDraftInput.value = state.pixie?.visualDraftId || "";
+  }
+  const handshake = createPixieHandshake(state);
+  if (pixieStatus) {
+    pixieStatus.textContent = `${handshake.mode} · ${handshake.command} · ${handshake.unknowns.length ? handshake.unknowns.join(" · ") : "READY"}`;
+  }
 }
 
 function renderCanvas() {
@@ -162,6 +183,12 @@ function renderCanvas() {
     mainImage.removeAttribute("src");
     canvasPlaceholder.hidden = false;
     sourceChip.hidden = true;
+    mainImage.style.transform = "";
+    if (zoomLevel) zoomLevel.value = "100%";
+    if (selectionState) {
+      selectionState.textContent = "NO SELECTION";
+      selectionState.dataset.state = "UNKNOWN";
+    }
     canvasCaption.textContent = "ยังไม่มีภาพบนโต๊ะ";
     return;
   }
@@ -173,6 +200,12 @@ function renderCanvas() {
   mainImage.hidden = false;
   canvasPlaceholder.hidden = true;
   sourceChip.hidden = visual.kind !== "SOURCE";
+  mainImage.style.transform = `translate3d(${state.viewport.panX}px, ${state.viewport.panY}px, 0) scale(${state.viewport.zoom})`;
+  if (zoomLevel) zoomLevel.value = `${Math.round(state.viewport.zoom * 100)}%`;
+  if (selectionState) {
+    selectionState.textContent = `${visual.kind} · ${visual.label}`;
+    selectionState.dataset.state = "PASS";
+  }
   canvasCaption.textContent = visual.kind === "SOURCE"
     ? `SOURCE · ${visual.label}`
     : `${visual.label} · render result`;
@@ -324,6 +357,24 @@ copyPacketButton?.addEventListener("click", async () => {
   }
 });
 
+pixieDraftInput?.addEventListener("change", () => {
+  setState(attachPixieDraft(state, pixieDraftInput.value));
+});
+
+copyPixieHandshakeButton?.addEventListener("click", async () => {
+  const handshake = createPixieHandshake(state);
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(handshake, null, 2));
+    if (pixieStatus) {
+      pixieStatus.textContent = handshake.unknowns.length
+        ? `Copied with UNKNOWN: ${handshake.unknowns.join(" · ")}`
+        : `Copied · ${handshake.command}`;
+    }
+  } catch {
+    if (pixieStatus) pixieStatus.textContent = "Clipboard unavailable — handshake not copied";
+  }
+});
+
 verifyButton?.addEventListener("click", () => {
   setState(verifyLocalDraft(state));
 });
@@ -360,10 +411,91 @@ dropzone?.addEventListener("drop", async event => {
   }
 });
 
-dropzone?.addEventListener("keydown", event => {
-  if (event.key !== "Enter" && event.key !== " ") return;
+function nudgeViewport({ zoomDelta = 0, panX = 0, panY = 0, reset = false } = {}) {
+  const nextState = reset
+    ? resetViewport(state)
+    : setViewport(state, {
+        zoom:state.viewport.zoom + zoomDelta,
+        panX:state.viewport.panX + panX,
+        panY:state.viewport.panY + panY,
+      });
+  state = nextState;
+  persistSoon();
+  renderCanvas();
+}
+
+zoomOutButton?.addEventListener("click", () => nudgeViewport({ zoomDelta:-.15 }));
+zoomInButton?.addEventListener("click", () => nudgeViewport({ zoomDelta:.15 }));
+resetViewButton?.addEventListener("click", () => nudgeViewport({ reset:true }));
+
+dropzone?.addEventListener("wheel", event => {
+  if (!activeVisual(state)) return;
   event.preventDefault();
-  renderFile?.click();
+  nudgeViewport({ zoomDelta:event.deltaY < 0 ? .1 : -.1 });
+}, { passive:false });
+
+dropzone?.addEventListener("pointerdown", event => {
+  if (!activeVisual(state) || event.button !== 0) return;
+  panGesture = {
+    pointerId:event.pointerId,
+    startX:event.clientX,
+    startY:event.clientY,
+    panX:state.viewport.panX,
+    panY:state.viewport.panY,
+  };
+  dropzone.setPointerCapture?.(event.pointerId);
+  dropzone.classList.add("is-panning");
+});
+
+dropzone?.addEventListener("pointermove", event => {
+  if (!panGesture || panGesture.pointerId !== event.pointerId) return;
+  state = setViewport(state, {
+    panX:panGesture.panX + (event.clientX - panGesture.startX),
+    panY:panGesture.panY + (event.clientY - panGesture.startY),
+  });
+  renderCanvas();
+});
+
+function endPan(event) {
+  if (!panGesture || (event && panGesture.pointerId !== event.pointerId)) return;
+  panGesture = null;
+  dropzone?.classList.remove("is-panning");
+  persistSoon();
+}
+
+dropzone?.addEventListener("pointerup", endPan);
+dropzone?.addEventListener("pointercancel", endPan);
+
+dropzone?.addEventListener("keydown", event => {
+  const visual = activeVisual(state);
+  if ((event.key === "Enter" || event.key === " ") && !visual) {
+    event.preventDefault();
+    renderFile?.click();
+    return;
+  }
+  if (!visual) return;
+  if (event.key === "+" || event.key === "=") {
+    event.preventDefault();
+    nudgeViewport({ zoomDelta:.15 });
+  } else if (event.key === "-" || event.key === "_") {
+    event.preventDefault();
+    nudgeViewport({ zoomDelta:-.15 });
+  } else if (event.key === "0") {
+    event.preventDefault();
+    nudgeViewport({ reset:true });
+  } else if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    nudgeViewport({ panX:-24 });
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    nudgeViewport({ panX:24 });
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    nudgeViewport({ panY:-24 });
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    nudgeViewport({ panY:24 });
+  }
 });
 
 render();
