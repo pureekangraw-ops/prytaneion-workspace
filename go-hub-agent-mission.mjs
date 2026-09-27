@@ -99,6 +99,39 @@ export function rankMissionCandidates(mission, pins = [], { limit = 6, threshold
     }));
 }
 
+function bangkokDateStamp(value) {
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone:"Asia/Bangkok", year:"numeric", month:"2-digit", day:"2-digit",
+  }).formatToParts(date);
+  const pick = type => parts.find(part => part.type === type)?.value || "";
+  return `${pick("year")}${pick("month")}${pick("day")}`;
+}
+
+function canonicalWorkKey(value) {
+  const normalized = text(value)
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-")
+    .toUpperCase();
+  return normalized.slice(0, 56) || "MISSION";
+}
+
+function nextCanonicalWorkId({ mission, workKey, pins = [], at }) {
+  const date = bangkokDateStamp(at);
+  const key = canonicalWorkKey(workKey || mission);
+  const prefix = `WORK-${key}-${date}-`;
+  let max = 0;
+  for (const pin of Array.isArray(pins) ? pins : []) {
+    const id = text(pin?.workId);
+    if (!id.startsWith(prefix)) continue;
+    const suffix = id.slice(prefix.length);
+    if (/^\d{3}$/.test(suffix)) max = Math.max(max, Number(suffix));
+  }
+  return `${prefix}${String(max + 1).padStart(3, "0")}`;
+}
+
 function requireWorkContext(input = {}) {
   const workId = text(input?.workContext?.workId || input.workId);
   const checkpointId = text(input?.workContext?.checkpointId || input.checkpointId);
@@ -235,7 +268,32 @@ export function createAgentMissionService({
     const requestedResult = text(input.requestedResult);
     if (!mission) return json({ code:"HERMES_MISSION_REQUIRED" }, 400);
     if (!requestedResult) return json({ code:"HERMES_REQUESTED_RESULT_REQUIRED" }, 400);
-    const workId = text(input.workId) || createId("WORK");
+    const raw = await boardRead();
+    const board = await payload(raw);
+    if (!okResponse(raw) || !Array.isArray(board?.pins)) {
+      return json({ code:"HERMES_HEIMDALL_INDEX_UNAVAILABLE" }, 503);
+    }
+    const similar = rankMissionCandidates(mission, board.pins, { limit:input.limit, threshold:input.threshold });
+    if (text(input.createDecision).toUpperCase() !== "CREATE_NEW") {
+      return json({
+        code:"HERMES_SIMILAR_WORK_REVIEW_REQUIRED",
+        action:"create",
+        mission,
+        candidates:similar,
+        decisionRequired:"CREATE_NEW_OR_REUSE",
+        hint:"Review candidates first. Enter an existing Work to reuse it, or call create again with createDecision=CREATE_NEW.",
+        boardExposed:false,
+      }, 409);
+    }
+    if (text(input.workId)) {
+      return json({ code:"HERMES_WORK_ID_CALLER_OVERRIDE_FORBIDDEN" }, 400);
+    }
+    const workId = nextCanonicalWorkId({
+      mission,
+      workKey:input.workKey,
+      pins:board.pins,
+      at:now(),
+    });
     const created = await centre({
       action:"v4_create",
       workId,
