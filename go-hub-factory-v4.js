@@ -46,9 +46,10 @@ function requireFactoryPass(work = {}) {
     const expiry = Date.parse(text(work.pass?.expiresAt));
     if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("Factory rejects expired Emergency Pass");
   }
-  const allowed = Array.isArray(work.pass?.allowedDestinations) ? work.pass.allowedDestinations : [];
-  if (!allowed.includes("factory") &&
-      !allowed.includes("destination://factory") &&
+  const allowed = (Array.isArray(work.pass?.allowedDestinations) ? work.pass.allowedDestinations : [])
+    .map(value => text(value).toUpperCase());
+  if (!allowed.includes("FACTORY") &&
+      !allowed.includes("DESTINATION://FACTORY") &&
       !allowed.includes("ALL_GO_HUB_OWNED_AREAS")) {
     throw new Error("Factory destination is not open");
   }
