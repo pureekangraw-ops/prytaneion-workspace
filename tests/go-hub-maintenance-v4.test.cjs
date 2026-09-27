@@ -62,3 +62,33 @@ test("Control Room preserves live conflicts and exact-linkage UNKNOWN",async()=>
   assert.equal(body.report.controlRoom.board.classification,"STALE_PROJECTION_RESIDUE");
   assert.equal(body.report.controlRoom.deploymentProvenance.status,"UNKNOWN");
 });
+
+
+test("System Scanner owns safe debug/test and preserves first break plus unknowns",async()=>{
+  const {createMaintenanceV4}=await mod();
+  const seen=[];
+  const s=createMaintenanceV4({
+    readValue:async p=>{
+      seen.push(p.id);
+      if(p.id==="syntax")return{available:true,value:true,evidenceRef:"test://syntax"};
+      if(p.id==="runtime")return{available:true,value:false,evidenceRef:"test://runtime"};
+      return{available:false,reason:"DEVICE_EVIDENCE_MISSING"};
+    },
+    traceId:()=>"T-DEBUG",now:()=>"NOW",
+  });
+  const body=await (await s.run({
+    work,
+    action:"run_debug_test",
+    subject:"PYRO candidate",
+    checks:[
+      {id:"syntax",importantValue:"syntax passes",expected:true,source:"test:syntax",probeAction:"test",mode:"SAFE_TEST"},
+      {id:"runtime",importantValue:"runtime behavior",expected:true,source:"test:runtime",probeAction:"test",mode:"SAFE_TEST"},
+      {id:"device",importantValue:"device evidence",expected:true,source:"test:device",probeAction:"read",mode:"READ"},
+    ],
+  })).json();
+  assert.equal(body.status,"SYSTEM_SCANNER_DEBUG_ATTENTION");
+  assert.equal(body.debug.firstBreak,"runtime");
+  assert.equal(body.result.checkpoints[2].status,"UNKNOWN");
+  assert.equal(body.autoRepair,false);
+  assert.deepEqual(seen,["syntax","runtime","device"]);
+});

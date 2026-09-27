@@ -14,6 +14,79 @@ function projectBoard(works){
   })));
 }
 
+function supportBoardView(missions=[]){
+  const rows=(Array.isArray(missions)?missions:[]).map(item=>{
+    const rooms=Array.isArray(item?.roomStates)?item.roomStates:[];
+    const finishedRooms=rooms.filter(r=>r?.session?.status==="FINISHED").length;
+    const activeRooms=rooms.filter(r=>r?.session?.status==="ACTIVE").length;
+    const evidenceCount=rooms.reduce((sum,r)=>sum+(r?.session?.evidenceRefs?.length||0),0);
+    const unknownCount=rooms.reduce((sum,r)=>sum+(r?.session?.unknowns?.length||0),0);
+    const status=item?.status==="FINISHED"?"FINISHED":
+      finishedRooms===rooms.length&&rooms.length?"READY_FOR_GO":
+      finishedRooms>0?"PARTIAL":
+      activeRooms>0?"ACTIVE":text(item?.status)||"UNKNOWN";
+    return {
+      missionId:text(item?.missionId)||null,
+      mission:text(item?.mission)||null,
+      requestedResult:text(item?.requestedResult)||null,
+      status,
+      priority:text(item?.priority).toUpperCase()||"NORMAL",
+      dependencies:Array.isArray(item?.dependencies)?item.dependencies.map(text).filter(Boolean):[],
+      assignedRooms:Array.isArray(item?.assignedRooms)?item.assignedRooms.map(text).filter(Boolean):[],
+      finishedRooms,totalRooms:rooms.length,evidenceCount,unknownCount,
+      rooms:rooms.map(r=>({
+        roomId:text(r?.roomId)||null,
+        status:text(r?.session?.status)||"UNKNOWN",
+        evidenceCount:r?.session?.evidenceRefs?.length||0,
+        unknownCount:r?.session?.unknowns?.length||0,
+        finalResult:clone(r?.session?.finalResult??null),
+      })),
+      startedAt:item?.startedAt||null,finishedAt:item?.finishedAt||null,
+    };
+  });
+  return freeze({
+    projectionOnly:true,
+    generatedFor:"GO",
+    counts:{
+      missions:rows.length,
+      active:rows.filter(x=>x.status==="ACTIVE").length,
+      partial:rows.filter(x=>x.status==="PARTIAL").length,
+      readyForGo:rows.filter(x=>x.status==="READY_FOR_GO").length,
+      finished:rows.filter(x=>x.status==="FINISHED").length,
+      unknowns:rows.reduce((sum,x)=>sum+x.unknownCount,0),
+    },
+    cards:rows,
+  });
+}
+
+function supportBoardTargets(missions=[],{maxConcurrent=3}={}){
+  const list=Array.isArray(missions)?missions:[];
+  const rank={URGENT:3,HIGH:2,NORMAL:1,LOW:0};
+  const completed=new Set(list.filter(m=>text(m?.status).toUpperCase()==="FINISHED").map(m=>text(m?.missionId)).filter(Boolean));
+  const candidates=list
+    .filter(m=>text(m?.status).toUpperCase()!=="FINISHED")
+    .map(m=>{
+      const dependencies=Array.isArray(m?.dependencies)?m.dependencies.map(text).filter(Boolean):[];
+      const blockedBy=dependencies.filter(id=>!completed.has(id));
+      return {
+        missionId:text(m?.missionId)||null,
+        mission:text(m?.mission)||null,
+        priority:text(m?.priority).toUpperCase()||"NORMAL",
+        blockedBy,
+        runnable:blockedBy.length===0,
+      };
+    })
+    .sort((a,b)=>{
+      if(a.runnable!==b.runnable)return a.runnable?-1:1;
+      return (rank[b.priority]||0)-(rank[a.priority]||0);
+    });
+  const limit=Math.max(0,Number(maxConcurrent)||0);
+  return freeze({
+    runnable:candidates.filter(x=>x.runnable).slice(0,limit),
+    waiting:candidates.filter(x=>!x.runnable),
+  });
+}
+
 function searchable(work){
   const card=workCardView(work);
   return [
@@ -118,6 +191,8 @@ export function createHeimdallV4({works=[],workIndex=null}={}){
     async closePass(workId,input={}){const w=store.get(text(workId));if(!w)throw new Error("WORK_NOT_FOUND");return persist(returnWork(w,{...input,actor:input.holder||input.actor}));},
     async board(){await hydrate();return boardView(sortWorks([...store.values()]));},
     async projectBoard(){await hydrate();return projectBoard(sortWorks([...store.values()]));},
+    supportBoard(missions=[]){return supportBoardView(missions);},
+    supportTargets(missions=[],options={}){return supportBoardTargets(missions,options);},
     async report(options={}){const all=await hydrate();return reportFor(sortWorks(all),options);},
     warp({workId,destination,owner,at=new Date().toISOString()}={}){const w=store.get(text(workId));if(!w)throw new Error("WORK_NOT_FOUND");const next=clone(w);next.destination=text(destination)||next.destination;next.destinationOwner=text(owner)||null;next.lastUpdated=at;store.set(next.workId,next);return freeze({workId:next.workId,destination:next.destination,owner:next.destinationOwner,projectRefs:clone(next.projectRefs||{}),lastUpdated:at,routeArchitecture:"UNCHANGED"});}
   });
@@ -137,7 +212,9 @@ export function createThinHeimdall({works=[]}={}){
     scan(options={}){return scanWorks(values(),options);},
     board:syncBoard,
     projectBoard:()=>projectBoard(sortWorks(values())),
+    supportBoard:missions=>supportBoardView(missions),
+    supportTargets:(missions,options={})=>supportBoardTargets(missions,options),
     report(options={}){return reportFor(sortWorks(values()),options);}
   });
 }
-export { projectBoard, PROJECT_TYPES, scanWorks, reportFor };
+export { projectBoard, supportBoardView, supportBoardTargets, PROJECT_TYPES, scanWorks, reportFor };
