@@ -530,17 +530,17 @@ export function createAgentMissionService({
     async action(input = {}) {
       try {
         switch (text(input.action).toLowerCase()) {
-          case "find": return find(input);
-          case "enter": return enter(input);
-          case "create": return create(input);
-          case "select_context": return selectContext(input);
-          case "note": return note(input);
-          case "ask_light": return askLight(input);
-          case "first_open": return firstOpen(input);
-          case "touch": return touch(input);
-          case "return": return returnCard(input);
-          case "exit": return exit(input);
-          case "inspect": return inspect(input);
+          case "find": return await find(input);
+          case "enter": return await enter(input);
+          case "create": return await create(input);
+          case "select_context": return await selectContext(input);
+          case "note": return await note(input);
+          case "ask_light": return await askLight(input);
+          case "first_open": return await firstOpen(input);
+          case "touch": return await touch(input);
+          case "return": return await returnCard(input);
+          case "exit": return await exit(input);
+          case "inspect": return await inspect(input);
           default: return json({ code:"HERMES_ACTION_INVALID" }, 400);
         }
       } catch (error) {
