@@ -12,7 +12,7 @@ const work = {
   expectedResult: "artifact",
   status: "ON PROCESS",
   holder: "GO",
-  pass: { state: "ACTIVE", allowedDestinations: ["factory"] },
+  pass: { state: "ACTIVE", allowedDestinations: ["FACTORY"] },
 };
 
 const form = {
@@ -37,6 +37,12 @@ async function advanceToCheck(m) {
   state = m.advanceFactory(state, { result: { assembled: true } });
   return state;
 }
+
+test("Factory accepts the canonical uppercase HERMES destination", async () => {
+  const { enterFactoryV4 } = await mod();
+  const state = enterFactoryV4({ work, form });
+  assert.equal(state.stage, "PLAN");
+});
 
 test("Factory requires Centre Work Pass", async () => {
   const { enterFactoryV4 } = await mod();
