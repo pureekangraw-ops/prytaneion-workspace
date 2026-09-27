@@ -359,6 +359,9 @@ function v4MissionAction(state, action, input = {}) {
 
   if (action === "v4_mission_first_open") {
     let mission = activeMissionSession(state);
+    if (state.work?.status !== "ON PROCESS" || state.work?.pass?.state !== "ACTIVE") {
+      throw Object.assign(new Error("HERMES_ACTIVE_ACCESS_REQUIRED"), { status:409 });
+    }
     const destination = required(input.destination, "HERMES Destination");
     const existing = mission.memory.openedSpaces[destination] || null;
     const access = input.access && typeof input.access === "object" && !Array.isArray(input.access) ? clone(input.access) : {};
@@ -381,6 +384,10 @@ function v4MissionAction(state, action, input = {}) {
   if (action === "v4_mission_return") {
     let mission = activeMissionSession(state);
     if (mission.session.status === "RETURNED") return { state, mission, idempotent:true };
+    if (["ON PROCESS","WAIT CONFIRM"].includes(String(state.work?.status || "").toUpperCase()) ||
+        state.work?.holder || state.work?.pass?.state === "ACTIVE") {
+      throw Object.assign(new Error("HERMES_OWNER_RETURN_READBACK_REQUIRED"), { status:409 });
+    }
     const exactStatus = required(input.missionStatus, "HERMES Return Status").toUpperCase();
     if (!["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"].includes(exactStatus)) {
       throw Object.assign(new Error("HERMES_RETURN_STATUS_INVALID"), { status:400 });
