@@ -1,8 +1,8 @@
 const STAGES = Object.freeze(["PLAN", "BUILD", "ASSEMBLY", "MERGE", "CHECK", "OUTPUT"]);
 const OUTPUT_TYPES = new Set(["FILE", "REF"]);
 const CHECK_STATUSES = new Set(["PENDING", "PASS", "FAIL", "UNKNOWN"]);
-const FOUNDRY_DISPLAY_NAME = "FOUNDRY";
-const FOUNDRY_FLOW_VERSION = "FOUNDRY_V1";
+const GO_WORKS_DISPLAY_NAME = "GO WORKS";
+const GO_WORKS_FLOW_VERSION = "GO_WORKS_V1";
 
 function text(value) {
   return String(value ?? "").trim();
@@ -92,14 +92,14 @@ export function enterFactoryV4({ work, form = {} } = {}) {
     workId: work.workId,
     projectId,
     factoryProjectId: projectId,
-    displayName: FOUNDRY_DISPLAY_NAME,
-    flowVersion: FOUNDRY_FLOW_VERSION,
+    displayName: GO_WORKS_DISPLAY_NAME,
+    flowVersion: GO_WORKS_FLOW_VERSION,
     projectRef: {
       type: "FACTORY",
       ref: projectId,
       status: "ACTIVE",
       destination: "destination://factory",
-      displayName: FOUNDRY_DISPLAY_NAME,
+      displayName: GO_WORKS_DISPLAY_NAME,
     },
     holder: work.holder,
     stage: "PLAN",
@@ -261,7 +261,7 @@ export function factoryLiveBoard(input = {}, options = {}) {
   });
 }
 
-function foundryFlowPhase(state = {}) {
+function goWorksFlowPhase(state = {}) {
   if (state.stage === "PLAN") return "INTAKE_PLAN";
   if (state.stage === "BUILD") return "BUILD";
   if (state.stage === "ASSEMBLY") return "ASSEMBLY";
@@ -281,9 +281,9 @@ export function factoryBoardView(state) {
   return snap({
     workId: state.workId,
     projectId: state.projectId || `FACTORY-${state.workId}`,
-    displayName: state.displayName || FOUNDRY_DISPLAY_NAME,
-    flowVersion: state.flowVersion || FOUNDRY_FLOW_VERSION,
-    flowPhase: foundryFlowPhase(state),
+    displayName: state.displayName || GO_WORKS_DISPLAY_NAME,
+    flowVersion: state.flowVersion || GO_WORKS_FLOW_VERSION,
+    flowPhase: goWorksFlowPhase(state),
     flowPath: [
       "FORGE_HANDOFF",
       "INTAKE_PLAN",
@@ -304,4 +304,4 @@ export function factoryBoardView(state) {
   });
 }
 
-export { STAGES, FOUNDRY_DISPLAY_NAME, FOUNDRY_FLOW_VERSION };
+export { STAGES, GO_WORKS_DISPLAY_NAME, GO_WORKS_FLOW_VERSION };
