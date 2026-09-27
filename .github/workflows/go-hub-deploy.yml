@@ -671,17 +671,22 @@ jobs:
             result:{ pass:"READ", counterLight:"PASS" }, workContext:context(),
           });
 
-          // MAINTENANCE Pass + safe production binding probes.
+          // READ Pass + safe production maintenance route probe.
+          // Full-system verification requires live Control Room truth; a route-only smoke must not mint repair authority.
           await centre({ action:"v4_claim", workId, actor });
           await mcp("/mcp", ownerToken, "go_hub_heimdall_pass", {
-            action:"open", kind:"MAINTENANCE",
-            workContext:context(),
+            action:"open", kind:"READ",
+            destinations:["maintenance"], workContext:context(),
           });
           inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
             action:"v4_inspect", workId, checkpointId,
           });
+          if (inspected.proof?.work?.pass?.kind !== "READ" || inspected.proof?.work?.pass?.state !== "ACTIVE") {
+            throw new Error("MAINTENANCE_READ_PASS_RUNTIME_FAILED");
+          }
           const maintenance = await mcp("/mcp", ownerToken, "go_hub_maintenance", {
-            action:"run_system_check",
+            action:"probe_route",
+            routeId:"runtime-owner-bindings",
             projectId:"MAINTENANCE-" + workId,
             map:{
               source:"GO_V4_RUNTIME_CLOSE_LOOP",
@@ -699,14 +704,16 @@ jobs:
             workContext:context(),
           });
           if (maintenance.proof?.status !== "MAINTENANCE_CHECK_COMPLETE" ||
+              maintenance.proof?.next !== "ROUTE_VERIFIED" ||
+              maintenance.proof?.fullSystemVerified !== false ||
               maintenance.proof?.autoRepair !== false ||
               !Array.isArray(maintenance.proof?.routes) ||
               maintenance.proof.routes.some(route => route?.status !== "PASS")) {
-            throw new Error("MAINTENANCE_V4_PRODUCTION_CHECK_FAILED:" + JSON.stringify(maintenance.proof));
+            throw new Error("MAINTENANCE_V4_PRODUCTION_ROUTE_CHECK_FAILED:" + JSON.stringify(maintenance.proof));
           }
           await mcp("/mcp", ownerToken, "go_hub_heimdall_pass", {
             action:"close", status:"OPEN",
-            result:{ pass:"MAINTENANCE", maintenance:"PASS" }, workContext:context(),
+            result:{ pass:"READ", maintenanceRoute:"PASS" }, workContext:context(),
           });
 
           // EMERGENCY Pass age: expired must fail, bounded future pass must work.
