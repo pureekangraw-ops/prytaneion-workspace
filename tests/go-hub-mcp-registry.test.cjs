@@ -42,7 +42,8 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools[0].annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_broadcast_activate").annotations.readOnlyHint, false);
   assert.equal(tools.find(tool => tool.name === "go_hub_factory_v4").annotations.readOnlyHint, false);
-  assert.equal(tools.find(tool => tool.name === "go_hub_light_factory_v4_action").annotations.readOnlyHint, false);\n  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_light_factory_v4_action").annotations.readOnlyHint, false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_ready_gate"), false);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_foreman"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_maintenance").annotations.readOnlyHint, false);
@@ -101,7 +102,8 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_cloudflare_health").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_cloudflare_inspect_worker").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_project_status").inputSchema.required.includes("workContext"), false);
-  assert.equal(tools.find(tool => tool.name === "go_hub_board_read").inputSchema.required.includes("workContext"), false);\n  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.required.includes("workContext"), false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_board_read").inputSchema.required.includes("workContext"), false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_root").inputSchema.required.includes("workContext"), false);
 
   await registry.callTool("go_hub_inspect_repository", { repository: "pureekangraw-ops/standard-", branch: "main" });
