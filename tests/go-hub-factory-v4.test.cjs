@@ -64,7 +64,7 @@ test("GO WORKS keeps Factory route compatibility while exposing the new identity
     },
   });
   assert.equal(state.displayName, "GO WORKS");
-  assert.equal(state.flowVersion, "GO WORKS_V1");
+  assert.equal(state.flowVersion, "GO_WORKS_V1");
   assert.equal(state.projectRef.type, "FACTORY");
   assert.equal(state.projectRef.destination, "destination://factory");
   assert.equal(state.projectRef.displayName, "GO WORKS");
