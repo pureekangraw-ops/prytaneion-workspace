@@ -10,6 +10,7 @@ function clone(v){return v==null?v:structuredClone(v);}
 function requireWork(input={},action=""){
   const w=input.work||{};
   if(text(w.status)!=="ON PROCESS"||!text(w.holder))return{ok:false,code:"MAINTENANCE_ACTIVE_WORK_REQUIRED"};
+  if(!w.pass)return{ok:false,code:"MAINTENANCE_PASS_REQUIRED"};
   const pass=w.pass||{},kind=text(pass.kind).toUpperCase();
   if(pass.state!=="ACTIVE")return{ok:false,code:"MAINTENANCE_ACTIVE_PASS_REQUIRED"};
   const allowed=Array.isArray(pass.allowedDestinations)?pass.allowedDestinations:[];
