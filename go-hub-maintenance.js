@@ -7,13 +7,24 @@ const BREAKING=new Set(["FAIL","BLOCKED","WAIT"]);
 const OBSERVED_STATUS=new Set(["PASS","FAIL","BLOCKED","WAIT","UNKNOWN"]);
 function text(v){return String(v??"").trim();}
 function clone(v){return v==null?v:structuredClone(v);}
-function requireWork(input={}){
+function requireWork(input={},action=""){
   const w=input.work||{};
   if(text(w.status)!=="ON PROCESS"||!text(w.holder))return{ok:false,code:"MAINTENANCE_ACTIVE_WORK_REQUIRED"};
-  if(w.pass?.state!=="ACTIVE"||text(w.pass?.kind).toUpperCase()!=="MAINTENANCE")return{ok:false,code:"MAINTENANCE_PASS_REQUIRED"};
-  const allowed=Array.isArray(w.pass?.allowedDestinations)?w.pass.allowedDestinations:[];
-  if(!allowed.includes("ALL_GO_HUB_OWNED_AREAS"))return{ok:false,code:"MAINTENANCE_SERVICE_PATH_NOT_OPEN"};
-  return{ok:true,workId:w.workId,holder:w.holder};
+  if(!w.pass)return{ok:false,code:"MAINTENANCE_PASS_REQUIRED"};
+  const pass=w.pass||{},kind=text(pass.kind).toUpperCase();
+  if(pass.state!=="ACTIVE")return{ok:false,code:"MAINTENANCE_ACTIVE_PASS_REQUIRED"};
+  const allowed=Array.isArray(pass.allowedDestinations)?pass.allowedDestinations:[];
+  const maintenancePathOpen=allowed.includes("ALL_GO_HUB_OWNED_AREAS")||allowed.includes("destination://maintenance")||allowed.includes("maintenance");
+  if(!maintenancePathOpen)return{ok:false,code:"MAINTENANCE_SERVICE_PATH_NOT_OPEN"};
+  if(action==="repair_context"){
+    if(kind!=="MAINTENANCE")return{ok:false,code:"MAINTENANCE_REPAIR_PASS_REQUIRED"};
+    const approval=text(pass.audit?.ownerApproval||pass.audit?.approval).toUpperCase();
+    const scope=Array.isArray(pass.audit?.repairScope)?pass.audit.repairScope.map(text).filter(Boolean):[text(pass.audit?.repairScope)].filter(Boolean);
+    if(approval!=="BIG_APPROVED"||!scope.length)return{ok:false,code:"MAINTENANCE_REPAIR_APPROVAL_REQUIRED"};
+  }else if(!["WORK","READ","MAINTENANCE"].includes(kind)){
+    return{ok:false,code:"MAINTENANCE_READ_PASS_REQUIRED"};
+  }
+  return{ok:true,workId:w.workId,holder:w.holder,passKind:kind};
 }
 function normalizeMap(map={}){
   return{
@@ -154,8 +165,8 @@ export function createMaintenanceV4({readValue=async()=>({available:false,reason
   return Object.freeze({
     async load(){return(await storage.get(STATE_KEY))||{projectId,map:null,lastProbe:null,revision:0};},
     async run(input={}){
-      const work=requireWork(input);if(!work.ok)return json(work,409);
       const action=text(input.action).toLowerCase();
+      const work=requireWork(input,action);if(!work.ok)return json(work,409);
       const supplied=input.map??input.maintenanceMap??null;
       const incoming=supplied&&typeof supplied==="object"?normalizeMap(supplied):null;
       const state=await this.load();state.projectId=text(input.projectId)||state.projectId||projectId;
@@ -179,10 +190,13 @@ export function createMaintenanceV4({readValue=async()=>({available:false,reason
         const checkedAt=now(),trace=traceId(),results=[];
         for(const route of routes)results.push(await probeRoute(route,readValue,trace,checkedAt));
         const report=reportFor(map,results,trace,checkedAt,input.controlRoomTruth??input.liveTruth??input.truth??{});
-        const attention=results.some(r=>["FAIL","BLOCKED","WAIT"].includes(r.status));
+        const broken=results.some(r=>["FAIL","BLOCKED","WAIT"].includes(r.status))||report.controlRoom?.overall==="CONFLICT";
+        const unresolved=results.some(r=>r.status==="UNKNOWN")||Number(report.coverage?.unknown||0)>0||Number(report.coverage?.notChecked||0)>0||(action==="run_system_check"&&report.controlRoom?.overall!=="LIVE");
+        const attention=broken||unresolved;
+        const next=broken?"GO_DIAGNOSE_REPAIR":unresolved?"GO_RESOLVE_UNKNOWN":(action==="probe_route"?"ROUTE_VERIFIED":"FULL_SYSTEM_CHECK_VERIFIED");
         state.lastProbe={traceId:trace,checkedAt,routes:clone(results),report:clone(report)};
         state.revision=Number(state.revision||0)+1;await storage.put(STATE_KEY,state);
-        return json({status:attention?"MAINTENANCE_CHECK_ATTENTION":"MAINTENANCE_CHECK_COMPLETE",...work,projectId:state.projectId,traceId:trace,checkedAt,routes:results,report,views:report.views,autoRepair:false,next:attention?"GO_DIAGNOSE_REPAIR":(action==="probe_route"?"ROUTE_VERIFIED":"FULL_SYSTEM_CHECK_VERIFIED")});
+        return json({status:attention?"MAINTENANCE_CHECK_ATTENTION":"MAINTENANCE_CHECK_COMPLETE",...work,projectId:state.projectId,traceId:trace,checkedAt,routes:results,report,views:report.views,autoRepair:false,fullSystemVerified:action==="run_system_check"&&!attention,next});
       }
 
       if(action==="repair_context")return json({status:"REPAIR_CONTEXT",...work,projectId:state.projectId,servicePath:"ALL_GO_HUB_OWNED_AREAS",routeId:text(input.routeId)||null,checkpointId:text(input.checkpointId)||null,next:"GO_REPAIR_THEN_REPROBE",autoRepair:false,lastProbe:clone(state.lastProbe)});

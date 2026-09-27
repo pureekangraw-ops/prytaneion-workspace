@@ -424,6 +424,17 @@ export function createGovernedMutationRunner({ centreLive, globalAudit } = {}) {
     }
 
     const centreWork = centre.work && typeof centre.work === "object" ? centre.work : {};
+    const maintenanceMutation = workText(centreWork.workType).toUpperCase() === "MAINTENANCE" && !String(operation || "").startsWith("heimdall.pass.");
+    if (maintenanceMutation) {
+      const pass = centreWork.pass && typeof centreWork.pass === "object" ? centreWork.pass : {};
+      const repairScope = Array.isArray(pass.audit?.repairScope) ? pass.audit.repairScope.map(workText).filter(Boolean) : [workText(pass.audit?.repairScope)].filter(Boolean);
+      if (workText(pass.state).toUpperCase() !== "ACTIVE" || workText(pass.kind).toUpperCase() !== "MAINTENANCE") {
+        return json({ code:"MAINTENANCE_REPAIR_PASS_REQUIRED" }, 409);
+      }
+      if (workText(pass.audit?.ownerApproval || pass.audit?.approval).toUpperCase() !== "BIG_APPROVED" || !repairScope.length) {
+        return json({ code:"MAINTENANCE_REPAIR_APPROVAL_REQUIRED", requires:["BIG_APPROVED","repairScope"] }, 409);
+      }
+    }
     const resolvedWorkContext = {
       workId:workText(centre.workId) || workText(centreWork.workId) || workText(workContext.workId),
       checkpointId:workText(centre.checkpointId) || workText(centreWork.checkpointId) || workText(workContext.checkpointId),
