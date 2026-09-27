@@ -280,7 +280,7 @@ function mountMissionBriefingRoom() {
       const comparisons = [
         compareOneToOne({ topic: "Centre status ↔ Board status", left: sourceMap.get("CENTRE"), right: sourceMap.get("BOARD") }),
         compareOneToOne({ topic: "GitHub SHA ↔ Cloudflare evidence", left: sourceMap.get("GITHUB"), right: sourceMap.get("CLOUDFLARE") }),
-        compareOneToOne({ topic: "FOUNDRY phase ↔ Control Room runtime", left: sourceMap.get("FACTORY"), right: sourceMap.get("CONTROL ROOM") }),
+        compareOneToOne({ topic: "GO WORKS phase ↔ Control Room runtime", left: sourceMap.get("FACTORY"), right: sourceMap.get("CONTROL ROOM") }),
       ];
       latestMissionBrief = composeDressingBrief({
         counterProjection: projection,
@@ -557,7 +557,7 @@ function renderCentre() {
   const labels = {
     [CENTRE_STATES.ARRIVED]: "Review task",
     [CENTRE_STATES.WAIT]: "Review task",
-    [CENTRE_STATES.READY]: fitted ? `Leave for ${leaveTarget} via FOUNDRY` : "Fit Role",
+    [CENTRE_STATES.READY]: fitted ? `Leave for ${leaveTarget} via GO WORKS` : "Fit Role",
     [CENTRE_STATES.AWAY]: "Receive return",
     [CENTRE_STATES.RETURNED]: "Returned to checkpoint",
   };
@@ -626,7 +626,7 @@ function render() {
     : centreWork.status === CENTRE_STATES.AWAY
       ? taskLoadError
         ? "GO is away from Centre. Workbench target unavailable."
-        : `GO is working on ${target?.label || "target"} via FOUNDRY.`
+        : `GO is working on ${target?.label || "target"} via GO WORKS.`
       : "GO is at Centre.";
 
   empty.hidden = capabilities.length > 0;
