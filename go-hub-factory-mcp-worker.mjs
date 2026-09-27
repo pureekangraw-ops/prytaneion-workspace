@@ -22,7 +22,8 @@ import { createBoardPinRouteReadService } from "./go-hub-board-pin-route.js";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
 import { createCounterService } from "./go-hub-counter.mjs";
 import { createCounterDispatchService } from "./go-hub-counter-dispatcher.mjs";
-import { createNotionLightService } from "./go-hub-notion-light.mjs";\nimport { createAgentMissionService } from "./go-hub-agent-mission.mjs";
+import { createNotionLightService } from "./go-hub-notion-light.mjs";
+import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { sealReadyGate } from "./go-hub-ready-gate.js";
 
 function json(payload, status = 200) {
@@ -698,7 +699,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       });
       const notionLight = createNotionLightService({ namespace:env?.GO_HUB_NOTION_LIGHT_STATE });
       const counterDispatch = createCounterDispatchLifecycle({ counter, dispatch, notionLight, hubOrigin:url.origin });
-      const lighthouseControlPort = createLighthouseControlPortMcpService({ namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS });\n      const agentMission = createAgentMissionService({ centreLive, counterDispatch, boardRead:() => lighthouseControlPort.boardRead() });
+      const lighthouseControlPort = createLighthouseControlPortMcpService({ namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS });
+      const agentMission = createAgentMissionService({ centreLive, counterDispatch, boardRead:() => lighthouseControlPort.boardRead() });
       const projectStatus = createProjectStatusReadService({ lifecycle, factoryBinding:env?.GO_HUB_FACTORY_STATE });
       const boardPinRoute = createBoardPinRouteReadService();
       const pixie = createPixieCommandService({ fetchImpl, token:env.GITHUB_TOKEN });
@@ -797,7 +799,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
             };
             return runMutation("heimdall.pass." + String(input.action || "unknown"), routed, () => heimdallPass(routed));
           },
-          v4ProjectBoard: input => v4ProjectBoard(input),\n          agentMission: input => agentMission.action(input),
+          v4ProjectBoard: input => v4ProjectBoard(input),
+          agentMission: input => agentMission.action(input),
           lightCentreV4Action: async input => {
             if (!lightMcp || !["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"].includes(input?.action)) {
               return json({ code:"LIGHT_CENTRE_ACTION_NOT_ALLOWED" }, 403);
