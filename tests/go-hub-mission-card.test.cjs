@@ -87,3 +87,46 @@ test("Re-brief exposes only changed observations as SINCE LAST BRIEF", async () 
   assert.equal(changes[0].label, "SINCE LAST BRIEF");
   assert.equal(changes[0].status, "CHANGED");
 });
+
+
+test("standard HERMES ticket machine requires GO confirmation and preserves identity on replacement", async () => {
+  const mod = await import("../go-hub-mission-card.mjs");
+  const work = {
+    workId:"WORK-HERMES-TEST-20260928-001",
+    checkpointId:"CP-WORK-HERMES-TEST-20260928-001",
+    jobCode:"2809-7P4G",
+    requestedDestinations:["hermes"],
+  };
+  const draft = mod.prepareStandardMissionTicket({ work, destinations:["hermes"] }, { now:() => Date.parse("2026-09-28T12:00:00Z") });
+  assert.equal(draft.state, "DRAFT");
+  assert.throws(() => mod.issueStandardMissionTicket(draft, { confirmation:"" }), /HERMES_GO_FINAL_CONFIRMATION_REQUIRED/);
+
+  const current = mod.issueStandardMissionTicket(draft, { confirmation:"GO_CONFIRMED", now:() => Date.parse("2026-09-28T12:01:00Z") });
+  assert.equal(current.state, "CURRENT");
+  assert.equal(current.workId, work.workId);
+  assert.equal(current.checkpointId, work.checkpointId);
+
+  const replacementDraft = mod.prepareStandardMissionTicket({
+    work,
+    destinations:["hermes","factory"],
+    reason:"ROUTE_CHANGE",
+  }, { now:() => Date.parse("2026-09-28T12:02:00Z") });
+
+  assert.throws(
+    () => mod.replaceStandardMissionTicket(current, replacementDraft, { confirmation:"GO_CONFIRMED", routeOpened:false }),
+    /HERMES_ROUTE_OPEN_REQUIRED/
+  );
+  assert.deepEqual(current.destinations, ["hermes"]);
+
+  const replaced = mod.replaceStandardMissionTicket(current, replacementDraft, {
+    confirmation:"GO_CONFIRMED",
+    routeOpened:true,
+    now:() => Date.parse("2026-09-28T12:03:00Z"),
+  });
+  assert.deepEqual(replaced.current.destinations, ["hermes","factory"]);
+  assert.equal(replaced.current.workId, current.workId);
+  assert.equal(replaced.current.checkpointId, current.checkpointId);
+  assert.equal(replaced.audit.event, "CARD_REPLACED");
+  assert.equal(replaced.audit.reason, "ROUTE_CHANGE");
+  assert.match(mod.missionTicketSearchCode(work.workId), /^W[A-Z0-9]{4}$/);
+});
