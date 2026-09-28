@@ -1,4 +1,4 @@
-import { createMissionCard } from "./go-hub-mission-card.mjs";
+import { createMissionCard, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 import { workCardView } from "./go-hub-work-card.js";
 
 const text = value => String(value ?? "").trim();
@@ -327,6 +327,90 @@ export function createAgentMissionService({
     }, 201);
   }
 
+  async function prepareCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    const current = await readMission(workContext);
+    const work = current.work || await inspectWork(workContext);
+    const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
+    if (!destinations.length) return json({ code:"HERMES_DESTINATION_REQUIRED" }, 400);
+    const response = await centre({
+      action:"v4_mission_card_prepare",
+      ...workContext,
+      destinations,
+      reason:text(input.reason) || "MISSION_ENTRY",
+      context:clone(current.mission?.memory?.selectedContext || []),
+    });
+    return json({
+      ok:true,
+      action:"prepare_card",
+      workContext,
+      cardDraft:response.mission?.memory?.cardMachine?.draft || null,
+      issued:false,
+      prompt:"นี่ครับบัตรของคุณ รบกวนตรวจสอบข้อมูลอีกครั้ง รบกวนยืนยันครับ",
+    });
+  }
+
+  async function confirmCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    if (text(input.confirmation).toUpperCase() !== "GO_CONFIRMED") {
+      return json({ code:"HERMES_GO_FINAL_CONFIRMATION_REQUIRED", issued:false }, 409);
+    }
+    const response = await centre({ action:"v4_mission_card_issue", ...workContext, confirmation:"GO_CONFIRMED" });
+    return json({
+      ok:true,
+      action:"confirm_card",
+      workContext,
+      card:response.mission?.memory?.cardMachine?.current || null,
+      issued:true,
+      prompt:"รับทราบครับ บัตรของคุณพร้อมใช้งานแล้วครับ",
+    });
+  }
+
+  async function prepareRouteChange(input = {}) {
+    const workContext = requireWorkContext(input);
+    const current = await readMission(workContext);
+    const machine = current.mission?.memory?.cardMachine || {};
+    if (!machine.current) return json({ code:"HERMES_CURRENT_CARD_REQUIRED" }, 409);
+    const requested = unique(input.destinations);
+    if (!requested.length) return json({ code:"HERMES_DESTINATION_REQUIRED" }, 400);
+    const destinations = unique([...(machine.current.destinations || []), ...requested]);
+    const response = await centre({
+      action:"v4_mission_card_prepare",
+      ...workContext,
+      destinations,
+      reason:text(input.reason) || "ROUTE_CHANGE",
+      context:clone(current.mission?.memory?.selectedContext || []),
+    });
+    return json({
+      ok:true,
+      action:"prepare_route_change",
+      workContext,
+      currentCard:machine.current,
+      replacementDraft:response.mission?.memory?.cardMachine?.draft || null,
+      issued:false,
+      routeChanged:false,
+      prompt:"ตรวจสอบพบงาน " + workContext.workId + " ต้องการเพิ่มสิทธิ์หรือเปิดทางตามรายการนี้ใช่ไหมครับ รบกวนยืนยันครับ",
+    });
+  }
+
+  async function confirmRouteChange(input = {}) {
+    const workContext = requireWorkContext(input);
+    if (text(input.confirmation).toUpperCase() !== "GO_CONFIRMED") {
+      return json({ code:"HERMES_GO_FINAL_CONFIRMATION_REQUIRED", replaced:false }, 409);
+    }
+    const response = await centre({ action:"v4_mission_card_replace", ...workContext, confirmation:"GO_CONFIRMED" });
+    return json({
+      ok:true,
+      action:"confirm_route_change",
+      workContext,
+      card:response.card || response.mission?.memory?.cardMachine?.current || null,
+      replaced:true,
+      routeOpened:true,
+      audit:response.audit || null,
+      prompt:"เรียบร้อยครับ ผมจัดส่งบัตรใบใหม่ใช้แทนใบเดิม และแจ้ง Heimdall เปิดทางเรียบร้อยครับ",
+    });
+  }
+
   async function selectContext(input = {}) {
     const workContext = requireWorkContext(input);
     const candidates = (Array.isArray(input.candidates) ? input.candidates : []).map(contextCandidate);
@@ -650,6 +734,8 @@ export function createAgentMissionService({
       mission:recorded.mission,
       readbackVerified:true,
       exitAllowed:true,
+      retrievalCode:missionTicketSearchCode(work.workId),
+      prompt:"เรียบร้อยครับ ผมจะจัดเก็บงานไว้ที่โซนจัดเก็บ รหัสค้นหา " + missionTicketSearchCode(work.workId),
     });
   }
 
@@ -678,6 +764,10 @@ export function createAgentMissionService({
           case "find": return await find(input);
           case "enter": return await enter(input);
           case "create": return await create(input);
+          case "prepare_card": return await prepareCard(input);
+          case "confirm_card": return await confirmCard(input);
+          case "prepare_route_change": return await prepareRouteChange(input);
+          case "confirm_route_change": return await confirmRouteChange(input);
           case "select_context": return await selectContext(input);
           case "note": return await note(input);
           case "ask_light": return await askLight(input);
