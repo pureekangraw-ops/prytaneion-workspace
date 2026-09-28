@@ -64,7 +64,18 @@ function createIntake(work, form, inputReferences) {
     ? (legacyForge ? { ...legacyForge, source: "PIXIE_LAB", station: "FORGE_BENCH" } : null)
     : clone(form.pixieHandoff);
 
-  if (!pixieHandoff) throw new Error("PIXIE_LAB_HANDOFF_REQUIRED");
+  if (!pixieHandoff) {
+    return {
+      source: "DIRECT_GOVERNED_ENTRY",
+      station: null,
+      continuity: "SAME_WORK",
+      workId: work.workId,
+      checkpointId: text(work.checkpointId) || null,
+      inputReferences: clone(inputReferences),
+      pixieHandoff: null,
+    };
+  }
+
   const source = text(pixieHandoff.source || "PIXIE_LAB").toUpperCase();
   if (source !== "PIXIE_LAB") throw new Error("PIXIE_LAB_HANDOFF_SOURCE_INVALID");
   const handoffWorkId = text(pixieHandoff.workId || work.workId);
