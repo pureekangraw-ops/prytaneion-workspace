@@ -1,4 +1,4 @@
-import { createMissionCard } from "./go-hub-mission-card.mjs";
+import { createMissionCard, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 import { workCardView } from "./go-hub-work-card.js";
 
 const text = value => String(value ?? "").trim();
@@ -327,6 +327,90 @@ export function createAgentMissionService({
     }, 201);
   }
 
+  async function prepareCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    const current = await readMission(workContext);
+    const work = current.work || await inspectWork(workContext);
+    const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
+    if (!destinations.length) return json({ code:"HERMES_DESTINATION_REQUIRED" }, 400);
+    const response = await centre({
+      action:"v4_mission_card_prepare",
+      ...workContext,
+      destinations,
+      reason:text(input.reason) || "MISSION_ENTRY",
+      context:clone(current.mission?.memory?.selectedContext || []),
+    });
+    return json({
+      ok:true,
+      action:"prepare_card",
+      workContext,
+      cardDraft:response.mission?.memory?.cardMachine?.draft || null,
+      issued:false,
+      prompt:"นี่ครับบัตรของคุณ รบกวนตรวจสอบข้อมูลอีกครั้ง รบกวนยืนยันครับ",
+    });
+  }
+
+  async function confirmCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    if (text(input.confirmation).toUpperCase() !== "GO_CONFIRMED") {
+      return json({ code:"HERMES_GO_FINAL_CONFIRMATION_REQUIRED", issued:false }, 409);
+    }
+    const response = await centre({ action:"v4_mission_card_issue", ...workContext, confirmation:"GO_CONFIRMED" });
+    return json({
+      ok:true,
+      action:"confirm_card",
+      workContext,
+      card:response.mission?.memory?.cardMachine?.current || null,
+      issued:true,
+      prompt:"รับทราบครับ บัตรของคุณพร้อมใช้งานแล้วครับ",
+    });
+  }
+
+  async function prepareRouteChange(input = {}) {
+    const workContext = requireWorkContext(input);
+    const current = await readMission(workContext);
+    const machine = current.mission?.memory?.cardMachine || {};
+    if (!machine.current) return json({ code:"HERMES_CURRENT_CARD_REQUIRED" }, 409);
+    const requested = unique(input.destinations);
+    if (!requested.length) return json({ code:"HERMES_DESTINATION_REQUIRED" }, 400);
+    const destinations = unique([...(machine.current.destinations || []), ...requested]);
+    const response = await centre({
+      action:"v4_mission_card_prepare",
+      ...workContext,
+      destinations,
+      reason:text(input.reason) || "ROUTE_CHANGE",
+      context:clone(current.mission?.memory?.selectedContext || []),
+    });
+    return json({
+      ok:true,
+      action:"prepare_route_change",
+      workContext,
+      currentCard:machine.current,
+      replacementDraft:response.mission?.memory?.cardMachine?.draft || null,
+      issued:false,
+      routeChanged:false,
+      prompt:"ตรวจสอบพบงาน " + workContext.workId + " ต้องการเพิ่มสิทธิ์หรือเปิดทางตามรายการนี้ใช่ไหมครับ รบกวนยืนยันครับ",
+    });
+  }
+
+  async function confirmRouteChange(input = {}) {
+    const workContext = requireWorkContext(input);
+    if (text(input.confirmation).toUpperCase() !== "GO_CONFIRMED") {
+      return json({ code:"HERMES_GO_FINAL_CONFIRMATION_REQUIRED", replaced:false }, 409);
+    }
+    const response = await centre({ action:"v4_mission_card_replace", ...workContext, confirmation:"GO_CONFIRMED" });
+    return json({
+      ok:true,
+      action:"confirm_route_change",
+      workContext,
+      card:response.card || response.mission?.memory?.cardMachine?.current || null,
+      replaced:true,
+      routeOpened:true,
+      audit:response.audit || null,
+      prompt:"เรียบร้อยครับ ผมจัดส่งบัตรใบใหม่ใช้แทนใบเดิม และแจ้ง Heimdall เปิดทางเรียบร้อยครับ",
+    });
+  }
+
   async function selectContext(input = {}) {
     const workContext = requireWorkContext(input);
     const candidates = (Array.isArray(input.candidates) ? input.candidates : []).map(contextCandidate);
@@ -461,6 +545,93 @@ export function createAgentMissionService({
     return { work:opened.work, passOpened:true, alreadyProvisioned };
   }
 
+  function factoryField(value, source, confidence = "VERIFIED") {
+    const normalized = typeof value === "string" ? text(value) : clone(value);
+    const present = Array.isArray(normalized) ? normalized.length > 0 : normalized != null && normalized !== "";
+    return { value:present ? normalized : null, source:text(source) || null, confidence:present ? confidence : "UNKNOWN" };
+  }
+
+  async function prepareFactoryCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    const current = await readMission(workContext);
+    const work = current.work || await inspectWork(workContext);
+    const memory = current.mission?.memory || {};
+    const supplied = input.factory || {};
+    const fields = {
+      goal:factoryField(supplied.goal || memory.mission || work.command || work.name, supplied.goal ? "GO" : "MISSION"),
+      repository:factoryField(supplied.repository, supplied.repository ? "GO" : null),
+      branch:factoryField(supplied.branch, supplied.branch ? "GO" : null),
+      expectedOutput:factoryField(supplied.expectedOutput || memory.requestedResult || work.expectedResult, supplied.expectedOutput ? "GO" : "MISSION"),
+      outputType:factoryField(supplied.outputType, supplied.outputType ? "GO" : null),
+      inputReferences:factoryField(supplied.inputReferences || memory.contextRefs, supplied.inputReferences ? "GO" : "MISSION"),
+      preProductionInspection:factoryField(supplied.preProductionInspection, supplied.preProductionInspection ? "GO" : null),
+      criticalChecklist:factoryField(supplied.criticalChecklist, supplied.criticalChecklist ? "GO" : null),
+    };
+    const uncertainFields = Object.entries(fields)
+      .filter(([, field]) => field.confidence !== "VERIFIED")
+      .map(([name]) => name);
+    const draft = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
+    const suppliedChoices = input.choices && typeof input.choices === "object" ? input.choices : {};
+    const knowledgeCandidates = [
+      ...(Array.isArray(memory.selectedContext) ? memory.selectedContext : []),
+      ...(Array.isArray(memory.lightReplies) ? memory.lightReplies.flatMap(reply => Array.isArray(reply?.candidates) ? reply.candidates : []) : []),
+    ];
+    const assistance = uncertainFields.map(field => {
+      const explicit = Array.isArray(suppliedChoices[field]) ? suppliedChoices[field] : [];
+      const inferred = knowledgeCandidates
+        .filter(item => text(item?.field || item?.kind).toLowerCase() === field.toLowerCase())
+        .map(item => ({ value:item.value ?? item.ref ?? null, label:text(item.label || item.summary || item.ref), source:text(item.source || "MISSION_CONTEXT") }))
+        .filter(item => item.value != null);
+      const choices = [...explicit.map(value => typeof value === "object" ? clone(value) : ({ value, label:text(value), source:"PROVIDED_CHOICE" })), ...inferred];
+      return {
+        field,
+        choices,
+        mode:choices.length ? "GO_SELECT" : "ASK_LIGHT_OR_GO",
+        instruction:choices.length
+          ? "เสนอเฉพาะตัวเลือกที่มีหลักฐานให้ GO เลือก ห้าม HERMES เลือกแทน"
+          : "ค้น Mission Context/LIGHT ก่อน ถ้ายังไม่มีหลักฐานจึงถาม GO แบบปลายเปิด ห้ามเดา",
+      };
+    });
+    return json({
+      ok:uncertainFields.length === 0,
+      action:"prepare_factory_card",
+      workContext,
+      card:workCardView(work),
+      factoryFormDraft:draft,
+      fieldEvidence:fields,
+      uncertainFields,
+      assistance,
+      status:uncertainFields.length ? "WAIT_GO_INPUT" : "WAIT_GO_CONFIRMATION",
+      prompt:uncertainFields.length
+        ? "ผมพบข้อมูลที่ยังยืนยันไม่ได้ จะค้นข้อมูลที่มีอยู่และเสนอทางเลือกให้ GO ก่อน หากยังไม่มีหลักฐานจึงขอให้ GO ระบุเองครับ"
+        : "นี่ครับบัตรของคุณ รบกวนตรวจสอบข้อมูลอีกครั้ง รบกวนยืนยันครับ",
+      issued:false,
+      currentCardChanged:false,
+    }, uncertainFields.length ? 409 : 200);
+  }
+
+  async function confirmFactoryCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    if (text(input.confirmation).toUpperCase() !== "GO_CONFIRMED") {
+      return json({ code:"HERMES_GO_FINAL_CONFIRMATION_REQUIRED", issued:false }, 409);
+    }
+    const prepared = await prepareFactoryCard({ ...input, action:"prepare_factory_card" });
+    const preparedBody = await payload(prepared);
+    if (!okResponse(prepared)) return prepared;
+    return json({
+      ok:true,
+      action:"confirm_factory_card",
+      workContext,
+      card:preparedBody.card,
+      factoryForm:preparedBody.factoryFormDraft,
+      fieldEvidence:preparedBody.fieldEvidence,
+      status:"ISSUED",
+      issued:true,
+      acceptedBy:"GO",
+      prompt:"ยืนยันแล้ว — GO รับบัตรและสามารถนำ Factory Form นี้เข้าสู่ Inspection/Factory ได้",
+    });
+  }
+
   async function firstOpen(input = {}) {
     const workContext = requireWorkContext(input);
     const destination = text(input.destination);
@@ -563,6 +734,8 @@ export function createAgentMissionService({
       mission:recorded.mission,
       readbackVerified:true,
       exitAllowed:true,
+      retrievalCode:missionTicketSearchCode(work.workId),
+      prompt:"เรียบร้อยครับ ผมจะจัดเก็บงานไว้ที่โซนจัดเก็บ รหัสค้นหา " + missionTicketSearchCode(work.workId),
     });
   }
 
@@ -591,9 +764,15 @@ export function createAgentMissionService({
           case "find": return await find(input);
           case "enter": return await enter(input);
           case "create": return await create(input);
+          case "prepare_card": return await prepareCard(input);
+          case "confirm_card": return await confirmCard(input);
+          case "prepare_route_change": return await prepareRouteChange(input);
+          case "confirm_route_change": return await confirmRouteChange(input);
           case "select_context": return await selectContext(input);
           case "note": return await note(input);
           case "ask_light": return await askLight(input);
+          case "prepare_factory_card": return await prepareFactoryCard(input);
+          case "confirm_factory_card": return await confirmFactoryCard(input);
           case "first_open": return await firstOpen(input);
           case "touch": return await touch(input);
           case "return": return await returnCard(input);

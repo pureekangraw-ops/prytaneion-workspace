@@ -272,4 +272,70 @@ export async function rebrief(card, { counter, lightIntel, comparisons = [], pre
   return composeDressingBrief({ counterProjection: projection, lightIntel: intel, comparisons, previousBrief });
 }
 
+function cardUnique(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [values]).map(text).filter(Boolean))];
+}
+
+function cardSearchCode(workId) {
+  let hash = 2166136261;
+  for (const char of String(workId || "")) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return "W" + hash.toString(36).toUpperCase().padStart(4, "0").slice(-4);
+}
+
+export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], reason = "MISSION_ENTRY" } = {}, { now = () => Date.now() } = {}) {
+  if (!work || typeof work !== "object") throw new Error("MISSION_TICKET_WORK_REQUIRED");
+  const workId = required(work.workId, "Mission Ticket Work ID");
+  const cp = required(checkpointId || work.checkpointId, "Mission Ticket Checkpoint ID");
+  const routes = cardUnique(destinations?.length ? destinations : work.requestedDestinations);
+  if (!routes.length) throw new Error("MISSION_TICKET_DESTINATION_REQUIRED");
+  return freeze({
+    kind:"HERMES_STANDARD_TICKET",
+    version:1,
+    state:"DRAFT",
+    cardId:text(work.cardId) || (text(work.jobCode) ? "CARD:" + text(work.jobCode) : null),
+    workId,
+    checkpointId:cp,
+    jobCode:text(work.jobCode) || null,
+    destinations:routes,
+    context:clone(Array.isArray(context) ? context : []),
+    reason:text(reason) || "MISSION_ENTRY",
+    preparedAt:iso(now),
+    issuedAt:null,
+    acceptedBy:null,
+  });
+}
+
+export function issueStandardMissionTicket(draft, { confirmation, now = () => Date.now() } = {}) {
+  if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") {
+    throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
+  }
+  if (text(confirmation).toUpperCase() !== "GO_CONFIRMED") throw new Error("HERMES_GO_FINAL_CONFIRMATION_REQUIRED");
+  return freeze({
+    ...clone(draft),
+    state:"CURRENT",
+    issuedAt:iso(now),
+    acceptedBy:"GO",
+  });
+}
+
+export function replaceStandardMissionTicket(current, draft, { confirmation, routeOpened, now = () => Date.now() } = {}) {
+  if (!current || current.kind !== "HERMES_STANDARD_TICKET" || current.state !== "CURRENT") throw new Error("MISSION_TICKET_CURRENT_REQUIRED");
+  if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
+  if (current.workId !== draft.workId || current.checkpointId !== draft.checkpointId) throw new Error("MISSION_TICKET_IDENTITY_MISMATCH");
+  if (text(confirmation).toUpperCase() !== "GO_CONFIRMED") throw new Error("HERMES_GO_FINAL_CONFIRMATION_REQUIRED");
+  if (routeOpened !== true) throw new Error("HERMES_ROUTE_OPEN_REQUIRED");
+  const at=iso(now);
+  return freeze({
+    current:{...clone(draft),state:"CURRENT",issuedAt:at,acceptedBy:"GO"},
+    audit:{event:"CARD_REPLACED",reason:text(draft.reason)||"ROUTE_CHANGE",timestamp:at},
+  });
+}
+
+export function missionTicketSearchCode(workId) {
+  return cardSearchCode(required(workId, "Mission Ticket Work ID"));
+}
+
 export const __private = Object.freeze({ NON_LIVE });
