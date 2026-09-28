@@ -908,7 +908,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           lightFactoryV4Action: async input => {
             if (!lightMcp) return json({ code:"LIGHT_FACTORY_ACTION_NOT_ALLOWED" }, 403);
             const action = String(input?.action || "").trim().toLowerCase();
-            if (!["start", "inspect", "record_reality", "set_plan", "advance", "update_check", "safe_stop", "finish"].includes(action)) {
+            if (!["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"].includes(action)) {
               return json({ code:"LIGHT_FACTORY_ACTION_NOT_ALLOWED" }, 403);
             }
             const workId = String(input?.workContext?.workId || "").trim();
