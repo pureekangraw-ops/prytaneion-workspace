@@ -3,6 +3,7 @@ import { createBrowserInterface } from "./go-hub-browser-interface.js";
 import { createFactoryMcpWorker, createCounterDispatchLifecycle } from "./go-hub-factory-mcp-worker.mjs";
 import { createFactoryActionService, createFactoryV4Service } from "./go-hub-factory-service.mjs";
 import { createCloudflareService } from "./go-hub-cloudflare-service.mjs";
+import { createDeploymentProvenanceReader } from "./go-hub-deployment-provenance.mjs";
 import { createProjectStatusReadService } from "./go-hub-project-status-service.mjs";
 import { correlateControlRoomTruth } from "./go-hub-control-room.js";
 import { createAccessToken } from "./go-hub-oauth.mjs";
@@ -291,13 +292,20 @@ async function controlRoomRead({ request, env, fetchImpl }) {
       const health = await healthResponse.json().catch(() => ({}));
       const inspected = await inspectResponse.json().catch(() => ({}));
       const deployment = Array.isArray(inspected?.deployments) ? (inspected.deployments[0] || null) : null;
+      const provenance = inspectResponse.ok && deployment && env?.GITHUB_TOKEN
+        ? await createDeploymentProvenanceReader({ fetchImpl, token:env.GITHUB_TOKEN }).read({ deployment })
+        : { status:"UNKNOWN", reason:"DEPLOYMENT_RECEIPT_READER_UNAVAILABLE" };
+      const verifiedDeployment = provenance.status === "VERIFIED"
+        ? { ...deployment, sourceSha:provenance.sourceSha, evidenceRef:provenance.evidenceRef }
+        : deployment;
       cloudflare = healthResponse.ok ? {
         status:health?.upstream === "PASS" ? "LIVE" : "UNKNOWN",
         health,
         worker:inspected?.worker || null,
-        deployment,
+        deployment:verifiedDeployment,
+        provenance,
         deploymentsStatus:inspected?.deploymentsStatus || (inspectResponse.ok ? "PASS" : "UNKNOWN"),
-        evidenceRef:deployment?.id ? `cloudflare://workers/go-hub/deployments/${deployment.id}` : null,
+        evidenceRef:provenance.status === "VERIFIED" ? provenance.evidenceRef : (deployment?.id ? `cloudflare://workers/go-hub/deployments/${deployment.id}` : null),
       } : {
         status:"UNKNOWN",
         reason:health?.code || "CLOUDFLARE_HEALTH_FAILED",

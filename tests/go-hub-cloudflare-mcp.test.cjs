@@ -113,3 +113,25 @@ test("Factory MCP Cloudflare health uses runtime token server-side", async () =>
   assert.equal(auth, "Bearer runtime-secret");
   assert.doesNotMatch(JSON.stringify(payload), /runtime-secret/);
 });
+
+test("Cloudflare inspection preserves bounded deployment version identity without inventing source SHA", async () => {
+  const { createCloudflareService } = await import(serviceUrl + "?versions=" + Date.now());
+  const fetchImpl = async url => {
+    const current = String(url);
+    if (current.endsWith("/settings")) return new Response(JSON.stringify({ success:true, result:{ bindings:[] } }));
+    if (current.endsWith("/deployments")) return new Response(JSON.stringify({ success:true, result:{ deployments:[
+      { id:"dep-1", created_on:"2026-09-28T00:00:00Z", versions:[
+        { version_id:"version-a", percentage:75, secret:"must-not-leak" },
+        { version_id:"version-b", percentage:25 },
+      ] },
+    ] } }));
+    throw new Error("unexpected upstream");
+  };
+  const body = await (await createCloudflareService({ fetchImpl, token:"runtime-token", accountId:"account-a" }).inspectWorker({ scriptName:"go-hub" })).json();
+  assert.deepEqual(body.deployments[0].versions, [
+    { versionId:"version-a", percentage:75 },
+    { versionId:"version-b", percentage:25 },
+  ]);
+  assert.equal(body.deployments[0].sourceSha, undefined);
+  assert.doesNotMatch(JSON.stringify(body), /must-not-leak/);
+});
