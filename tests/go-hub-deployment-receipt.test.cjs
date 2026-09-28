@@ -39,3 +39,11 @@ test("deployment listing accepts both Cloudflare API result shapes", async () =>
   assert.deepEqual(parseDeploymentList({ success:true, result:{ deployments } }), deployments);
   assert.throws(() => parseDeploymentList({ success:true, result:null }), /DEPLOYMENT_LIST_UNAVAILABLE/);
 });
+
+test("snapshot tolerates older history pages but rejects a lost observation window", async () => {
+  const { makeDeploymentReceipt, parseDeploymentList } = await mod();
+  const entries = [{ id:"older" }];
+  assert.deepEqual(parseDeploymentList({ success:true, result:{ deployments:entries }, result_info:{ page:1, total_pages:9 } }), entries);
+  const input = { repository:"pureekangraw-ops/standard-", worker:"go-hub", sourceSha:"a".repeat(40), workflowRunId:123 };
+  assert.throws(() => makeDeploymentReceipt({ ...input, before:[{ id:"older" }], after:[{ id:"new", versions:[{version_id:"v",percentage:100}]}] }), /DEPLOYMENT_SNAPSHOT_WINDOW_LOST/);
+});
