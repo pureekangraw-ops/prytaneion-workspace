@@ -23,7 +23,7 @@ import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
 import { createCounterService } from "./go-hub-counter.mjs";
 import { createCounterDispatchService } from "./go-hub-counter-dispatcher.mjs";
 import { createNotionLightService } from "./go-hub-notion-light.mjs";
-import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
+import { createAgentMissionService } from "./go-hub-agent-mission.mjs";\nimport { createAionGate } from "./go-hub-aion.mjs";
 import { sealReadyGate } from "./go-hub-ready-gate.js";
 
 function json(payload, status = 200) {
@@ -820,6 +820,12 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           return factoryV4(effectiveInput);
         });
       };
+      const aion = createAionGate({
+        queryControlRoom: async () => ({
+          tools: registry ? registry.listTools() : [],
+          broadcast: await broadcast.current().then(async response => response?.clone ? response.clone().json().catch(() => null) : response).catch(() => null),
+        }),
+      });
       registry = createMcpRegistry({
         workContextOptionalTools: lightMcp ? LIGHT_DIRECT_TOOL_NAMES : [],
         lifecycle: Object.freeze({
@@ -875,7 +881,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
             return runMutation("heimdall.pass." + String(input.action || "unknown"), routed, () => heimdallPass(routed));
           },
           v4ProjectBoard: input => v4ProjectBoard(input),
-          agentMission: input => agentMission.action(input),
+          aionOpen: input => aion.open(input),\n          agentMission: input => agentMission.action(input),
           lightCentreV4Action: async input => {
             if (!lightMcp || !["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"].includes(input?.action)) {
               return json({ code:"LIGHT_CENTRE_ACTION_NOT_ALLOWED" }, 403);
