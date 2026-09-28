@@ -11,6 +11,7 @@ export function makeDeploymentReceipt({ before, after, repository, worker, sourc
   }
   if (!Array.isArray(before) || !Array.isArray(after)) throw new Error("DEPLOYMENT_SNAPSHOT_INVALID");
   const prior = new Set(before.map(item => item?.id).filter(Boolean));
+  if (prior.size && !after.some(item => prior.has(item?.id))) throw new Error("DEPLOYMENT_SNAPSHOT_WINDOW_LOST");
   const added = after.filter(item => item?.id && !prior.has(item.id));
   if (!added.length) throw new Error("DEPLOYMENT_ID_UNAVAILABLE");
   if (added.length !== 1) throw new Error("DEPLOYMENT_ID_AMBIGUOUS");
@@ -31,21 +32,30 @@ export function parseDeploymentList(payload) {
   const result = payload?.result;
   const entries = Array.isArray(result) ? result : result?.deployments;
   if (payload?.success === false || !Array.isArray(entries)) throw new Error("DEPLOYMENT_LIST_UNAVAILABLE");
-  if (payload?.result_info?.total_pages > 1) throw new Error("DEPLOYMENT_LIST_INCOMPLETE");
+  if (payload?.result_info?.page > 1) throw new Error("DEPLOYMENT_LIST_NOT_FIRST_PAGE");
   return entries;
 }
 
 async function deployments() {
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const token = process.env.CLOUDFLARE_RUNTIME_API_TOKEN || process.env.CLOUDFLARE_API_TOKEN;
-  if (!account || !token) throw new Error("CLOUDFLARE_CREDENTIALS_UNAVAILABLE");
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account)}/workers/scripts/${WORKER}/deployments?per_page=100`,
-    { headers:{ authorization:`Bearer ${token}`, accept:"application/json" } },
-  );
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error("DEPLOYMENT_LIST_UNAVAILABLE");
-  return parseDeploymentList(payload);
+  const tokens = [process.env.CLOUDFLARE_RUNTIME_API_TOKEN, process.env.CLOUDFLARE_API_TOKEN].filter(Boolean);
+  if (!account || !tokens.length) throw new Error("CLOUDFLARE_CREDENTIALS_UNAVAILABLE");
+  let lastError = "DEPLOYMENT_LIST_UNAVAILABLE";
+  for (const token of new Set(tokens)) {
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account)}/workers/scripts/${WORKER}/deployments`,
+      { headers:{ authorization:`Bearer ${token}`, accept:"application/json" } },
+    );
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const code = payload?.errors?.[0]?.code;
+      lastError = `DEPLOYMENT_LIST_HTTP_${response.status}${Number.isSafeInteger(code) ? "_CF_" + code : ""}`;
+      if (response.status === 401 || response.status === 403) continue;
+      throw new Error(lastError);
+    }
+    return parseDeploymentList(payload);
+  }
+  throw new Error(lastError);
 }
 
 async function main() {
