@@ -54,7 +54,7 @@ const definitions = [
   def("go_hub_v4_project_board", "Read Heimdall's three-way Project ref board without replacing Workspace truth.", "v4ProjectBoard", schema({ workId: str, checkpointId: str }, ["workId", "checkpointId"]), ann(true)),
   def("go_hub_aion_open", "AION ephemeral entry-only gate. Every OPEN queries CURRENT Control Room exposure, returns the current Agent Mission contract/capabilities, transfers supplied context, then closes. No stale fallback, Work creation, route selection, authority grant, monitoring, repair, or return-flow ownership.", "aionOpen", schema({ context: obj }), ann(false)),
   def("go_hub_agent_persona_room", "Explicitly enter the optional Agent Persona Room to list canonical Personas or equip one assigned Persona. This tool is never a mandatory gate, never auto-enters, and never changes Work, route, owner, or authority.", "agentPersonaRoom", schema({ action: { type:"string", enum:["list","equip"] }, agentId:str, personaId:str }, ["action"]), ann(false)),
-  def("go_hub_agent_mission", "Operate HERMES Agent Mission over Centre Work Cards. New-card creation must review similar Work first; CREATE_NEW then issues canonical WORK-<KEY>-YYYYMMDD-NNN identity automatically. Supports reuse, portable context, LIGHT, card issue/replacement, route opening strictly from a GO-confirmed card, touch memory, mandatory Return, and Exit. HERMES owns the user-facing route operation; Heimdall remains the internal enforcement engine and cannot expand authority beyond the confirmed card. Agent Mission does not expose a Board or mint authority.", "agentMission", schema({ action: { type:"string", enum:["find","enter","create","prepare_card","confirm_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","exit","inspect"] }, mission:str, requestedResult:str, sessionId:str, agentId:str, workId:str, checkpointId:str, workKey:str, createDecision:{ type:"string", enum:["CREATE_NEW"] }, workType:{ type:"string", enum:["NORMAL","URGENT","MAINTENANCE","SOS"] }, destinations:{ type:"array", items:str }, scope:{ type:"array", items:str }, candidates:{ type:"array", items:obj }, selectedIds:{ type:"array", items:str }, note:str, source:str, question:str, counterId:str, confirmation:{ type:"string", enum:["GO_CONFIRMED"] }, destination:str, workspace:str, station:str, status:{ type:"string", enum:["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"] }, result:obj, nextAction:str, evidence:{ type:"array", items:obj }, unknowns:{ type:"array", items:str }, lastLocation:str, mode:{ type:"string", enum:["NORMAL_RETURN","RECOVERY_RETURN"] }, limit:{ type:"integer", minimum:1, maximum:20 }, threshold:{ type:"number", minimum:0, maximum:1 }, workContext }, ["action"]), ann(false)),
+  def("go_hub_agent_mission", "Operate HERMES Agent Mission over Centre Work Cards. New-card creation must review similar Work first; CREATE_NEW then issues canonical WORK-<KEY>-YYYYMMDD-NNN identity automatically. Supports reuse, portable context, LIGHT, card issue/replacement, route opening strictly from a GO-confirmed card, touch memory, mandatory Return, and Exit. HERMES owns the user-facing route operation; Heimdall remains the internal enforcement engine and cannot expand authority beyond the confirmed card. Agent Mission does not expose a Board or mint authority.", "agentMission", schema({ action: { type:"string", enum:["find","enter","create","prepare_card","confirm_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"] }, mission:str, requestedResult:str, sessionId:str, agentId:str, workId:str, checkpointId:str, workKey:str, createDecision:{ type:"string", enum:["CREATE_NEW"] }, workType:{ type:"string", enum:["NORMAL","URGENT","MAINTENANCE","SOS"] }, accessScope:{ type:"string", enum:["WORK","MAINTENANCE"] }, toolAccess:{ type:"array", items:str }, destinations:{ type:"array", items:str }, scope:{ type:"array", items:str }, candidates:{ type:"array", items:obj }, selectedIds:{ type:"array", items:str }, note:str, source:str, question:str, counterId:str, confirmation:{ type:"string", enum:["GO_CONFIRMED"] }, destination:str, workspace:str, station:str, status:{ type:"string", enum:["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"] }, result:obj, nextAction:str, evidence:{ type:"array", items:obj }, unknowns:{ type:"array", items:str }, lastLocation:str, mode:{ type:"string", enum:["NORMAL_RETURN","RECOVERY_RETURN"] }, limit:{ type:"integer", minimum:1, maximum:20 }, threshold:{ type:"number", minimum:0, maximum:1 }, workContext }, ["action"]), ann(false)),
   def("go_hub_light_centre_v4_action", "LIGHT may inspect, claim, wait, resume, or open a Factory-scoped Work Pass for an existing V4 Work it holds. This cannot create Work, widen destinations, or Return.", "lightCentreV4Action", schema({ action: { type: "string", enum: ["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"] }, workId: str, checkpointId: str, reason: str, resumeFrom: str }, ["action", "workId", "checkpointId"]), ann(false)),
   def("go_hub_light_factory_v4_action", "LIGHT may operate Factory V4 only for the same LIGHT-held Work after a Factory-scoped active Pass. Merge/delete remain unavailable.", "lightFactoryV4Action", schema({ action: { type: "string", enum: ["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"] }, form: obj, reality: obj, inspection: obj, plan: str, result: obj, evidence: obj, checkId: str, status: str, reason: str, file: obj, ref: str, summary: str, workContext }, ["action", "workContext"]), ann(false)),
   def("go_hub_merge_pull_request", "Merge through GitHub owner truth after exact-head CI. BIG approval is required on every merge with no exception.", "mergePullRequest", schema({ repository: str, number: int, expectedHeadSha: str, ownerApproval: { type: "string", enum: ["BIG_APPROVED"] }, goId: str, jobId: str, method: { type: "string", enum: ["merge", "squash", "rebase"] }, workContext }, ["repository", "number", "expectedHeadSha", "ownerApproval", "workContext"]), ann(false, true)),
@@ -146,6 +146,22 @@ function assertWork(value) {
   for (const key of Object.keys(value)) if (!Object.hasOwn(workContext.properties, key)) throw new Error("unknown workContext field: " + key);
 }
 
+const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission"]);
+function cardToolAllowed(card, toolName) {
+  const scope = String(card?.access_scope || "").trim().toUpperCase();
+  if (scope === "MAINTENANCE") return true;
+  if (scope !== "WORK") return false;
+  return Array.isArray(card?.tool_access) && card.tool_access.includes(toolName);
+}
+async function assertCardAccess(lifecycle, name, args) {
+  if (CARD_BOOTSTRAP_TOOLS.has(name)) return;
+  assertWork(args.workContext);
+  if (typeof lifecycle.agentMission !== "function") throw new Error("HERMES_CARD_READER_UNAVAILABLE");
+  const response = await lifecycle.agentMission({ action:"inspect", workContext:args.workContext });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body?.card) throw new Error("CURRENT_HERMES_CARD_REQUIRED");
+  if (!cardToolAllowed(body.card, name)) throw new Error("CARD_TOOL_ACCESS_DENIED");
+}
 function assertLifecycle(name, args) {
   if (factoryTools.has(name) || linearMutationTools.has(name) || maintenanceTools.has(name) ||
       driveMutationTools.has(name) || gmailMutationTools.has(name) || calendarMutationTools.has(name) ||
@@ -172,11 +188,18 @@ function withoutWorkContext(definition) {
   return copy;
 }
 
-export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [], currentTools = null } = {}) {
+export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [], currentTools = null, enforceCardAccess = false } = {}) {
   if (!lifecycle) throw new Error("lifecycle service is required");
   const optionalWorkContext = new Set(workContextOptionalTools);
-  const publishedDefinitions = definitions.map(item =>
-    optionalWorkContext.has(item.name) ? withoutWorkContext(item) : item);
+  const publishedDefinitions = definitions.map(item => {
+    if (!enforceCardAccess || CARD_BOOTSTRAP_TOOLS.has(item.name) || optionalWorkContext.has(item.name)) {
+      return optionalWorkContext.has(item.name) ? withoutWorkContext(item) : item;
+    }
+    const copy = structuredClone(item);
+    if (!copy.inputSchema.properties.workContext) copy.inputSchema.properties.workContext = workContext;
+    if (!copy.inputSchema.required.includes("workContext")) copy.inputSchema.required.push("workContext");
+    return copy;
+  });
   const byName = new Map(publishedDefinitions.map(item => [item.name, item]));
   return Object.freeze({
     listTools() {
@@ -187,6 +210,7 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
       if (!definition) throw new Error("unknown MCP tool: " + name);
       assertArgs(definition, args);
       if (!optionalWorkContext.has(name)) assertLifecycle(name, args);
+      if (enforceCardAccess) await assertCardAccess(lifecycle, name, args);
       let broadcastReadback = null;
       if (typeof speaker === "function" && name !== "go_hub_broadcast_activate") {
         const heard = await speaker({ area: definition.operation, observed: args.broadcast || null });

@@ -94,6 +94,8 @@ export function rankMissionCandidates(mission, pins = [], { limit = 6, threshold
       title:text(pin.card?.title || pin.title) || null,
       detail:text(pin.card?.detail || pin.detail) || null,
       status:text(pin.card?.sourceStatus || pin.status) || null,
+      snapshotKey:text(pin.card?.snapshot_key || pin.snapshotKey) || null,
+      toolAccess:unique(pin.card?.tool_access || pin.toolAccess),
       score:Number(score.toFixed(4)),
       source:"HEIMDALL_PROJECT_INDEX",
     }));
@@ -232,12 +234,19 @@ export function createAgentMissionService({
     if (!okResponse(raw) || !Array.isArray(board?.pins)) {
       return json({ code:"HERMES_HEIMDALL_INDEX_UNAVAILABLE" }, 503);
     }
+    const exactSnapshot = /^SNAP-\d{8}-[A-Z0-9]{6}$/i.test(mission)
+      ? board.pins.filter(pin => text(pin.card?.snapshot_key || pin.snapshotKey).toUpperCase() === mission.toUpperCase())
+      : [];
+    const candidates = exactSnapshot.length
+      ? exactSnapshot.map(pin => ({ workId:text(pin.workId), checkpointId:text(pin.card?.checkpointId) || "CP-" + text(pin.workId), cardId:text(pin.card?.cardId)||null, jobCode:text(pin.card?.jobCode||pin.jobCode)||null, title:text(pin.card?.title||pin.title)||null, detail:text(pin.card?.detail||pin.detail)||null, status:text(pin.card?.sourceStatus||pin.status)||null, snapshotKey:mission.toUpperCase(), toolAccess:unique(pin.card?.tool_access||pin.toolAccess), score:1, source:"SNAPSHOT_KEY" }))
+      : rankMissionCandidates(mission, board.pins, { limit:input.limit, threshold:input.threshold });
     return json({
       ok:true,
       action:"find",
       mission,
-      candidates:rankMissionCandidates(mission, board.pins, { limit:input.limit, threshold:input.threshold }),
-      source:"HEIMDALL_PROJECT_INDEX",
+      candidates,
+      recommendedTools:unique(candidates.flatMap(item => item.toolAccess || [])),
+      source:exactSnapshot.length ? "SNAPSHOT_KEY" : "HEIMDALL_PROJECT_INDEX",
       boardExposed:false,
     });
   }
@@ -332,11 +341,16 @@ export function createAgentMissionService({
     const current = await readMission(workContext);
     const work = current.work || await inspectWork(workContext);
     const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
-    if (!destinations.length) return json({ code:"HERMES_DESTINATION_REQUIRED" }, 400);
+    const accessScope = text(input.accessScope).toUpperCase();
+    const toolAccess = unique(input.toolAccess);
+    if (!["WORK","MAINTENANCE"].includes(accessScope)) return json({ code:"HERMES_ACCESS_SCOPE_REQUIRED", prompt:"เลือกขนาดสิทธิ์ก่อนครับ: WORK หรือ MAINTENANCE" }, 409);
+    if (accessScope === "WORK" && !toolAccess.length) return json({ code:"HERMES_TOOL_ACCESS_REQUIRED", prompt:"เลือกเครื่องมือที่จะเปิดสิทธิ์ให้การ์ดครับ" }, 409);
     const response = await centre({
       action:"v4_mission_card_prepare",
       ...workContext,
       destinations,
+      accessScope,
+      toolAccess,
       reason:text(input.reason) || "MISSION_ENTRY",
       context:clone(current.mission?.memory?.selectedContext || []),
     });
@@ -346,7 +360,7 @@ export function createAgentMissionService({
       workContext,
       cardDraft:response.mission?.memory?.cardMachine?.draft || null,
       issued:false,
-      prompt:"นี่ครับบัตรของคุณ รบกวนตรวจสอบข้อมูลอีกครั้ง รบกวนยืนยันครับ",
+      prompt:"นี่ครับบัตรของคุณ ตรวจสอบ access_scope และ tool_access แล้วรบกวนยืนยันครับ",
     });
   }
 
@@ -372,13 +386,18 @@ export function createAgentMissionService({
     const machine = current.mission?.memory?.cardMachine || {};
     if (!machine.current) return json({ code:"HERMES_CURRENT_CARD_REQUIRED" }, 409);
     const requested = unique(input.destinations);
-    if (!requested.length) return json({ code:"HERMES_DESTINATION_REQUIRED" }, 400);
     const destinations = unique([...(machine.current.destinations || []), ...requested]);
+    const accessScope = text(input.accessScope || machine.current.access_scope).toUpperCase();
+    const toolAccess = input.toolAccess?.length ? unique(input.toolAccess) : unique(machine.current.tool_access);
+    if (!["WORK","MAINTENANCE"].includes(accessScope)) return json({ code:"HERMES_ACCESS_SCOPE_REQUIRED" }, 409);
+    if (accessScope === "WORK" && !toolAccess.length) return json({ code:"HERMES_TOOL_ACCESS_REQUIRED" }, 409);
     const response = await centre({
       action:"v4_mission_card_prepare",
       ...workContext,
       destinations,
-      reason:text(input.reason) || "ROUTE_CHANGE",
+      accessScope,
+      toolAccess,
+      reason:text(input.reason) || "PERMISSION_CHANGE",
       context:clone(current.mission?.memory?.selectedContext || []),
     });
     return json({
@@ -389,7 +408,7 @@ export function createAgentMissionService({
       replacementDraft:response.mission?.memory?.cardMachine?.draft || null,
       issued:false,
       routeChanged:false,
-      prompt:"ตรวจสอบพบงาน " + workContext.workId + " ต้องการเพิ่มสิทธิ์หรือเปิดทางตามรายการนี้ใช่ไหมครับ รบกวนยืนยันครับ",
+      prompt:"ตรวจสอบสิทธิ์ใหม่บนการ์ดแล้วครับ ก่อนออกบัตรใหม่ต้องได้รับการอนุมัติจาก BIG",
     });
   }
 
@@ -405,9 +424,9 @@ export function createAgentMissionService({
       workContext,
       card:response.card || response.mission?.memory?.cardMachine?.current || null,
       replaced:true,
-      routeOpened:true,
+      routeOpened:false,
       audit:response.audit || null,
-      prompt:"เรียบร้อยครับ ผมจัดส่งบัตรใบใหม่ใช้แทนใบเดิม และเปิดเส้นทางเพิ่มเติมให้เรียบร้อยแล้วครับ",
+      prompt:"เรียบร้อยครับ Mission ออกการ์ดใบใหม่แทนใบเดิมแล้ว เครื่องมือจะอ่านสิทธิ์จากการ์ดใหม่นี้โดยตรง",
     });
   }
 
@@ -734,9 +753,15 @@ export function createAgentMissionService({
       mission:recorded.mission,
       readbackVerified:true,
       exitAllowed:true,
-      retrievalCode:missionTicketSearchCode(work.workId),
-      prompt:"เรียบร้อยครับ ผมจะจัดเก็บงานไว้ที่โซนจัดเก็บ รหัสค้นหา " + missionTicketSearchCode(work.workId),
+      retrievalCode:recorded.mission?.memory?.cardMachine?.current?.snapshot_key || missionTicketSearchCode(work.workId),
+      prompt:"กรุณาอัปเดตการ์ดก่อนออกครับ",
     });
+  }
+
+  async function updateCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    const response = await centre({ action:"v4_mission_card_update", ...workContext });
+    return json({ ok:true, action:"update_card", workContext, card:workCardView(response.work), mission:response.mission, updated:true, prompt:"อัปเดตการ์ดแล้วครับ พร้อมออกจาก Mission" });
   }
 
   async function exit(input = {}) {
@@ -776,6 +801,7 @@ export function createAgentMissionService({
           case "first_open": return await firstOpen(input);
           case "touch": return await touch(input);
           case "return": return await returnCard(input);
+          case "update_card": return await updateCard(input);
           case "exit": return await exit(input);
           case "inspect": return await inspect(input);
           default: return json({ code:"HERMES_ACTION_INVALID" }, 400);
