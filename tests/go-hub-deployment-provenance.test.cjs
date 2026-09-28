@@ -2,7 +2,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const serviceUrl = new URL("../go-hub-deployment-provenance.mjs", import.meta.url);
+const { pathToFileURL } = require("node:url");
+const serviceUrl = new URL("../go-hub-deployment-provenance.mjs", pathToFileURL(__filename));
 
 test("receipt corroborates exact live deployment, every version, and workflow head", async () => {
   const { verifyDeploymentReceipt } = await import(serviceUrl);
