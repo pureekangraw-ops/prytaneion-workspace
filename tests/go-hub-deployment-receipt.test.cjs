@@ -31,3 +31,11 @@ test("deployment receipt fails closed when deployment identity is absent or ambi
   assert.throws(() => makeDeploymentReceipt({ ...input, before:[], after:[{id:"a"},{id:"b"}] }), /DEPLOYMENT_ID_AMBIGUOUS/);
   assert.throws(() => makeDeploymentReceipt({ ...input, before:[], after:[{id:"a",versions:[]}] }), /DEPLOYMENT_VERSION_UNAVAILABLE/);
 });
+
+test("deployment listing accepts both Cloudflare API result shapes", async () => {
+  const { parseDeploymentList } = await mod();
+  const deployments = [{ id:"dep-1", versions:[{ version_id:"v-1", percentage:100 }] }];
+  assert.deepEqual(parseDeploymentList({ success:true, result:deployments }), deployments);
+  assert.deepEqual(parseDeploymentList({ success:true, result:{ deployments } }), deployments);
+  assert.throws(() => parseDeploymentList({ success:true, result:null }), /DEPLOYMENT_LIST_UNAVAILABLE/);
+});
