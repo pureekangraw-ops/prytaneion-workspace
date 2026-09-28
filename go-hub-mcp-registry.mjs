@@ -188,11 +188,13 @@ function withoutWorkContext(definition) {
   return copy;
 }
 
-export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [], currentTools = null } = {}) {
+export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [], currentTools = null, enforceCardAccess = false } = {}) {
   if (!lifecycle) throw new Error("lifecycle service is required");
   const optionalWorkContext = new Set(workContextOptionalTools);
   const publishedDefinitions = definitions.map(item => {
-    if (CARD_BOOTSTRAP_TOOLS.has(item.name) || optionalWorkContext.has(item.name)) return optionalWorkContext.has(item.name) ? withoutWorkContext(item) : item;
+    if (!enforceCardAccess || CARD_BOOTSTRAP_TOOLS.has(item.name) || optionalWorkContext.has(item.name)) {
+      return optionalWorkContext.has(item.name) ? withoutWorkContext(item) : item;
+    }
     const copy = structuredClone(item);
     if (!copy.inputSchema.properties.workContext) copy.inputSchema.properties.workContext = workContext;
     if (!copy.inputSchema.required.includes("workContext")) copy.inputSchema.required.push("workContext");
@@ -208,7 +210,7 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
       if (!definition) throw new Error("unknown MCP tool: " + name);
       assertArgs(definition, args);
       if (!optionalWorkContext.has(name)) assertLifecycle(name, args);
-      await assertCardAccess(lifecycle, name, args);
+      if (enforceCardAccess) await assertCardAccess(lifecycle, name, args);
       let broadcastReadback = null;
       if (typeof speaker === "function" && name !== "go_hub_broadcast_activate") {
         const heard = await speaker({ area: definition.operation, observed: args.broadcast || null });
