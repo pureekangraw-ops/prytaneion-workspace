@@ -386,13 +386,18 @@ export function createAgentMissionService({
     const machine = current.mission?.memory?.cardMachine || {};
     if (!machine.current) return json({ code:"HERMES_CURRENT_CARD_REQUIRED" }, 409);
     const requested = unique(input.destinations);
-    if (!requested.length) return json({ code:"HERMES_DESTINATION_REQUIRED" }, 400);
     const destinations = unique([...(machine.current.destinations || []), ...requested]);
+    const accessScope = text(input.accessScope || machine.current.access_scope).toUpperCase();
+    const toolAccess = input.toolAccess?.length ? unique(input.toolAccess) : unique(machine.current.tool_access);
+    if (!["WORK","MAINTENANCE"].includes(accessScope)) return json({ code:"HERMES_ACCESS_SCOPE_REQUIRED" }, 409);
+    if (accessScope === "WORK" && !toolAccess.length) return json({ code:"HERMES_TOOL_ACCESS_REQUIRED" }, 409);
     const response = await centre({
       action:"v4_mission_card_prepare",
       ...workContext,
       destinations,
-      reason:text(input.reason) || "ROUTE_CHANGE",
+      accessScope,
+      toolAccess,
+      reason:text(input.reason) || "PERMISSION_CHANGE",
       context:clone(current.mission?.memory?.selectedContext || []),
     });
     return json({
@@ -403,7 +408,7 @@ export function createAgentMissionService({
       replacementDraft:response.mission?.memory?.cardMachine?.draft || null,
       issued:false,
       routeChanged:false,
-      prompt:"ตรวจสอบพบงาน " + workContext.workId + " ต้องการเพิ่มสิทธิ์หรือเปิดทางตามรายการนี้ใช่ไหมครับ รบกวนยืนยันครับ",
+      prompt:"ตรวจสอบสิทธิ์ใหม่บนการ์ดแล้วครับ ก่อนออกบัตรใหม่ต้องได้รับการอนุมัติจาก BIG",
     });
   }
 
@@ -419,9 +424,9 @@ export function createAgentMissionService({
       workContext,
       card:response.card || response.mission?.memory?.cardMachine?.current || null,
       replaced:true,
-      routeOpened:true,
+      routeOpened:false,
       audit:response.audit || null,
-      prompt:"เรียบร้อยครับ ผมจัดส่งบัตรใบใหม่ใช้แทนใบเดิม และเปิดเส้นทางเพิ่มเติมให้เรียบร้อยแล้วครับ",
+      prompt:"เรียบร้อยครับ Mission ออกการ์ดใบใหม่แทนใบเดิมแล้ว เครื่องมือจะอ่านสิทธิ์จากการ์ดใหม่นี้โดยตรง",
     });
   }
 
