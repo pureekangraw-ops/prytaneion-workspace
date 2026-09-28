@@ -23,11 +23,16 @@ function sanitizeBinding(binding = {}) {
 }
 
 function sanitizeDeployment(deployment = {}) {
+  const versions = Array.isArray(deployment.versions) ? deployment.versions : [];
   return {
     id: text(deployment.id) || null,
     createdOn: text(deployment.created_on || deployment.createdOn) || null,
     source: text(deployment.source) || null,
     strategy: text(deployment.strategy) || null,
+    versions: versions.map(version => ({
+      versionId: text(version.version_id || version.versionId) || null,
+      percentage: Number.isFinite(Number(version.percentage)) ? Number(version.percentage) : null,
+    })).filter(version => version.versionId),
   };
 }
 
