@@ -1,4 +1,5 @@
 import { createAionGate } from "./go-hub-aion.mjs";
+import { readCurrentAgentMissionExposure } from "./go-hub-control-room.js";
 const str = { type: "string", minLength: 1 };
 const int = { type: "integer", minimum: 1 };
 const revision = { type: "integer", minimum: 0 };
@@ -51,7 +52,7 @@ const definitions = [
   def("go_hub_maintenance", "Run Work-bound Maintenance V4 map inspection, safe probes, repair context, or closeout planning.", "maintenance", schema({ target: { type: "string", enum: ["factory", "go-hub"] }, action: { type: "string", enum: ["inspect", "inspect_map", "run_system_check", "probe_route", "repair_context", "plan_closeout"] }, input: obj, map: obj, routeId: str, mapCheckpointId: str, projectId: str, workContext }, ["action", "workContext"]), ann(false)),
   def("go_hub_heimdall_pass", "Open or close a Work-bound Pass through Heimdall. Work identity comes only from Work ID + Checkpoint ID.", "heimdallPass", schema({ action: { type: "string", enum: ["open", "close"] }, kind: { type: "string", enum: ["WORK", "READ", "MAINTENANCE", "EMERGENCY"] }, scope: { type: "array", items: str }, destinations: { type: "array", items: str }, expiresAt: str, closeCondition: str, reason: str, audit: obj, status: str, result: obj, workContext }, ["action", "workContext"]), ann(false)),
   def("go_hub_v4_project_board", "Read Heimdall's three-way Project ref board without replacing Workspace truth.", "v4ProjectBoard", schema({ workId: str, checkpointId: str }, ["workId", "checkpointId"]), ann(true)),
-  def("go_hub_aion_open", "AION ephemeral entry-only gate. Every OPEN queries CURRENT Control Room exposure, returns the current Agent Mission contract/capabilities, transfers supplied context, then closes. No stale fallback, Work creation, route selection, authority grant, monitoring, repair, or return-flow ownership.", "aionOpen", schema({ context: obj }), ann(true)),
+  def("go_hub_aion_open", "AION ephemeral entry-only gate. Every OPEN queries CURRENT Control Room exposure, returns the current Agent Mission contract/capabilities, transfers supplied context, then closes. No stale fallback, Work creation, route selection, authority grant, monitoring, repair, or return-flow ownership.", "aionOpen", schema({ context: obj }), ann(false)),
   def("go_hub_agent_mission", "Operate HERMES Agent Mission over Centre Work Cards. New-card creation must review similar Work first; CREATE_NEW then issues canonical WORK-<KEY>-YYYYMMDD-NNN identity automatically. Supports reuse, portable context, LIGHT, first-open through Heimdall, touch memory, mandatory Return, and Exit. Agent Mission does not expose a Board or create authority.", "agentMission", schema({ action: { type:"string", enum:["find","enter","create","select_context","note","ask_light","first_open","touch","return","exit","inspect"] }, mission:str, requestedResult:str, sessionId:str, agentId:str, workId:str, checkpointId:str, workKey:str, createDecision:{ type:"string", enum:["CREATE_NEW"] }, workType:{ type:"string", enum:["NORMAL","URGENT","MAINTENANCE","SOS"] }, destinations:{ type:"array", items:str }, scope:{ type:"array", items:str }, candidates:{ type:"array", items:obj }, selectedIds:{ type:"array", items:str }, note:str, source:str, question:str, counterId:str, destination:str, workspace:str, station:str, status:{ type:"string", enum:["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"] }, result:obj, nextAction:str, evidence:{ type:"array", items:obj }, unknowns:{ type:"array", items:str }, lastLocation:str, mode:{ type:"string", enum:["NORMAL_RETURN","RECOVERY_RETURN"] }, limit:{ type:"integer", minimum:1, maximum:20 }, threshold:{ type:"number", minimum:0, maximum:1 }, workContext }, ["action"]), ann(false)),
   def("go_hub_light_centre_v4_action", "LIGHT may inspect, claim, wait, resume, or open a Factory-scoped Work Pass for an existing V4 Work it holds. This cannot create Work, widen destinations, or Return.", "lightCentreV4Action", schema({ action: { type: "string", enum: ["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"] }, workId: str, checkpointId: str, reason: str, resumeFrom: str }, ["action", "workId", "checkpointId"]), ann(false)),
   def("go_hub_light_factory_v4_action", "LIGHT may operate Factory V4 only for the same LIGHT-held Work after a Factory-scoped active Pass. Merge/delete remain unavailable.", "lightFactoryV4Action", schema({ action: { type: "string", enum: ["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"] }, form: obj, reality: obj, inspection: obj, plan: str, result: obj, evidence: obj, checkId: str, status: str, reason: str, file: obj, ref: str, summary: str, workContext }, ["action", "workContext"]), ann(false)),
@@ -170,7 +171,7 @@ function withoutWorkContext(definition) {
   return copy;
 }
 
-export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [] } = {}) {
+export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [], currentTools = null } = {}) {
   if (!lifecycle) throw new Error("lifecycle service is required");
   const optionalWorkContext = new Set(workContextOptionalTools);
   const publishedDefinitions = definitions.map(item =>
@@ -194,11 +195,47 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
       if (name === "go_hub_aion_open") {
         const gate = createAionGate({
           queryControlRoom: async () => ({
-            tools: publishedDefinitions.map(({ operation, ...tool }) => structuredClone(tool)),
+            ...readCurrentAgentMissionExposure({
+              listTools: typeof currentTools === "function"
+                ? currentTools
+                : () => publishedDefinitions.map(({ operation, ...tool }) => structuredClone(tool)),
+            }),
             broadcast:broadcastReadback,
           }),
         });
-        return toolResult(await gate.open(args), broadcastReadback);
+        const opened = await gate.open(args);
+        const respond = (payload, status = 200) => toolResult(new Response(JSON.stringify(payload), {
+          status, headers:{ "content-type":"application/json" },
+        }), broadcastReadback);
+        if (!opened.ok) return respond(opened, 409);
+        const context = opened.transfer.context;
+        const workId = String(context.workId || "").trim();
+        const checkpointId = String(context.checkpointId || "").trim();
+        const mission = String(context.mission || "").trim();
+        let missionInput;
+        if (workId && checkpointId) {
+          missionInput = { action:"enter", workId, checkpointId, agentId:"GO" };
+          if (mission) missionInput.mission = mission;
+          if (context.requestedResult) missionInput.requestedResult = context.requestedResult;
+        } else if (!workId && !checkpointId && mission) {
+          missionInput = { action:"find", mission };
+        } else {
+          return respond({ ...opened, ok:false, status:"UNKNOWN", reason:"MISSION_CONTEXT_REQUIRED",
+            transfer:null, handoff:null }, 409);
+        }
+        if (typeof lifecycle.agentMission !== "function") {
+          return respond({ ...opened, ok:false, status:"UNKNOWN", reason:"CURRENT_AGENT_MISSION_UNAVAILABLE",
+            transfer:null, handoff:null }, 503);
+        }
+        const missionResponse = await lifecycle.agentMission(missionInput);
+        const readback = await missionResponse.json().catch(() => ({ code:"INVALID_MISSION_READBACK" }));
+        const arrived = missionResponse.ok && readback?.ok === true;
+        return respond({
+          ...opened, ok:arrived, status:arrived ? "CURRENT" : "UNKNOWN",
+          reason:arrived ? "CURRENT_AGENT_MISSION_REACHED" : "AGENT_MISSION_HANDOFF_REJECTED",
+          transfer:arrived ? opened.transfer : null,
+          handoff:{ action:missionInput.action, status:arrived ? "ARRIVED" : "REJECTED", readback },
+        }, arrived ? 200 : 409);
       }
       const operation = lifecycle[definition.operation];
       if (typeof operation !== "function") throw new Error("lifecycle operation unavailable: " + definition.operation);
