@@ -60,7 +60,7 @@ const LIGHT_MUTATION_TOOL_NAMES = new Set([
   "go_hub_drive_rename_item",
 ]);
 
-const LIGHT_DENIED_TOOL_NAMES = new Set(["go_hub_pixie_command", "go_hub_pixie_debug_factory_action", "go_hub_pixie_result"]);
+const LIGHT_DENIED_TOOL_NAMES = new Set(["go_hub_pixie_command", "go_hub_pixie_go_works_action", "go_hub_pixie_debug_factory_action", "go_hub_pixie_result"]);
 
 const LIGHT_DIRECT_TOOL_NAMES = new Set([
   "go_hub_gmail_send_message",
@@ -756,6 +756,70 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const runOperationalMutation = lightMcp
         ? async (_operation, _input, execute) => execute()
         : runMutation;
+
+      const pixieGoWorksAction = async input => {
+        const workId = workText(input?.workContext?.workId);
+        const checkpointId = workText(input?.workContext?.checkpointId);
+        if (!workId || !checkpointId) return json({ code:"WORK_IDENTITY_REQUIRED" }, 400);
+
+        const action = workText(input?.action).toLowerCase();
+        const allowedActions = ["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"];
+        if (!allowedActions.includes(action)) return json({ code:"PIXIE_GO_WORKS_ACTION_NOT_ALLOWED" }, 400);
+
+        const inspected = await centreLive.action({ action:"v4_inspect", workId });
+        if (!inspected.ok) return inspected;
+        const centre = await responsePayload(inspected);
+        const work = centre?.work;
+        if (!work || work.workId !== workId || work.checkpointId !== checkpointId) {
+          return json({ code:"PIXIE_GO_WORKS_CENTRE_IDENTITY_MISMATCH" }, 409);
+        }
+        if (action !== "inspect" && work.status !== "ON PROCESS") {
+          return json({ code:"PIXIE_GO_WORKS_ACTIVE_WORK_REQUIRED" }, 409);
+        }
+
+        const factoryInput = input?.factoryInput && typeof input.factoryInput === "object" && !Array.isArray(input.factoryInput)
+          ? input.factoryInput
+          : {};
+        const baseHandoff = factoryInput?.form?.pixieHandoff && typeof factoryInput.form.pixieHandoff === "object"
+          ? factoryInput.form.pixieHandoff
+          : (input?.pixieHandoff && typeof input.pixieHandoff === "object" ? input.pixieHandoff : {});
+        const routed = {
+          ...factoryInput,
+          action,
+          workId,
+          workContext:{ workId, checkpointId },
+          pixieLab:{ direct:true, source:"PIXIE_LAB" },
+        };
+        if (action === "start") {
+          routed.work = work;
+          routed.form = {
+            ...(factoryInput.form || {}),
+            pixieHandoff:{
+              ...baseHandoff,
+              source:"PIXIE_LAB",
+              station:workText(baseHandoff.station || input?.station) || "LAB_EXIT",
+              workId,
+              checkpointId,
+            },
+          };
+        }
+
+        return runMutation("pixie.go_works." + action, routed, async resolvedInput => {
+          const rechecked = await centreLive.action({ action:"v4_inspect", workId });
+          if (!rechecked.ok) return rechecked;
+          const latest = await responsePayload(rechecked);
+          const latestWork = latest?.work;
+          if (!latestWork || latestWork.workId !== workId || latestWork.checkpointId !== checkpointId) {
+            return json({ code:"PIXIE_GO_WORKS_CENTRE_IDENTITY_MISMATCH" }, 409);
+          }
+          if (action !== "inspect" && latestWork.status !== "ON PROCESS") {
+            return json({ code:"PIXIE_GO_WORKS_ACTIVE_WORK_REQUIRED" }, 409);
+          }
+          const effectiveInput = resolvedInput && typeof resolvedInput === "object" ? resolvedInput : routed;
+          if (action === "start") effectiveInput.work = latestWork;
+          return factoryV4(effectiveInput);
+        });
+      };
       registry = createMcpRegistry({
         workContextOptionalTools: lightMcp ? LIGHT_DIRECT_TOOL_NAMES : [],
         lifecycle: Object.freeze({
@@ -845,7 +909,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           lightFactoryV4Action: async input => {
             if (!lightMcp) return json({ code:"LIGHT_FACTORY_ACTION_NOT_ALLOWED" }, 403);
             const action = String(input?.action || "").trim().toLowerCase();
-            if (!["start", "inspect", "record_reality", "set_plan", "advance", "update_check", "safe_stop", "finish"].includes(action)) {
+            if (!["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"].includes(action)) {
               return json({ code:"LIGHT_FACTORY_ACTION_NOT_ALLOWED" }, 403);
             }
             const workId = String(input?.workContext?.workId || "").trim();
@@ -901,84 +965,10 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           boardRead: () => lighthouseControlPort.boardRead(),
           boardPinRoute: input => json(boardPinRoute.read(input)),
           pixieCommand: input => runMutation("pixie.command", input, () => pixie.command(input)),
-          pixieDebugFactoryAction: async input => {
-            const workId = workText(input?.workContext?.workId);
-            const checkpointId = workText(input?.workContext?.checkpointId);
-            if (!workId || !checkpointId) return json({ code:"WORK_IDENTITY_REQUIRED" }, 400);
-            if (workText(input?.roomId) !== "ROOM-D") return json({ code:"PIXIE_DEBUG_ROOM_REQUIRED" }, 403);
-
-            const inspected = await centreLive.action({ action:"v4_inspect", workId });
-            if (!inspected.ok) return inspected;
-            const centre = await responsePayload(inspected);
-            const work = centre?.work;
-            if (!work || work.workId !== workId || work.checkpointId !== checkpointId) {
-              return json({ code:"PIXIE_DEBUG_FACTORY_CENTRE_IDENTITY_MISMATCH" }, 409);
-            }
-
-            const pass = work.pass || {};
-            const kind = workText(pass.kind).toUpperCase();
-            const allowed = Array.isArray(pass.allowedDestinations) ? pass.allowedDestinations.map(workText) : [];
-            const factoryAllowed = allowed.some(value => ["factory", "destination://factory", "ALL_GO_HUB_OWNED_AREAS"].includes(value));
-            if (work.status !== "ON PROCESS" || workText(pass.state).toUpperCase() !== "ACTIVE") {
-              return json({ code:"PIXIE_DEBUG_FACTORY_ACTIVE_PASS_REQUIRED" }, 403);
-            }
-            if (!["MAINTENANCE", "EMERGENCY"].includes(kind)) {
-              return json({ code:"PIXIE_DEBUG_FACTORY_MAINTENANCE_OR_EMERGENCY_REQUIRED", observedKind:kind || null }, 403);
-            }
-            if (!factoryAllowed) return json({ code:"PIXIE_DEBUG_FACTORY_SCOPE_REQUIRED" }, 403);
-            if (kind === "EMERGENCY") {
-              const expiry = Date.parse(workText(pass.expiresAt));
-              if (!Number.isFinite(expiry) || expiry <= Date.now()) {
-                return json({ code:"PIXIE_DEBUG_FACTORY_EMERGENCY_PASS_EXPIRED" }, 403);
-              }
-            }
-
-            const action = workText(input?.action).toLowerCase();
-            if (!["start", "inspect", "record_reality", "set_plan", "advance", "update_check", "safe_stop", "finish"].includes(action)) {
-              return json({ code:"PIXIE_DEBUG_FACTORY_ACTION_NOT_ALLOWED" }, 400);
-            }
-            const factoryInput = input?.factoryInput && typeof input.factoryInput === "object" && !Array.isArray(input.factoryInput)
-              ? input.factoryInput
-              : {};
-            const routed = {
-              ...factoryInput,
-              action,
-              workId,
-              workContext:{ workId, checkpointId },
-              debugRoom:"ROOM-D",
-              debugAuthority:{ kind, holder:workText(pass.holder) || null },
-            };
-            if (action === "start") routed.work = work;
-            return runMutation("pixie.debug_factory." + action, routed, async () => {
-              const rechecked = await centreLive.action({ action:"v4_inspect", workId });
-              if (!rechecked.ok) return rechecked;
-              const latest = await responsePayload(rechecked);
-              const latestWork = latest?.work;
-              const latestPass = latestWork?.pass || {};
-              const latestKind = workText(latestPass.kind).toUpperCase();
-              const latestAllowed = Array.isArray(latestPass.allowedDestinations) ? latestPass.allowedDestinations.map(workText) : [];
-              const latestFactoryAllowed = latestAllowed.some(value => ["factory", "destination://factory", "ALL_GO_HUB_OWNED_AREAS"].includes(value));
-              if (!latestWork || latestWork.workId !== workId || latestWork.checkpointId !== checkpointId) {
-                return json({ code:"PIXIE_DEBUG_FACTORY_CENTRE_IDENTITY_MISMATCH" }, 409);
-              }
-              if (latestWork.status !== "ON PROCESS" || workText(latestPass.state).toUpperCase() !== "ACTIVE") {
-                return json({ code:"PIXIE_DEBUG_FACTORY_ACTIVE_PASS_REQUIRED" }, 403);
-              }
-              if (!["MAINTENANCE", "EMERGENCY"].includes(latestKind)) {
-                return json({ code:"PIXIE_DEBUG_FACTORY_MAINTENANCE_OR_EMERGENCY_REQUIRED", observedKind:latestKind || null }, 403);
-              }
-              if (!latestFactoryAllowed) return json({ code:"PIXIE_DEBUG_FACTORY_SCOPE_REQUIRED" }, 403);
-              if (latestKind === "EMERGENCY") {
-                const latestExpiry = Date.parse(workText(latestPass.expiresAt));
-                if (!Number.isFinite(latestExpiry) || latestExpiry <= Date.now()) {
-                  return json({ code:"PIXIE_DEBUG_FACTORY_EMERGENCY_PASS_EXPIRED" }, 403);
-                }
-              }
-              routed.debugAuthority = { kind:latestKind, holder:workText(latestPass.holder) || null };
-              if (action === "start") routed.work = latestWork;
-              return factoryV4(routed);
-            });
-          },
+          pixieGoWorksAction: input => pixieGoWorksAction(input),
+          // Backward-compatible alias for clients that still know the old ROOM-D tool name.
+          // It now uses the same direct PIXIE LAB → GO WORKS Work-continuity path and no local Pass/room restriction.
+          pixieDebugFactoryAction: input => pixieGoWorksAction(input),
           pixieResult: input => pixie.result(input),
           counterCreate: input => {
             const fromActor = lightMcp ? "LIGHT" : "GO";

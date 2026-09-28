@@ -3,6 +3,7 @@ import { createFactoryAutoRunner } from "./go-hub-factory-auto-runner.mjs";
 import {
   enterFactoryV4,
   recordFactoryReality,
+  setFactoryPreProductionInspection,
   setFactoryPlan,
   advanceFactory,
   updateCriticalCheck,
@@ -176,6 +177,7 @@ export function createFactoryV4Service({ binding } = {}) {
       task = loaded.task;
       expectedRevision = loaded.revision;
       if (action === "record_reality") task = recordFactoryReality(task, input.reality || {});
+      else if (action === "set_inspection") task = setFactoryPreProductionInspection(task, { inspection:input.inspection || {} });
       else if (action === "set_plan") task = setFactoryPlan(task, { plan:input.plan });
       else if (action === "advance") task = advanceFactory(task, { result:input.result ?? null, evidence:input.evidence ?? null });
       else if (action === "update_check") task = updateCriticalCheck(task, { id:input.checkId, status:input.status, evidence:input.evidence ?? null });
