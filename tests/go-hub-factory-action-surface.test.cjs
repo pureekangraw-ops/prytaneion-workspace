@@ -119,7 +119,7 @@ test("MCP registry publishes durable Factory V4 and quarantines legacy Factory m
   assert.equal(tool.annotations.readOnlyHint, false);
   assert.equal(tool.annotations.destructiveHint, false);
   assert.deepEqual(tool.inputSchema.properties.action.enum, [
-    "start", "inspect", "record_reality", "set_plan", "advance", "update_check", "safe_stop", "finish",
+    "start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish",
   ]);
   for (const legacy of ["go_hub_factory_action", "go_hub_factory_auto", "go_hub_factory_ready_gate", "go_hub_factory_foreman"]) {
     assert.equal(tools.some(item => item.name === legacy), false);
