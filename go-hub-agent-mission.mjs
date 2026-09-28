@@ -487,6 +487,27 @@ export function createAgentMissionService({
       .filter(([, field]) => field.confidence !== "VERIFIED")
       .map(([name]) => name);
     const draft = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
+    const suppliedChoices = input.choices && typeof input.choices === "object" ? input.choices : {};
+    const knowledgeCandidates = [
+      ...(Array.isArray(memory.selectedContext) ? memory.selectedContext : []),
+      ...(Array.isArray(memory.lightReplies) ? memory.lightReplies.flatMap(reply => Array.isArray(reply?.candidates) ? reply.candidates : []) : []),
+    ];
+    const assistance = uncertainFields.map(field => {
+      const explicit = Array.isArray(suppliedChoices[field]) ? suppliedChoices[field] : [];
+      const inferred = knowledgeCandidates
+        .filter(item => text(item?.field || item?.kind).toLowerCase() === field.toLowerCase())
+        .map(item => ({ value:item.value ?? item.ref ?? null, label:text(item.label || item.summary || item.ref), source:text(item.source || "MISSION_CONTEXT") }))
+        .filter(item => item.value != null);
+      const choices = [...explicit.map(value => typeof value === "object" ? clone(value) : ({ value, label:text(value), source:"PROVIDED_CHOICE" })), ...inferred];
+      return {
+        field,
+        choices,
+        mode:choices.length ? "GO_SELECT" : "ASK_LIGHT_OR_GO",
+        instruction:choices.length
+          ? "เสนอเฉพาะตัวเลือกที่มีหลักฐานให้ GO เลือก ห้าม HERMES เลือกแทน"
+          : "ค้น Mission Context/LIGHT ก่อน ถ้ายังไม่มีหลักฐานจึงถาม GO แบบปลายเปิด ห้ามเดา",
+      };
+    });
     return json({
       ok:uncertainFields.length === 0,
       action:"prepare_factory_card",
@@ -495,9 +516,10 @@ export function createAgentMissionService({
       factoryFormDraft:draft,
       fieldEvidence:fields,
       uncertainFields,
+      assistance,
       status:uncertainFields.length ? "WAIT_GO_INPUT" : "WAIT_GO_CONFIRMATION",
       prompt:uncertainFields.length
-        ? "ข้อมูลบางส่วนยังยืนยันไม่ได้ กรุณาให้ GO ใส่ข้อมูลในช่องที่ระบุ ห้าม HERMES เดาหรือเติม fallback เอง"
+        ? "ผมพบข้อมูลที่ยังยืนยันไม่ได้ จะค้นข้อมูลที่มีอยู่และเสนอทางเลือกให้ GO ก่อน หากยังไม่มีหลักฐานจึงขอให้ GO ระบุเองครับ"
         : "นี่ครับบัตรของคุณ รบกวนตรวจสอบข้อมูลอีกครั้ง รบกวนยืนยันครับ",
       issued:false,
       currentCardChanged:false,
