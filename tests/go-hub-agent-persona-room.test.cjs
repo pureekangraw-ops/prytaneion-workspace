@@ -64,7 +64,7 @@ test("Persona Room has a direct GO Hub door without becoming an Agent Mission ga
   const workerSource = fs.readFileSync(path.join(root, "go-hub-factory-mcp-worker.mjs"), "utf8");
   assert.match(registrySource, /go_hub_agent_persona_room/);
   assert.match(registrySource, /agentPersonaRoom/);
-  assert.match(workerSource, /agentPersonaRoom: input => agentPersonaRoom\(input\)/);
+  assert.match(workerSource, /agentPersonaRoom: input => createAgentPersonaRoom\(\)\.action\(input\)/);
   assert.match(workerSource, /agentMission: input => agentMission\.action\(input\)/);
   assert.doesNotMatch(workerSource, /agentMission\.action\([^\n]*agentPersonaRoom/);
 });
