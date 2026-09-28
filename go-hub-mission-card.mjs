@@ -276,6 +276,17 @@ function cardUnique(values = []) {
   return [...new Set((Array.isArray(values) ? values : [values]).map(text).filter(Boolean))];
 }
 
+function bangkokDateStamp(value = Date.now()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone:"Asia/Bangkok", year:"numeric", month:"2-digit", day:"2-digit" }).formatToParts(new Date(value));
+  const pick = type => parts.find(part => part.type === type)?.value || "";
+  return pick("year") + pick("month") + pick("day");
+}
+function randomToken(randomId = () => crypto.randomUUID()) {
+  return String(randomId()).replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6).padEnd(6, "0");
+}
+export function createSnapshotKey({ at = Date.now(), randomId } = {}) {
+  return "SNAP-" + bangkokDateStamp(at) + "-" + randomToken(randomId);
+}
 function cardSearchCode(workId) {
   let hash = 2166136261;
   for (const char of String(workId || "")) {
@@ -285,12 +296,16 @@ function cardSearchCode(workId) {
   return "W" + hash.toString(36).toUpperCase().padStart(4, "0").slice(-4);
 }
 
-export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], reason = "MISSION_ENTRY" } = {}, { now = () => Date.now() } = {}) {
+export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
   if (!work || typeof work !== "object") throw new Error("MISSION_TICKET_WORK_REQUIRED");
   const workId = required(work.workId, "Mission Ticket Work ID");
   const cp = required(checkpointId || work.checkpointId, "Mission Ticket Checkpoint ID");
   const routes = cardUnique(destinations?.length ? destinations : work.requestedDestinations);
-  if (!routes.length) throw new Error("MISSION_TICKET_DESTINATION_REQUIRED");
+  const scope = text(accessScope || work.accessScope || (String(work.workType || "").toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
+  if (!["WORK","MAINTENANCE"].includes(scope)) throw new Error("MISSION_TICKET_ACCESS_SCOPE_INVALID");
+  const tools = cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
+  if (scope === "WORK" && !tools.length) throw new Error("MISSION_TICKET_TOOL_ACCESS_REQUIRED");
+  const snapshot = scope === "WORK" ? (text(snapshotKey || work.snapshotKey) || createSnapshotKey({ at:now(), randomId })) : null;
   return freeze({
     kind:"HERMES_STANDARD_TICKET",
     version:1,
@@ -300,6 +315,9 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
     checkpointId:cp,
     jobCode:text(work.jobCode) || null,
     destinations:routes,
+    access_scope:scope,
+    tool_access:tools,
+    snapshot_key:snapshot,
     context:clone(Array.isArray(context) ? context : []),
     reason:text(reason) || "MISSION_ENTRY",
     preparedAt:iso(now),
