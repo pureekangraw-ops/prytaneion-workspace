@@ -105,7 +105,7 @@ function failureLogExcerpt(text, limit = 40) {
     if (!line || !signal.test(line) || seen.has(line)) continue;
     seen.add(line);
     lines.push(line.slice(0, 800));
-    if (lines.length >= limit) break;
+    if (lines.length > limit) lines.shift();
   }
   return lines;
 }
