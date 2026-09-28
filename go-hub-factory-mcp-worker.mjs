@@ -60,7 +60,7 @@ const LIGHT_MUTATION_TOOL_NAMES = new Set([
   "go_hub_drive_rename_item",
 ]);
 
-const LIGHT_DENIED_TOOL_NAMES = new Set(["go_hub_pixie_command", "go_hub_pixie_go_works_action", "go_hub_pixie_debug_factory_action", "go_hub_pixie_result"]);
+const LIGHT_DENIED_TOOL_NAMES = new Set(["go_hub_aion_open", "go_hub_pixie_command", "go_hub_pixie_go_works_action", "go_hub_pixie_debug_factory_action", "go_hub_pixie_result"]);
 
 const LIGHT_DIRECT_TOOL_NAMES = new Set([
   "go_hub_gmail_send_message",
