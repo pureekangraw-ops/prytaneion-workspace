@@ -278,3 +278,57 @@ test("active owner Work cannot be marked returned in HERMES until Centre return 
   assert.equal(recorded.status, 200);
   assert.equal(recorded.body.mission.session.status, "RETURNED");
 });
+
+
+test("HERMES Factory card stops on uncertainty and requires GO final confirmation before issue", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?factory-card=" + Date.now());
+  const work = {
+    workId:"WORK-HERMES-CARD-TEST", checkpointId:"CP-WORK-HERMES-CARD-TEST", jobCode:"2809-TST1",
+    status:"OPEN", name:"HERMES card test", command:"Prepare Factory card", expectedResult:"Factory receives complete verified form",
+    requestedDestinations:["destination://factory"], scope:["factory"], pass:{ state:"CLOSED" },
+  };
+  const mission = { session:{ status:"ACTIVE" }, memory:{ mission:"Prepare Factory card", requestedResult:"Factory receives complete verified form", contextRefs:["ref://mission"] } };
+  const centreLive = { async action(input) {
+    if (input.action === "v4_mission_get") return new Response(JSON.stringify({ work, mission }), { headers:{"content-type":"application/json"} });
+    if (input.action === "v4_inspect") return new Response(JSON.stringify({ work }), { headers:{"content-type":"application/json"} });
+    throw new Error("unexpected centre action " + input.action);
+  }};
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{"content-type":"application/json"} }),
+  });
+  const workContext = { workId:work.workId, checkpointId:work.checkpointId };
+
+  const stopped = await service.action({ action:"prepare_factory_card", workContext });
+  assert.equal(stopped.status, 409);
+  const stoppedBody = await body(stopped);
+  assert.equal(stoppedBody.status, "WAIT_GO_INPUT");
+  assert.equal(stoppedBody.issued, false);
+  assert.equal(stoppedBody.uncertainFields.includes("repository"), true);
+  assert.equal(stoppedBody.uncertainFields.includes("branch"), true);
+
+  const factory = {
+    repository:"pureekangraw-ops/standard-",
+    branch:"feat/hermes-card-test",
+    outputType:"REF",
+    inputReferences:["ref://mission"],
+    preProductionInspection:{ inspectionStatus:"PENDING", sanitizationStatus:"PENDING" },
+    criticalChecklist:[{ id:"truth", label:"Use verified values only" }],
+  };
+  const review = await body(await service.action({ action:"prepare_factory_card", workContext, factory }));
+  assert.equal(review.status, "WAIT_GO_CONFIRMATION");
+  assert.equal(review.issued, false);
+  assert.equal(review.uncertainFields.length, 0);
+  assert.match(review.prompt, /ยืนยัน/);
+
+  const blocked = await service.action({ action:"confirm_factory_card", workContext, factory });
+  assert.equal(blocked.status, 409);
+  assert.equal((await body(blocked)).code, "HERMES_GO_FINAL_CONFIRMATION_REQUIRED");
+
+  const issued = await body(await service.action({ action:"confirm_factory_card", workContext, factory, confirmation:"GO_CONFIRMED" }));
+  assert.equal(issued.status, "ISSUED");
+  assert.equal(issued.issued, true);
+  assert.equal(issued.acceptedBy, "GO");
+  assert.equal(issued.factoryForm.repository, factory.repository);
+});
