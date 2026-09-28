@@ -1,3 +1,4 @@
+import { createAionGate } from "./go-hub-aion.mjs";
 const str = { type: "string", minLength: 1 };
 const int = { type: "integer", minimum: 1 };
 const revision = { type: "integer", minimum: 0 };
@@ -188,6 +189,15 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
         const heard = await speaker({ area: definition.operation, observed: args.broadcast || null });
         if (!heard?.ok) return toolResult(speakerError(heard));
         broadcastReadback = heard.current || null;
+      }
+      if (name === "go_hub_aion_open") {
+        const gate = createAionGate({
+          queryControlRoom: async () => ({
+            tools: publishedDefinitions.map(({ operation, ...tool }) => structuredClone(tool)),
+            broadcast:broadcastReadback,
+          }),
+        });
+        return toolResult(await gate.open(args), broadcastReadback);
       }
       const operation = lifecycle[definition.operation];
       if (typeof operation !== "function") throw new Error("lifecycle operation unavailable: " + definition.operation);
