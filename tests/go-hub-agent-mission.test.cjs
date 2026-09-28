@@ -87,18 +87,46 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(found.source, "HEIMDALL_PROJECT_INDEX");
   assert.equal(found.candidates[0].workId, "WORK-OLD-FACTORY");
 
-  const createdResponse = await service.action({
+  const reviewRequired = await service.action({
     action:"create",
     mission:"มาซ่อมโรงงาน HERMES",
     requestedResult:"Factory works and card returns with current reality",
     destinations:["destination://factory"],
     scope:["destination://factory"],
   });
+  assert.equal(reviewRequired.status, 409);
+  const review = await body(reviewRequired);
+  assert.equal(review.code, "HERMES_SIMILAR_WORK_REVIEW_REQUIRED");
+  assert.equal(review.decisionRequired, "CREATE_NEW_OR_REUSE");
+  assert.equal(review.candidates[0].workId, "WORK-OLD-FACTORY");
+
+  const callerOverride = await service.action({
+    action:"create",
+    mission:"มาซ่อมโรงงาน HERMES",
+    requestedResult:"Factory works and card returns with current reality",
+    workId:"WORK-CALLER-MUST-NOT-MINT-20260928-001",
+    workKey:"HERMES-FACTORY-REPAIR",
+    createDecision:"CREATE_NEW",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+  });
+  assert.equal(callerOverride.status, 400);
+  assert.equal((await body(callerOverride)).code, "HERMES_WORK_ID_CALLER_OVERRIDE_FORBIDDEN");
+
+  const createdResponse = await service.action({
+    action:"create",
+    mission:"มาซ่อมโรงงาน HERMES",
+    requestedResult:"Factory works and card returns with current reality",
+    workKey:"HERMES-FACTORY-REPAIR",
+    createDecision:"CREATE_NEW",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+  });
   assert.equal(createdResponse.status, 201);
   const created = await body(createdResponse);
   assert.match(created.card.cardId, /^CARD:\d{4}-[A-Z0-9]{4}$/);
-  assert.ok(created.workContext.workId);
-  assert.ok(created.workContext.checkpointId);
+  assert.match(created.workContext.workId, /^WORK-HERMES-FACTORY-REPAIR-\d{8}-001$/);
+  assert.equal(created.workContext.checkpointId, "CP-" + created.workContext.workId);
   const workContext = created.workContext;
 
   const selected = await body(await service.action({
