@@ -37,7 +37,7 @@ export function parseDeploymentList(payload) {
 
 async function deployments() {
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const token = process.env.CLOUDFLARE_API_TOKEN;
+  const token = process.env.CLOUDFLARE_RUNTIME_API_TOKEN || process.env.CLOUDFLARE_API_TOKEN;
   if (!account || !token) throw new Error("CLOUDFLARE_CREDENTIALS_UNAVAILABLE");
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account)}/workers/scripts/${WORKER}/deployments?per_page=100`,
