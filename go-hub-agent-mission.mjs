@@ -461,6 +461,71 @@ export function createAgentMissionService({
     return { work:opened.work, passOpened:true, alreadyProvisioned };
   }
 
+  function factoryField(value, source, confidence = "VERIFIED") {
+    const normalized = typeof value === "string" ? text(value) : clone(value);
+    const present = Array.isArray(normalized) ? normalized.length > 0 : normalized != null && normalized !== "";
+    return { value:present ? normalized : null, source:text(source) || null, confidence:present ? confidence : "UNKNOWN" };
+  }
+
+  async function prepareFactoryCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    const current = await readMission(workContext);
+    const work = current.work || await inspectWork(workContext);
+    const memory = current.mission?.memory || {};
+    const supplied = input.factory || {};
+    const fields = {
+      goal:factoryField(supplied.goal || memory.mission || work.command || work.name, supplied.goal ? "GO" : "MISSION"),
+      repository:factoryField(supplied.repository, supplied.repository ? "GO" : null),
+      branch:factoryField(supplied.branch, supplied.branch ? "GO" : null),
+      expectedOutput:factoryField(supplied.expectedOutput || memory.requestedResult || work.expectedResult, supplied.expectedOutput ? "GO" : "MISSION"),
+      outputType:factoryField(supplied.outputType, supplied.outputType ? "GO" : null),
+      inputReferences:factoryField(supplied.inputReferences || memory.contextRefs, supplied.inputReferences ? "GO" : "MISSION"),
+      preProductionInspection:factoryField(supplied.preProductionInspection, supplied.preProductionInspection ? "GO" : null),
+      criticalChecklist:factoryField(supplied.criticalChecklist, supplied.criticalChecklist ? "GO" : null),
+    };
+    const uncertainFields = Object.entries(fields)
+      .filter(([, field]) => field.confidence !== "VERIFIED")
+      .map(([name]) => name);
+    const draft = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
+    return json({
+      ok:uncertainFields.length === 0,
+      action:"prepare_factory_card",
+      workContext,
+      card:workCardView(work),
+      factoryFormDraft:draft,
+      fieldEvidence:fields,
+      uncertainFields,
+      status:uncertainFields.length ? "WAIT_GO_INPUT" : "WAIT_GO_CONFIRMATION",
+      prompt:uncertainFields.length
+        ? "ข้อมูลบางส่วนยังยืนยันไม่ได้ กรุณาให้ GO ใส่ข้อมูลในช่องที่ระบุ ห้าม HERMES เดาหรือเติม fallback เอง"
+        : "นี่ครับบัตรของคุณ รบกวนตรวจสอบข้อมูลอีกครั้ง รบกวนยืนยันครับ",
+      issued:false,
+      currentCardChanged:false,
+    }, uncertainFields.length ? 409 : 200);
+  }
+
+  async function confirmFactoryCard(input = {}) {
+    const workContext = requireWorkContext(input);
+    if (text(input.confirmation).toUpperCase() !== "GO_CONFIRMED") {
+      return json({ code:"HERMES_GO_FINAL_CONFIRMATION_REQUIRED", issued:false }, 409);
+    }
+    const prepared = await prepareFactoryCard({ ...input, action:"prepare_factory_card" });
+    const preparedBody = await payload(prepared);
+    if (!okResponse(prepared)) return prepared;
+    return json({
+      ok:true,
+      action:"confirm_factory_card",
+      workContext,
+      card:preparedBody.card,
+      factoryForm:preparedBody.factoryFormDraft,
+      fieldEvidence:preparedBody.fieldEvidence,
+      status:"ISSUED",
+      issued:true,
+      acceptedBy:"GO",
+      prompt:"ยืนยันแล้ว — GO รับบัตรและสามารถนำ Factory Form นี้เข้าสู่ Inspection/Factory ได้",
+    });
+  }
+
   async function firstOpen(input = {}) {
     const workContext = requireWorkContext(input);
     const destination = text(input.destination);
@@ -594,6 +659,8 @@ export function createAgentMissionService({
           case "select_context": return await selectContext(input);
           case "note": return await note(input);
           case "ask_light": return await askLight(input);
+          case "prepare_factory_card": return await prepareFactoryCard(input);
+          case "confirm_factory_card": return await confirmFactoryCard(input);
           case "first_open": return await firstOpen(input);
           case "touch": return await touch(input);
           case "return": return await returnCard(input);
