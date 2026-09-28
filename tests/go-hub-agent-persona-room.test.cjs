@@ -55,3 +55,16 @@ test("Persona Room rejects missing and unknown personas instead of inventing one
   assert.equal(unknown.status, 404);
   assert.equal((await body(unknown)).code, "PERSONA_ROOM_PERSONA_UNKNOWN");
 });
+
+
+test("Persona Room has a direct GO Hub door without becoming an Agent Mission gate", async () => {
+  const fs = require("node:fs");
+  const root = path.resolve(__dirname, "..");
+  const registrySource = fs.readFileSync(path.join(root, "go-hub-mcp-registry.mjs"), "utf8");
+  const workerSource = fs.readFileSync(path.join(root, "go-hub-factory-mcp-worker.mjs"), "utf8");
+  assert.match(registrySource, /go_hub_agent_persona_room/);
+  assert.match(registrySource, /agentPersonaRoom/);
+  assert.match(workerSource, /agentPersonaRoom: input => agentPersonaRoom\(input\)/);
+  assert.match(workerSource, /agentMission: input => agentMission\.action\(input\)/);
+  assert.doesNotMatch(workerSource, /agentMission\.action\([^\n]*agentPersonaRoom/);
+});
