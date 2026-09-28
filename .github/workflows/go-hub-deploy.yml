@@ -141,6 +141,9 @@ jobs:
           });
           NODE
 
+      - name: Snapshot Cloudflare deployments
+        run: node scripts/record-cloudflare-deployment.mjs snapshot "${RUNNER_TEMP}/go-hub-deployments-before.json"
+
       - name: Deploy GO Hub Worker
         shell: bash
         run: |
@@ -172,6 +175,17 @@ jobs:
           else
             npx wrangler deploy --config wrangler.go-hub.jsonc
           fi
+
+      - name: Record Cloudflare deployment identity
+        run: node scripts/record-cloudflare-deployment.mjs record "${RUNNER_TEMP}/go-hub-deployments-before.json" "${RUNNER_TEMP}/go-hub-deployment-receipt.json"
+
+      - name: Preserve deployment receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-hub-deployment-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/go-hub-deployment-receipt.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Verify deployed Cloudflare runtime bridge through MCP
         shell: bash
