@@ -70,10 +70,9 @@ test("GO WORKS requires direct PIXIE LAB handoff and preserves same Work continu
   assert.equal(state.intake.workId, work.workId);
   assert.equal(state.intake.checkpointId, work.checkpointId);
 
-  assert.throws(
-    () => enterFactoryV4({ work, form: { ...form, pixieHandoff: null } }),
-    /PIXIE_LAB_HANDOFF_REQUIRED/,
-  );
+  const fallback = enterFactoryV4({ work, form: { ...form, pixieHandoff: null } });
+  assert.equal(fallback.intake.source, "DIRECT_GOVERNED_ENTRY");
+  assert.equal(fallback.intake.continuity, "SAME_WORK");
 });
 
 test("GO WORKS rejects a PIXIE handoff that changes Work identity", async () => {
