@@ -3,7 +3,10 @@ const clone = value => value == null ? value : structuredClone(value);
 
 export function resolveCurrentAgentMissionEntry(tools = []) {
   const current = (Array.isArray(tools) ? tools : []).find(tool => tool?.name === "go_hub_agent_mission");
-  if (!current?.inputSchema || typeof current.inputSchema !== "object") {
+  if (!current?.inputSchema || typeof current.inputSchema !== "object" ||
+      !current.inputSchema.required?.includes("action") ||
+      !current.inputSchema.properties?.action?.enum?.includes("find") ||
+      !current.inputSchema.properties?.action?.enum?.includes("enter")) {
     return Object.freeze({ status:"UNKNOWN", reason:"CURRENT_AGENT_MISSION_ENTRY_NOT_EXPOSED", entry:null });
   }
   return Object.freeze({
@@ -30,9 +33,10 @@ export function createAionGate({ queryControlRoom, now = () => new Date().toISOS
       } catch {
         current = null;
       }
-      const tools = Array.isArray(current?.tools) ? current.tools : [];
+      const verified = current?.status === "CURRENT" && current?.source === "GO_CONTROL_ROOM_CURRENT_MCP_LIST";
+      const tools = verified && Array.isArray(current?.tools) ? current.tools : [];
       const resolved = resolveCurrentAgentMissionEntry(tools);
-      const observedAt = now();
+      const observedAt = verified ? current.observedAt : now();
       if (resolved.status !== "CURRENT") {
         return Object.freeze({
           ok:false,
@@ -60,7 +64,7 @@ export function createAionGate({ queryControlRoom, now = () => new Date().toISOS
         gate:"AION",
         action:"OPEN",
         status:"CURRENT",
-        source:"GO_CONTROL_ROOM_CURRENT_EXPOSURE",
+        source:current.source,
         observedAt,
         broadcast:clone(current?.broadcast || null),
         contract:resolved.entry,
