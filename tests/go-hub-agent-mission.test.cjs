@@ -149,6 +149,27 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(light.candidates.length >= 1, true);
   assert.deepEqual(light.mission.memory.contextRefs, ["github://factory"], "LIGHT must not silently mutate selected context");
 
+  const cardDraft = await body(await service.action({
+    action:"prepare_card",
+    workContext,
+    destinations:["destination://factory"],
+  }));
+  assert.equal(cardDraft.issued, false);
+  assert.equal(cardDraft.cardDraft.state, "DRAFT");
+
+  const cardRejected = await service.action({ action:"confirm_card", workContext });
+  assert.equal(cardRejected.status, 409);
+
+  const cardIssued = await body(await service.action({
+    action:"confirm_card",
+    workContext,
+    confirmation:"GO_CONFIRMED",
+  }));
+  assert.equal(cardIssued.issued, true);
+  assert.equal(cardIssued.card.state, "CURRENT");
+  assert.equal(cardIssued.card.workId, workContext.workId);
+  assert.equal(cardIssued.card.checkpointId, workContext.checkpointId);
+
   const first = await body(await service.action({
     action:"first_open",
     workContext,
@@ -158,6 +179,30 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(first.status, "OPENED");
   assert.equal(first.card.sourceStatus, "ON PROCESS");
   assert.equal(first.mission.memory.openedSpaces["destination://factory"].openedBy, "heimdall");
+
+  const routeDraft = await body(await service.action({
+    action:"prepare_route_change",
+    workContext,
+    destinations:["destination://notion"],
+  }));
+  assert.equal(routeDraft.routeChanged, false);
+  assert.equal(routeDraft.replacementDraft.state, "DRAFT");
+  assert.deepEqual(routeDraft.currentCard.destinations, ["destination://factory"]);
+
+  const routeRejected = await service.action({ action:"confirm_route_change", workContext });
+  assert.equal(routeRejected.status, 409);
+
+  const routeChanged = await body(await service.action({
+    action:"confirm_route_change",
+    workContext,
+    confirmation:"GO_CONFIRMED",
+  }));
+  assert.equal(routeChanged.replaced, true);
+  assert.equal(routeChanged.routeOpened, true);
+  assert.equal(routeChanged.card.workId, workContext.workId);
+  assert.equal(routeChanged.card.checkpointId, workContext.checkpointId);
+  assert.deepEqual(routeChanged.card.destinations, ["destination://factory","destination://notion"]);
+  assert.equal(routeChanged.audit.event, "CARD_REPLACED");
 
   const touched = await body(await service.action({
     action:"touch",
