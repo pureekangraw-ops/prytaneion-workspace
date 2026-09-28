@@ -27,6 +27,14 @@ export function makeDeploymentReceipt({ before, after, repository, worker, sourc
   };
 }
 
+export function parseDeploymentList(payload) {
+  const result = payload?.result;
+  const entries = Array.isArray(result) ? result : result?.deployments;
+  if (payload?.success === false || !Array.isArray(entries)) throw new Error("DEPLOYMENT_LIST_UNAVAILABLE");
+  if (payload?.result_info?.total_pages > 1) throw new Error("DEPLOYMENT_LIST_INCOMPLETE");
+  return entries;
+}
+
 async function deployments() {
   const account = process.env.CLOUDFLARE_ACCOUNT_ID;
   const token = process.env.CLOUDFLARE_API_TOKEN;
@@ -36,11 +44,8 @@ async function deployments() {
     { headers:{ authorization:`Bearer ${token}`, accept:"application/json" } },
   );
   const payload = await response.json().catch(() => null);
-  if (!response.ok || payload?.success === false || !Array.isArray(payload?.result?.deployments)) {
-    throw new Error("DEPLOYMENT_LIST_UNAVAILABLE");
-  }
-  if (payload.result_info?.total_pages > 1) throw new Error("DEPLOYMENT_LIST_INCOMPLETE");
-  return payload.result.deployments;
+  if (!response.ok) throw new Error("DEPLOYMENT_LIST_UNAVAILABLE");
+  return parseDeploymentList(payload);
 }
 
 async function main() {
