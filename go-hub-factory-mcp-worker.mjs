@@ -24,7 +24,7 @@ import { createCounterService } from "./go-hub-counter.mjs";
 import { createCounterDispatchService } from "./go-hub-counter-dispatcher.mjs";
 import { createNotionLightService } from "./go-hub-notion-light.mjs";
 import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
-import { agentPersonaRoom } from "./go-hub-agent-persona-room.mjs";
+import { createAgentPersonaRoom } from "./go-hub-agent-persona-room.mjs";
 import { sealReadyGate } from "./go-hub-ready-gate.js";
 
 function json(payload, status = 200) {
@@ -876,7 +876,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
             return runMutation("heimdall.pass." + String(input.action || "unknown"), routed, () => heimdallPass(routed));
           },
           v4ProjectBoard: input => v4ProjectBoard(input),
-          agentPersonaRoom: input => agentPersonaRoom(input),
+          agentPersonaRoom: input => createAgentPersonaRoom().action(input),
           agentMission: input => agentMission.action(input),
           lightCentreV4Action: async input => {
             if (!lightMcp || !["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"].includes(input?.action)) {
