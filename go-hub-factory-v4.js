@@ -2,7 +2,7 @@ const STAGES = Object.freeze(["PLAN", "BUILD", "ASSEMBLY", "MERGE", "CHECK", "OU
 const OUTPUT_TYPES = new Set(["FILE", "REF"]);
 const CHECK_STATUSES = new Set(["PENDING", "PASS", "FAIL", "UNKNOWN"]);
 const GO_WORKS_DISPLAY_NAME = "GO WORKS";
-const GO_WORKS_FLOW_VERSION = "GO_WORKS_V1";
+const GO_WORKS_FLOW_VERSION = "GO_WORKS_V2";
 
 function text(value) {
   return String(value ?? "").trim();
@@ -38,21 +38,10 @@ function hasEvidence(value) {
   return true;
 }
 
-function requireFactoryPass(work = {}) {
-  if (text(work.status) !== "ON PROCESS") throw new Error("Factory requires ON PROCESS Work");
-  if (!text(work.holder)) throw new Error("Factory requires Work holder");
-  if (work.pass?.state !== "ACTIVE") throw new Error("Factory requires ACTIVE Work Pass");
-  if (text(work.pass?.kind).toUpperCase() === "EMERGENCY") {
-    const expiry = Date.parse(text(work.pass?.expiresAt));
-    if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("Factory rejects expired Emergency Pass");
-  }
-  const allowed = (Array.isArray(work.pass?.allowedDestinations) ? work.pass.allowedDestinations : [])
-    .map(value => text(value).toUpperCase());
-  if (!allowed.includes("FACTORY") &&
-      !allowed.includes("DESTINATION://FACTORY") &&
-      !allowed.includes("ALL_GO_HUB_OWNED_AREAS")) {
-    throw new Error("Factory destination is not open");
-  }
+function requireActiveWork(work = {}) {
+  if (!text(work.workId)) throw new Error("GO WORKS requires Work ID");
+  if (text(work.status) !== "ON PROCESS") throw new Error("GO WORKS requires ON PROCESS Work");
+  if (!text(work.holder)) throw new Error("GO WORKS requires Work holder");
   return true;
 }
 
@@ -70,19 +59,52 @@ function normalizeChecklist(items = []) {
 }
 
 function createIntake(work, form, inputReferences) {
-  const forgeHandoff = form.forgeHandoff == null ? null : clone(form.forgeHandoff);
+  const legacyForge = form.forgeHandoff == null ? null : clone(form.forgeHandoff);
+  const pixieHandoff = form.pixieHandoff == null
+    ? (legacyForge ? { ...legacyForge, source: "PIXIE_LAB", station: "FORGE_BENCH" } : null)
+    : clone(form.pixieHandoff);
+
+  if (!pixieHandoff) throw new Error("PIXIE_LAB_HANDOFF_REQUIRED");
+  const source = text(pixieHandoff.source || "PIXIE_LAB").toUpperCase();
+  if (source !== "PIXIE_LAB") throw new Error("PIXIE_LAB_HANDOFF_SOURCE_INVALID");
+  const handoffWorkId = text(pixieHandoff.workId || work.workId);
+  if (handoffWorkId !== text(work.workId)) throw new Error("PIXIE_LAB_WORK_MISMATCH");
+  const handoffCheckpointId = text(pixieHandoff.checkpointId || work.checkpointId);
+  if (text(work.checkpointId) && handoffCheckpointId && handoffCheckpointId !== text(work.checkpointId)) {
+    throw new Error("PIXIE_LAB_CHECKPOINT_MISMATCH");
+  }
+
   return {
-    source: forgeHandoff ? "FORGE_LAB" : "DIRECT_GOVERNED_ENTRY",
+    source: "PIXIE_LAB",
+    station: text(pixieHandoff.station || "LAB_EXIT"),
     continuity: "SAME_WORK",
     workId: work.workId,
-    checkpointId: text(work.checkpointId) || null,
+    checkpointId: text(work.checkpointId) || handoffCheckpointId || null,
     inputReferences: clone(inputReferences),
-    forgeHandoff,
+    pixieHandoff,
+  };
+}
+
+function normalizePreProductionInspection(inspection = {}) {
+  const inspectionStatus = text(inspection.inspectionStatus || inspection.status).toUpperCase() || "PENDING";
+  const sanitizationStatus = text(inspection.sanitizationStatus || inspection.sanitizeStatus).toUpperCase() || "PENDING";
+  if (!CHECK_STATUSES.has(inspectionStatus) || !CHECK_STATUSES.has(sanitizationStatus)) {
+    throw new Error("Pre-production inspection status is invalid");
+  }
+  const evidence = inspection.evidence ?? null;
+  if ((inspectionStatus === "PASS" || sanitizationStatus === "PASS") && !hasEvidence(evidence)) {
+    throw new Error("Pre-production PASS requires evidence");
+  }
+  return {
+    inspectionStatus,
+    sanitizationStatus,
+    evidence,
+    notes: text(inspection.notes) || null,
   };
 }
 
 export function enterFactoryV4({ work, form = {} } = {}) {
-  requireFactoryPass(work);
+  requireActiveWork(work);
   const outputType = text(form.outputType).toUpperCase();
   if (!OUTPUT_TYPES.has(outputType)) throw new Error("Output Type must be FILE or REF");
 
@@ -104,12 +126,12 @@ export function enterFactoryV4({ work, form = {} } = {}) {
     holder: work.holder,
     stage: "PLAN",
     intake: createIntake(work, form, inputReferences),
+    preProductionInspection: normalizePreProductionInspection(form.preProductionInspection || {}),
     form: {
       goal: required(form.goal || work.command, "Goal/Command"),
       repository: required(form.repository, "Repository"),
       branch: required(form.branch, "Branch"),
       inputReferences,
-      plan: form.plan ?? null,
       expectedOutput: required(form.expectedOutput || work.expectedResult, "Expected Output"),
       criticalChecklist: normalizeChecklist(form.criticalChecklist),
       outputType,
@@ -127,7 +149,7 @@ export function enterFactoryV4({ work, form = {} } = {}) {
 }
 
 export function recordFactoryReality(state, reality = {}) {
-  if (state.stage !== "PLAN") throw new Error("Reality inspection belongs to PLAN");
+  if (state.stage !== "PLAN") throw new Error("Reality inspection belongs to PRE_PRODUCTION_INSPECTION");
   const next = clone(state);
   next.reality = {
     repository: required(reality.repository, "Reality repository"),
@@ -146,10 +168,17 @@ export function recordFactoryReality(state, reality = {}) {
   return snap(next);
 }
 
-export function setFactoryPlan(state, { plan } = {}) {
-  if (state.stage !== "PLAN") throw new Error("Plan can only change in PLAN");
+export function setFactoryPreProductionInspection(state, { inspection } = {}) {
+  if (state.stage !== "PLAN") throw new Error("Pre-production inspection belongs to PRE_PRODUCTION_INSPECTION");
   const next = clone(state);
-  next.form.plan = required(plan, "Plan");
+  next.preProductionInspection = normalizePreProductionInspection(inspection || {});
+  return snap(next);
+}
+
+export function setFactoryPlan(state, { plan } = {}) {
+  if (state.stage !== "PLAN") throw new Error("Legacy plan note belongs to PRE_PRODUCTION_INSPECTION");
+  const next = clone(state);
+  next.legacyPlanNote = required(plan, "Legacy plan note");
   return snap(next);
 }
 
@@ -157,8 +186,15 @@ export function advanceFactory(state, { result = null, evidence = null } = {}) {
   const index = STAGES.indexOf(state.stage);
   if (index < 0) throw new Error("Factory stage is invalid");
 
-  if (state.stage === "PLAN" && (!state.reality || !text(state.form.plan))) {
-    throw new Error("PLAN requires Reality and Plan before BUILD");
+  if (state.stage === "PLAN") {
+    if (!state.reality) throw new Error("PRE_PRODUCTION_INSPECTION requires Reality before BUILD");
+    const inspection = state.preProductionInspection || {};
+    if (inspection.inspectionStatus !== "PASS" || inspection.sanitizationStatus !== "PASS") {
+      throw new Error("PRE_PRODUCTION_INSPECTION must PASS inspection and sanitization before BUILD");
+    }
+    if (!hasEvidence(inspection.evidence)) {
+      throw new Error("PRE_PRODUCTION_INSPECTION PASS requires evidence");
+    }
   }
 
   if (state.stage === "CHECK") {
@@ -262,7 +298,7 @@ export function factoryLiveBoard(input = {}, options = {}) {
 }
 
 function goWorksFlowPhase(state = {}) {
-  if (state.stage === "PLAN") return "INTAKE_PLAN";
+  if (state.stage === "PLAN") return "PRE_PRODUCTION_INSPECTION";
   if (state.stage === "BUILD") return "BUILD";
   if (state.stage === "ASSEMBLY") return "ASSEMBLY";
   if (state.stage === "MERGE") return "WAIT_EXTERNAL_OWNER_GATE";
@@ -285,8 +321,8 @@ export function factoryBoardView(state) {
     flowVersion: state.flowVersion || GO_WORKS_FLOW_VERSION,
     flowPhase: goWorksFlowPhase(state),
     flowPath: [
-      "FORGE_HANDOFF",
-      "INTAKE_PLAN",
+      "PIXIE_LAB_HANDOFF",
+      "PRE_PRODUCTION_INSPECTION",
       "BUILD",
       "ASSEMBLY",
       "WAIT_EXTERNAL_OWNER_GATE",
@@ -296,6 +332,7 @@ export function factoryBoardView(state) {
     holder: state.holder,
     stage: state.stage,
     intake: state.intake || null,
+    preProductionInspection: state.preProductionInspection || null,
     ownerGate,
     rollback: state.rollback || null,
     reality: state.reality || { status: "UNKNOWN" },
