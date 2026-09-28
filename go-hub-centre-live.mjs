@@ -3,6 +3,7 @@ import { routeInterruptionReturn } from "./go-hub-city-route.js";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
 import { createWorkRecord as createV4WorkRecord, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
 import { createHeimdallV4 } from "./go-hub-heimdall-v4.js";
+import { prepareStandardMissionTicket, issueStandardMissionTicket, replaceStandardMissionTicket, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -226,6 +227,7 @@ function missionSidecar(state) {
       openedSpaces:memory.openedSpaces && typeof memory.openedSpaces === "object" && !Array.isArray(memory.openedSpaces) ? clone(memory.openedSpaces) : {},
       latestReality:memory.latestReality && typeof memory.latestReality === "object" ? clone(memory.latestReality) : null,
       returnHistory:Array.isArray(memory.returnHistory) ? clone(memory.returnHistory) : [],
+      cardMachine:memory.cardMachine && typeof memory.cardMachine === "object" && !Array.isArray(memory.cardMachine) ? clone(memory.cardMachine) : { draft:null, current:null, audit:[] },
       revision:Number.isSafeInteger(memory.revision) && memory.revision >= 0 ? memory.revision : 0,
       lastUpdated:String(memory.lastUpdated || "").trim() || null,
     },
@@ -317,6 +319,31 @@ function v4MissionAction(state, action, input = {}) {
     };
     bumpMission(mission, at);
     return { state:saveMission(state, mission, "V4_MISSION_ENTERED"), mission };
+  }
+
+  if (action === "v4_mission_card_prepare") {
+    let mission = activeMissionSession(state);
+    const currentMachine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
+    const draft = prepareStandardMissionTicket({
+      work:state.work,
+      checkpointId:state.work?.checkpointId,
+      destinations:missionUnique(input.destinations?.length ? input.destinations : state.work?.requestedDestinations),
+      context:Array.isArray(input.context) ? input.context : mission.memory.selectedContext,
+      reason:String(input.reason || "MISSION_ENTRY").trim() || "MISSION_ENTRY",
+    });
+    mission.memory.cardMachine = { ...currentMachine, draft:clone(draft) };
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_CARD_DRAFT"), mission };
+  }
+
+  if (action === "v4_mission_card_issue") {
+    let mission = activeMissionSession(state);
+    const machine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
+    if (!machine.draft) throw Object.assign(new Error("HERMES_CARD_DRAFT_REQUIRED"), { status:409 });
+    const issued = issueStandardMissionTicket(machine.draft, { confirmation:input.confirmation });
+    mission.memory.cardMachine = { draft:null, current:clone(issued), audit:Array.isArray(machine.audit) ? machine.audit : [] };
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_CARD_ISSUED"), mission };
   }
 
   if (action === "v4_mission_context") {
@@ -580,6 +607,45 @@ export class GoHubCentreState {
     if (state.v4 === true) {
       if (action === "v4_inspect") return json({ ok: true, v4: true, work: clone(state.work) });
       if (action === "v4_board") return json({ ok: true, v4: true, board: v4BoardView([state.work]) });
+
+      if (action === "v4_mission_card_replace") {
+        let mission = activeMissionSession(state);
+        const machine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
+        if (!machine.current) throw Object.assign(new Error("HERMES_CURRENT_CARD_REQUIRED"), { status:409 });
+        if (!machine.draft) throw Object.assign(new Error("HERMES_CARD_DRAFT_REQUIRED"), { status:409 });
+        if (String(input.confirmation || "").trim().toUpperCase() !== "GO_CONFIRMED") {
+          throw Object.assign(new Error("HERMES_GO_FINAL_CONFIRMATION_REQUIRED"), { status:409 });
+        }
+        if (state.work?.status !== "ON PROCESS" || String(state.work?.holder || "").trim() !== "GO") {
+          throw Object.assign(new Error("HERMES_GO_HOLDER_REQUIRED"), { status:409 });
+        }
+        const destinations = missionUnique(machine.draft.destinations);
+        const opened = await this.v4Heimdall(state.work).openPass(state.work.workId, {
+          kind:"WORK",
+          destinations,
+          scope:missionUnique([...(state.work?.scope || []), ...destinations]),
+          holder:"GO",
+          actor:"GO",
+          closeCondition:"RETURN",
+          returnAddress:state.work.checkpointId,
+          reason:"HERMES confirmed card replacement",
+        });
+        const replaced = replaceStandardMissionTicket(machine.current, machine.draft, {
+          confirmation:"GO_CONFIRMED",
+          routeOpened:true,
+        });
+        state.work = { ...opened, requestedDestinations:destinations };
+        mission.memory.cardMachine = {
+          draft:null,
+          current:clone(replaced.current),
+          audit:[...(Array.isArray(machine.audit) ? machine.audit : []), clone(replaced.audit)].slice(-50),
+        };
+        bumpMission(mission);
+        state = saveMission(state, mission, "V4_MISSION_CARD_REPLACED");
+        await createCentreBackedWorkIndex({ storage:this.ctx.storage }).replace(state.work);
+        await this.save(state);
+        return json({ ok:true, v4:true, work:clone(state.work), mission:clone(mission), card:clone(replaced.current), audit:clone(replaced.audit) });
+      }
 
       const missionAction = v4MissionAction(state, action, input);
       if (missionAction) {
