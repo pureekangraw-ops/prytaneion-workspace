@@ -307,6 +307,17 @@ test("HERMES Factory card stops on uncertainty and requires GO final confirmatio
   assert.equal(stoppedBody.issued, false);
   assert.equal(stoppedBody.uncertainFields.includes("repository"), true);
   assert.equal(stoppedBody.uncertainFields.includes("branch"), true);
+  assert.equal(stoppedBody.assistance.find(item => item.field === "repository").mode, "ASK_LIGHT_OR_GO");
+
+  const assisted = await service.action({
+    action:"prepare_factory_card", workContext,
+    choices:{ repository:[{ value:"pureekangraw-ops/standard-", label:"standard-", source:"LIGHT" }] },
+  });
+  const assistedBody = await body(assisted);
+  const repositoryHelp = assistedBody.assistance.find(item => item.field === "repository");
+  assert.equal(repositoryHelp.mode, "GO_SELECT");
+  assert.equal(repositoryHelp.choices[0].source, "LIGHT");
+  assert.match(repositoryHelp.instruction, /GO/);
 
   const factory = {
     repository:"pureekangraw-ops/standard-",
