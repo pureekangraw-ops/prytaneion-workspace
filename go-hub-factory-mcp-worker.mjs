@@ -815,8 +815,9 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           if (action !== "inspect" && latestWork.status !== "ON PROCESS") {
             return json({ code:"PIXIE_GO_WORKS_ACTIVE_WORK_REQUIRED" }, 409);
           }
-          if (action === "start") resolvedInput.work = latestWork;
-          return factoryV4(resolvedInput);
+          const effectiveInput = resolvedInput && typeof resolvedInput === "object" ? resolvedInput : routed;
+          if (action === "start") effectiveInput.work = latestWork;
+          return factoryV4(effectiveInput);
         });
       };
       registry = createMcpRegistry({
