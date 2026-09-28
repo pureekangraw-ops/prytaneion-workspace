@@ -407,7 +407,7 @@ export function createAgentMissionService({
       replaced:true,
       routeOpened:true,
       audit:response.audit || null,
-      prompt:"เรียบร้อยครับ ผมจัดส่งบัตรใบใหม่ใช้แทนใบเดิม และแจ้ง Heimdall เปิดทางเรียบร้อยครับ",
+      prompt:"เรียบร้อยครับ ผมจัดส่งบัตรใบใหม่ใช้แทนใบเดิม และเปิดเส้นทางเพิ่มเติมให้เรียบร้อยแล้วครับ",
     });
   }
 
