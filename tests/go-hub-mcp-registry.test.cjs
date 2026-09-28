@@ -42,6 +42,8 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools[0].annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_broadcast_activate").annotations.readOnlyHint, false);
   assert.equal(tools.find(tool => tool.name === "go_hub_factory_v4").annotations.readOnlyHint, false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_factory_v4").inputSchema.properties.inspection.type, "object");
+  assert.equal(tools.find(tool => tool.name === "go_hub_light_factory_v4_action").inputSchema.properties.inspection.type, "object");
   assert.equal(tools.find(tool => tool.name === "go_hub_light_factory_v4_action").annotations.readOnlyHint, false);
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_ready_gate"), false);

@@ -119,3 +119,25 @@ test("MCP registry exposes failure evidence as a read-only lifecycle tool", asyn
     input: { repository, runId: 77 },
   });
 });
+
+test("failure evidence retains the terminal error after verbose successful test output", async () => {
+  const fetchImpl = async url => {
+    const value = String(url);
+    if (value.endsWith("/actions/runs/88/jobs?per_page=100")) {
+      return jsonResponse({ jobs:[{ id:801, name:"deploy", status:"completed", conclusion:"failure",
+        steps:[{number:15,name:"Verify deployed runtime",conclusion:"failure"}] }] });
+    }
+    if (value.endsWith("/actions/jobs/801/logs")) {
+      return new Response([
+        ...Array.from({ length:45 }, (_, i) => "2026-09-28T01:00:00Z # Subtest: expected error " + i),
+        "2026-09-28T01:01:00Z Error: FACTORY_RUNTIME_PROBE_FAILED:exact diagnostic",
+      ].join("\n"));
+    }
+    throw new Error("unexpected upstream " + value);
+  };
+  const { createGithubLifecycleService } = await import(workerUrl + "?tail=" + Date.now());
+  const response = await createGithubLifecycleService({ fetchImpl, token:"token" }).getFailureEvidence({ repository, runId:88 });
+  const result = await response.json();
+  assert.equal(result.failedJobs[0].logExcerpt.at(-1), "Error: FACTORY_RUNTIME_PROBE_FAILED:exact diagnostic");
+  assert.equal(result.failedJobs[0].logExcerpt.length, 40);
+});

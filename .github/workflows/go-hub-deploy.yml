@@ -618,6 +618,11 @@ jobs:
             plan:"Verify deployed V4 Factory lifecycle against production runtime",
             expectedOutput:"Production runtime Factory receipt",
             outputType:"REF",
+            preProductionInspection:{
+              inspectionStatus:"PASS",
+              sanitizationStatus:"PASS",
+              evidence:{ source:"GO_HUB_RUNTIME_SMOKE", workflowRunId:process.env.GITHUB_RUN_ID, headSha:process.env.GITHUB_SHA },
+            },
             criticalChecklist:[{ id:"runtime", label:"Production runtime verified" }],
           };
           await mcp("/mcp", ownerToken, "go_hub_factory_v4", {
