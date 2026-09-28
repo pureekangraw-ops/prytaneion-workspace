@@ -97,7 +97,7 @@ test("standard HERMES ticket machine requires GO confirmation and preserves iden
     jobCode:"2809-7P4G",
     requestedDestinations:["hermes"],
   };
-  const draft = mod.prepareStandardMissionTicket({ work, destinations:["hermes"] }, { now:() => Date.parse("2026-09-28T12:00:00Z") });
+  const draft = mod.prepareStandardMissionTicket({ work, destinations:["hermes"], accessScope:"WORK", toolAccess:["go_hub_agent_mission"] }, { now:() => Date.parse("2026-09-28T12:00:00Z") });
   assert.equal(draft.state, "DRAFT");
   assert.throws(() => mod.issueStandardMissionTicket(draft, { confirmation:"" }), /HERMES_GO_FINAL_CONFIRMATION_REQUIRED/);
 
@@ -110,6 +110,9 @@ test("standard HERMES ticket machine requires GO confirmation and preserves iden
     work,
     destinations:["hermes","factory"],
     reason:"ROUTE_CHANGE",
+    accessScope:"WORK",
+    toolAccess:["go_hub_agent_mission","go_hub_factory_v4"],
+    snapshotKey:current.snapshot_key,
   }, { now:() => Date.parse("2026-09-28T12:02:00Z") });
 
   assert.throws(
@@ -129,4 +132,42 @@ test("standard HERMES ticket machine requires GO confirmation and preserves iden
   assert.equal(replaced.audit.event, "CARD_REPLACED");
   assert.equal(replaced.audit.reason, "ROUTE_CHANGE");
   assert.match(mod.missionTicketSearchCode(work.workId), /^W[A-Z0-9]{4}$/);
+});
+
+
+test("HERMES access card has only two authorization inputs and WORK gets stable snapshot key", async () => {
+  const mod = await import("../go-hub-mission-card.mjs?access=" + Date.now());
+  const work = { workId:"WORK-ACCESS-1", checkpointId:"CP-WORK-ACCESS-1", requestedDestinations:["factory"] };
+  const draft = mod.prepareStandardMissionTicket({
+    work,
+    accessScope:"WORK",
+    toolAccess:["go_hub_factory_v4","go_hub_read_file"],
+    destinations:["factory"],
+  }, {
+    now:() => Date.parse("2026-09-29T01:00:00Z"),
+    randomId:() => "a1b2c3-test",
+  });
+  assert.equal(draft.access_scope, "WORK");
+  assert.deepEqual(draft.tool_access, ["go_hub_factory_v4","go_hub_read_file"]);
+  assert.equal(draft.snapshot_key, "SNAP-20260929-A1B2C3");
+  const replacement = mod.prepareStandardMissionTicket({
+    work,
+    accessScope:"WORK",
+    toolAccess:["go_hub_factory_v4"],
+    destinations:["factory"],
+    snapshotKey:draft.snapshot_key,
+  });
+  assert.equal(replacement.snapshot_key, draft.snapshot_key);
+});
+
+test("MAINTENANCE card needs no tool list and carries no work snapshot key", async () => {
+  const mod = await import("../go-hub-mission-card.mjs?maintenance=" + Date.now());
+  const draft = mod.prepareStandardMissionTicket({
+    work:{ workId:"WORK-MAINT-1", checkpointId:"CP-WORK-MAINT-1", workType:"MAINTENANCE", requestedDestinations:["maintenance"] },
+    accessScope:"MAINTENANCE",
+    destinations:["maintenance"],
+  });
+  assert.equal(draft.access_scope, "MAINTENANCE");
+  assert.deepEqual(draft.tool_access, []);
+  assert.equal(draft.snapshot_key, null);
 });
