@@ -152,6 +152,8 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   const cardDraft = await body(await service.action({
     action:"prepare_card",
     workContext,
+    accessScope:"WORK",
+    toolAccess:["go_hub_factory_v4","go_hub_read_file"],
     destinations:["destination://factory"],
   }));
   assert.equal(cardDraft.issued, false);
@@ -183,6 +185,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   const routeDraft = await body(await service.action({
     action:"prepare_route_change",
     workContext,
+    toolAccess:["go_hub_factory_v4","go_hub_read_file","go_hub_notion_light"],
     destinations:["destination://notion"],
   }));
   assert.equal(routeDraft.routeChanged, false);
@@ -198,7 +201,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     confirmation:"GO_CONFIRMED",
   }));
   assert.equal(routeChanged.replaced, true);
-  assert.equal(routeChanged.routeOpened, true);
+  assert.equal(routeChanged.routeOpened, false);
   assert.equal(routeChanged.card.workId, workContext.workId);
   assert.equal(routeChanged.card.checkpointId, workContext.checkpointId);
   assert.deepEqual(routeChanged.card.destinations, ["destination://factory","destination://notion"]);
@@ -232,6 +235,10 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(returned.mission.session.status, "RETURNED");
   assert.equal(returned.mission.memory.latestReality.missionStatus, "ON PROCESS");
 
+  const updatePrompt = returned.prompt;
+  assert.match(updatePrompt, /อัปเดตการ์ด/);
+  const updated = await body(await service.action({ action:"update_card", workContext }));
+  assert.equal(updated.updated, true);
   const exited = await body(await service.action({ action:"exit", workContext }));
   assert.equal(exited.exited, true);
   assert.equal(exited.mission.session.status, "EXITED");
@@ -287,6 +294,11 @@ test("Centre sidecar refuses fake first-open, fake return, and exit without owne
   });
   assert.equal(fakeReturn.status, 200, "OPEN Work is already owner-returned / not active, so memory may record a return");
 
+  const blockedCardExit = await call({ action:"v4_mission_exit", workId, checkpointId });
+  assert.equal(blockedCardExit.status, 409);
+  assert.equal(blockedCardExit.body.code, "HERMES_CARD_UPDATE_REQUIRED_BEFORE_EXIT");
+  const updatedCard = await call({ action:"v4_mission_card_update", workId, checkpointId });
+  assert.equal(updatedCard.status, 200);
   const exited = await call({ action:"v4_mission_exit", workId, checkpointId });
   assert.equal(exited.status, 200);
   assert.equal(exited.body.mission.session.status, "EXITED");
