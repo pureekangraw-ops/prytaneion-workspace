@@ -633,29 +633,21 @@ export class GoHubCentreState {
         if (String(input.confirmation || "").trim().toUpperCase() !== "GO_CONFIRMED") {
           throw Object.assign(new Error("HERMES_GO_FINAL_CONFIRMATION_REQUIRED"), { status:409 });
         }
-        if (state.work?.status !== "ON PROCESS" || String(state.work?.holder || "").trim() !== "GO") {
-          throw Object.assign(new Error("HERMES_GO_HOLDER_REQUIRED"), { status:409 });
-        }
-        const destinations = missionUnique(machine.draft.destinations);
-        const opened = await this.v4Heimdall(state.work).openPass(state.work.workId, {
-          kind:"WORK",
-          destinations,
-          scope:missionUnique([...(state.work?.scope || []), ...destinations]),
-          holder:"GO",
-          actor:"GO",
-          closeCondition:"RETURN",
-          returnAddress:state.work.checkpointId,
-          reason:"HERMES confirmed card replacement",
-        });
         const replaced = replaceStandardMissionTicket(machine.current, machine.draft, {
           confirmation:"GO_CONFIRMED",
           routeOpened:true,
         });
-        state.work = { ...opened, requestedDestinations:destinations, accessScope:replaced.current.access_scope, toolAccess:clone(replaced.current.tool_access || []), snapshotKey:replaced.current.snapshot_key || null };
+        state.work = {
+          ...state.work,
+          accessScope:replaced.current.access_scope,
+          toolAccess:clone(replaced.current.tool_access || []),
+          snapshotKey:replaced.current.snapshot_key || state.work?.snapshotKey || null,
+        };
         mission.memory.cardMachine = {
           draft:null,
           current:clone(replaced.current),
           audit:[...(Array.isArray(machine.audit) ? machine.audit : []), clone(replaced.audit)].slice(-50),
+          lastCardUpdateAt:new Date().toISOString(),
         };
         bumpMission(mission);
         state = saveMission(state, mission, "V4_MISSION_CARD_REPLACED");
@@ -670,6 +662,9 @@ export class GoHubCentreState {
           return json({ ok:true, v4:true, work:clone(state.work), mission:clone(missionAction.mission) });
         }
         state = missionAction.state;
+        if (action === "v4_mission_card_issue") {
+          await createCentreBackedWorkIndex({ storage:this.ctx.storage }).replace(state.work);
+        }
         await this.save(state);
         return json({
           ok:true,
