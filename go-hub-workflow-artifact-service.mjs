@@ -89,7 +89,7 @@ async function inflateRaw(bytes) {
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
-async function extractZipEntry(archiveBytes, suffix) {
+export async function extractZipEntry(archiveBytes, suffix) {
   const wanted = clean(suffix).replace(/^\/+/, "");
   if (!wanted) throw new Error("ZIP_ENTRY_SUFFIX_REQUIRED");
   const view = new DataView(archiveBytes.buffer, archiveBytes.byteOffset, archiveBytes.byteLength);
