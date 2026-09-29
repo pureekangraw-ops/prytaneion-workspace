@@ -45,11 +45,11 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_factory_v4").inputSchema.properties.inspection.type, "object");
   assert.equal(tools.find(tool => tool.name === "go_hub_light_factory_v4_action").inputSchema.properties.inspection.type, "object");
   assert.equal(tools.find(tool => tool.name === "go_hub_light_factory_v4_action").annotations.readOnlyHint, false);
-  assert.equal(tools.find(tool => tool.name === "go_hub_aion_open").annotations.readOnlyHint, false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_aion_open").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.deepEqual(
     tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.action.enum,
-    ["find","enter","reopen","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"]
+    ["find","enter","reopen","manual_continue","emergency_enter","emergency_exit","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"]
   );
   assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /HERMES owns the user-facing route operation/);
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, { type:"string", enum:["WORK","MAINTENANCE"] });

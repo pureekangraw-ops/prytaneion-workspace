@@ -266,6 +266,47 @@ function resumeView(work = {}) {
   return { resumable:false, mode:"UNKNOWN", holder, next:null };
 }
 
+function missionManualControls(work = {}, mission = null) {
+  const status = text(work.status).toUpperCase();
+  const holder = text(work.holder) || null;
+  const sessionStatus = text(mission?.session?.status).toUpperCase() || null;
+  const passActive = text(work?.pass?.state).toUpperCase() === "ACTIVE";
+  return [
+    {
+      id:"MANUAL_CONTINUE",
+      label:"ไปต่อเอง",
+      action:"manual_continue",
+      enabled:status !== "CANCEL",
+      kind:"MANUAL",
+      reason:status === "CANCEL" ? "CANCEL_WORK_REQUIRES_NEW_DECISION" : "OWNER_EXPLICIT_CONTINUE",
+    },
+    {
+      id:"EMERGENCY_ENTER",
+      label:"ฉุกเฉิน: เข้า",
+      action:"emergency_enter",
+      enabled:status !== "CANCEL",
+      kind:"EMERGENCY",
+      reason:"OWNER_OVERRIDE_ENTER_WITHOUT_OPENING_DESTINATION",
+    },
+    {
+      id:"EMERGENCY_EXIT",
+      label:"ฉุกเฉิน: ออก",
+      action:"emergency_exit",
+      enabled:Boolean((sessionStatus && sessionStatus !== "EXITED") || holder || passActive),
+      kind:"EMERGENCY",
+      reason:"OWNER_OVERRIDE_RETURN_TO_SAFE_CENTRE_STATE",
+    },
+  ];
+}
+
+function fallbackManualControls() {
+  return [
+    { id:"MANUAL_CONTINUE", label:"ไปต่อเอง", action:"manual_continue", kind:"MANUAL" },
+    { id:"EMERGENCY_ENTER", label:"ฉุกเฉิน: เข้า", action:"emergency_enter", kind:"EMERGENCY" },
+    { id:"EMERGENCY_EXIT", label:"ฉุกเฉิน: ออก", action:"emergency_exit", kind:"EMERGENCY" },
+  ];
+}
+
 function composeMissionReadout(work = {}, mission = null) {
   const memory = mission?.memory || {};
   const currentCard = memory.cardMachine?.current || null;
@@ -299,6 +340,7 @@ function composeMissionReadout(work = {}, mission = null) {
     unknowns:unique(latest?.unknowns),
     lastLocation:text(latest?.lastLocation || mission?.session?.lastDestination) || null,
     observedFrom:["CENTRE_WORK","HERMES_MISSION_MEMORY","CURRENT_CARD"],
+    manualControls:missionManualControls(work, mission),
   };
 }
 
@@ -468,6 +510,130 @@ export function createAgentMissionService({
       mission:entered.mission,
       readout:composeMissionReadout(work, entered.mission),
       prompt:"เปิด Work เดิมกลับมาทำต่อแล้วครับ ใช้ Work ID / Checkpoint เดิม",
+    });
+  }
+
+  async function manualContinue(input = {}) {
+    const workContext = requireWorkContext(input);
+    let current = await readMission(workContext);
+    let work = current.work || await inspectWork(workContext);
+    const status = text(work.status).toUpperCase();
+    if (status === "CANCEL") {
+      return json({
+        code:"HERMES_CANCEL_WORK_CANNOT_CONTINUE",
+        action:"manual_continue",
+        workContext,
+        readout:composeMissionReadout(work, current.mission),
+      }, 409);
+    }
+
+    const sessionStatus = text(current.mission?.session?.status).toUpperCase();
+    if (status === "COMPLETE" && sessionStatus && sessionStatus !== "EXITED") {
+      await centre({ action:"v4_mission_emergency_exit", ...workContext });
+      current = await readMission(workContext);
+    } else if (sessionStatus === "RETURNED") {
+      await centre({ action:"v4_mission_exit", ...workContext });
+      current = await readMission(workContext);
+    }
+
+    if (status === "COMPLETE") {
+      work = (await centre({ action:"v4_reopen", ...workContext, actor:"GO" })).work;
+    } else if (status === "OPEN") {
+      work = (await centre({ action:"v4_claim", ...workContext, actor:"GO" })).work;
+    } else if (status === "WAIT CONFIRM") {
+      work = (await centre({ action:"v4_resume", ...workContext, actor:"GO" })).work;
+    } else if (status === "ON PROCESS") {
+      if (text(work.holder) && text(work.holder) !== "GO") {
+        return json({
+          code:"HERMES_WORK_HELD_BY_OTHER_AGENT",
+          action:"manual_continue",
+          workContext,
+          holder:text(work.holder),
+          readout:composeMissionReadout(work, current.mission),
+        }, 409);
+      }
+    }
+
+    current = await readMission(workContext);
+    const activeStatus = text(current.mission?.session?.status).toUpperCase();
+    let mission = current.mission;
+    if (!activeStatus || activeStatus === "EXITED") {
+      const entered = await centre({
+        action:"v4_mission_enter",
+        ...workContext,
+        sessionId:text(input.sessionId) || createId("HERMES-SESSION"),
+        agentId:"GO",
+        mission:text(input.mission) || current.mission?.memory?.mission || work.command || work.name,
+        requestedResult:text(input.requestedResult) || current.mission?.memory?.requestedResult || work.expectedResult || null,
+      });
+      mission = entered.mission;
+    }
+
+    return json({
+      ok:true,
+      action:"manual_continue",
+      continued:true,
+      explicitOwnerAction:true,
+      workContext,
+      card:workCardView(work),
+      mission,
+      readout:composeMissionReadout(work, mission),
+      prompt:"GO กดไปต่อเองแล้วครับ HERMES จัด lifecycle ให้ แต่ยังไม่เปิด Destination หรือเพิ่ม Authority",
+    });
+  }
+
+  async function emergencyEnter(input = {}) {
+    const workContext = requireWorkContext(input);
+    const current = await readMission(workContext);
+    const work = current.work || await inspectWork(workContext);
+    if (text(work.status).toUpperCase() === "CANCEL") {
+      return json({
+        code:"HERMES_CANCEL_WORK_EMERGENCY_ENTER_BLOCKED",
+        action:"emergency_enter",
+        workContext,
+        readout:composeMissionReadout(work, current.mission),
+      }, 409);
+    }
+
+    const workResult = await centre({ action:"v4_emergency_enter", ...workContext });
+    const entered = await centre({
+      action:"v4_mission_emergency_enter",
+      ...workContext,
+      sessionId:text(input.sessionId) || createId("HERMES-SESSION"),
+      agentId:"GO",
+      mission:text(input.mission) || current.mission?.memory?.mission || workResult.work.command || workResult.work.name,
+      requestedResult:text(input.requestedResult) || current.mission?.memory?.requestedResult || workResult.work.expectedResult || null,
+    });
+    return json({
+      ok:true,
+      action:"emergency_enter",
+      emergency:true,
+      explicitOwnerAction:true,
+      destinationOpened:false,
+      authorityExpanded:false,
+      workContext,
+      card:workCardView(workResult.work),
+      mission:entered.mission,
+      readout:composeMissionReadout(workResult.work, entered.mission),
+      prompt:"เข้า HERMES แบบฉุกเฉินแล้วครับ ยังไม่ได้เปิด Destination หรือขยายสิทธิ์",
+    });
+  }
+
+  async function emergencyExit(input = {}) {
+    const workContext = requireWorkContext(input);
+    const workResult = await centre({ action:"v4_emergency_exit", ...workContext });
+    const exited = await centre({ action:"v4_mission_emergency_exit", ...workContext });
+    return json({
+      ok:true,
+      action:"emergency_exit",
+      emergency:true,
+      explicitOwnerAction:true,
+      workContext,
+      card:workCardView(workResult.work),
+      mission:exited.mission,
+      readout:composeMissionReadout(workResult.work, exited.mission),
+      exited:true,
+      prompt:"ออกฉุกเฉินเรียบร้อยครับ Pass ปิด Holder ถูกปล่อย และกลับ Centre โดยไม่บังคับพิธี Return/Update/Exit ปกติ",
     });
   }
 
@@ -1006,6 +1172,9 @@ export function createAgentMissionService({
           case "find": return await find(input);
           case "enter": return await enter(input);
           case "reopen": return await reopen(input);
+          case "manual_continue": return await manualContinue(input);
+          case "emergency_enter": return await emergencyEnter(input);
+          case "emergency_exit": return await emergencyExit(input);
           case "create": return await create(input);
           case "issue_card": return await issueCard(input);
           case "prepare_route_change": return await prepareRouteChange(input);
@@ -1024,9 +1193,11 @@ export function createAgentMissionService({
           default: return json({ code:"HERMES_ACTION_INVALID" }, 400);
         }
       } catch (error) {
+        const hasWorkContext = Boolean(text(input?.workContext?.workId || input.workId) && text(input?.workContext?.checkpointId || input.checkpointId));
         return json({
           code:error?.message || "HERMES_ACTION_FAILED",
           ...(error?.body ? { cause:error.body } : {}),
+          ...(hasWorkContext ? { manualControls:fallbackManualControls() } : {}),
         }, Number(error?.status || 500));
       }
     },

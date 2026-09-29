@@ -694,3 +694,73 @@ test("HERMES exact Work and repository lookup does not suggest unrelated Work", 
   assert.deepEqual(unrelated.candidates, []);
   assert.deepEqual(unrelated.recommendedTools, []);
 });
+
+
+test("HERMES gives GO manual continue and emergency in-out buttons instead of trapping GO in lifecycle errors", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?manual-buttons=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?manual-buttons=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+    createId:prefix => prefix + "-MANUAL",
+  });
+
+  const created = await body(await service.action({
+    action:"create",
+    mission:"manual rescue test",
+    requestedResult:"GO can continue or escape without a ritual deadlock",
+    workKey:"MANUAL-RESCUE",
+    createDecision:"CREATE_NEW",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+  }));
+  const workContext = created.workContext;
+
+  const initial = await body(await service.action({ action:"inspect", workContext }));
+  assert.deepEqual(
+    initial.readout.manualControls.map(item => item.action),
+    ["manual_continue","emergency_enter","emergency_exit"],
+  );
+
+  const continued = await body(await service.action({ action:"manual_continue", workContext }));
+  assert.equal(continued.continued, true);
+  assert.equal(continued.explicitOwnerAction, true);
+  assert.equal(continued.card.sourceStatus, "ON PROCESS");
+  assert.equal(continued.card.holder, "GO");
+  assert.equal(continued.readout.access.passState, null, "manual continue must not open a Destination Pass");
+
+  const blockedExit = await service.action({ action:"exit", workContext });
+  assert.equal(blockedExit.status, 409);
+  const blocked = await body(blockedExit);
+  assert.equal(blocked.code, "HERMES_RETURN_REQUIRED_BEFORE_EXIT");
+  assert.deepEqual(
+    blocked.manualControls.map(item => item.action),
+    ["manual_continue","emergency_enter","emergency_exit"],
+  );
+
+  const escaped = await body(await service.action({ action:"emergency_exit", workContext }));
+  assert.equal(escaped.emergency, true);
+  assert.equal(escaped.exited, true);
+  assert.equal(escaped.card.sourceStatus, "OPEN");
+  assert.equal(escaped.card.holder, null);
+  assert.equal(escaped.readout.identity.sessionStatus, "EXITED");
+  assert.equal(escaped.readout.access.passState, null);
+
+  const emergencyEntered = await body(await service.action({ action:"emergency_enter", workContext }));
+  assert.equal(emergencyEntered.emergency, true);
+  assert.equal(emergencyEntered.destinationOpened, false);
+  assert.equal(emergencyEntered.authorityExpanded, false);
+  assert.equal(emergencyEntered.card.sourceStatus, "ON PROCESS");
+  assert.equal(emergencyEntered.card.holder, "GO");
+  assert.equal(emergencyEntered.readout.identity.sessionStatus, "ENTERED");
+  assert.equal(emergencyEntered.readout.access.passState, null);
+
+  const escapedAgain = await body(await service.action({ action:"emergency_exit", workContext }));
+  assert.equal(escapedAgain.card.sourceStatus, "OPEN");
+  const continuedAgain = await body(await service.action({ action:"manual_continue", workContext }));
+  assert.equal(continuedAgain.card.sourceStatus, "ON PROCESS");
+  assert.equal(continuedAgain.readout.resume.mode, "GO_ACTIVE");
+});
