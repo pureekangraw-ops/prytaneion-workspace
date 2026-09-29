@@ -1,6 +1,5 @@
-import { createAionGate } from "./go-hub-aion.mjs";
+import { createAionGate, AGENT_MISSION_ACTIONS } from "./go-hub-aion.mjs";
 import { readCurrentAgentMissionExposure } from "./go-hub-control-room.js";
-import { AGENT_MISSION_ACTIONS } from "./go-hub-agent-mission-contract.mjs";
 const str = { type: "string", minLength: 1 };
 const int = { type: "integer", minimum: 1 };
 const revision = { type: "integer", minimum: 0 };
