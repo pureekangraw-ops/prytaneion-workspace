@@ -469,3 +469,83 @@ test("Notion LIGHT identity authenticates on shared MCP metadata and receives th
   assert.ok(names.includes("go_hub_centre_live_action"));
   assert.ok(names.includes("go_hub_maintenance"));
 });
+
+
+test("LIGHT repository reads bypass HERMES Card while GO still follows the Card gate", async () => {
+  const { createAccessToken } = await import(oauthUrl + "?light-repo-read-card-bypass=" + Date.now());
+  const { createFactoryMcpWorker } = await import(factoryUrl + "?light-repo-read-card-bypass=" + Date.now());
+
+  const readme = "# Olympus\n";
+  const fetchImpl = async url => {
+    assert.equal(
+      String(url),
+      "https://api.github.com/repos/pureekangraw-ops/Olympus/contents/README.md",
+    );
+    return new Response(JSON.stringify({
+      type:"file",
+      encoding:"base64",
+      content:Buffer.from(readme, "utf8").toString("base64"),
+      sha:"readme-sha",
+    }), { status:200, headers:{ "content-type":"application/json" } });
+  };
+
+  const worker = createFactoryMcpWorker({ fetchImpl });
+  const env = {
+    GITHUB_TOKEN:"github-token",
+    GOHUB_MASTER_KEY:"master-secret",
+    GOHUB_OWNER_PASSCODE:"owner-passcode",
+    GO_HUB_CARD_ACCESS_V2:"1",
+  };
+  const workContext = {
+    workId:"WORK-OLYMPUS-SYSTEM-20260929-001",
+    checkpointId:"CP-WORK-OLYMPUS-SYSTEM-20260929-001",
+  };
+
+  const tokenFor = (subject, scope) => createAccessToken({
+    issuer:"https://hub.example",
+    signingKey:"master-secret",
+    resource:"https://hub.example/mcp",
+    subject,
+    scope,
+    ttlSeconds:3600,
+  });
+
+  async function call(token) {
+    const response = await worker.fetch(new Request("https://hub.example/mcp", {
+      method:"POST",
+      headers:{
+        authorization:"Bearer " + token,
+        "content-type":"application/json",
+        origin:"https://www.notion.so",
+      },
+      body:JSON.stringify({
+        jsonrpc:"2.0",
+        id:1,
+        method:"tools/call",
+        params:{
+          name:"go_hub_read_file",
+          arguments:{
+            repository:"pureekangraw-ops/Olympus",
+            path:"README.md",
+            workContext,
+          },
+        },
+      }),
+    }), env);
+    assert.equal(response.status, 200);
+    return response.json();
+  }
+
+  const light = await call(await tokenFor("LIGHT", "go-hub-light"));
+  assert.equal(light.error, undefined);
+  assert.equal(light.result.isError, undefined);
+  assert.deepEqual(light.result.structuredContent, {
+    content:readme,
+    sha:"readme-sha",
+  });
+
+  const go = await call(await tokenFor("GO", "go-hub"));
+  assert.equal(go.error, undefined);
+  assert.equal(go.result.isError, true);
+  assert.match(JSON.stringify(go.result), /CURRENT_HERMES_CARD_REQUIRED/);
+});
