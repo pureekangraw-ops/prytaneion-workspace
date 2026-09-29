@@ -154,11 +154,13 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
 
   const foundForCard = await body(await service.action({ action:"find", mission:"มาซ่อมโรงงาน HERMES", limit:5 }));
   assert.equal(Array.isArray(foundForCard.recommendedTools), true);
-  const cardIssued = await body(await service.action({
+  const cardResponse = await service.action({
     action:"issue_card",
     workContext,
     destinations:["destination://factory"],
-  }));
+  });
+  assert.equal(cardResponse.status, 200);
+  const cardIssued = await body(cardResponse);
   assert.equal(cardIssued.issued, true);
   assert.equal(cardIssued.card.state, "CURRENT");
   assert.equal(cardIssued.card.workId, workContext.workId);
