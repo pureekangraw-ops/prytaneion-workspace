@@ -24,7 +24,7 @@ test("V4 deploy smoke outfits the existing Work with current HERMES card contrac
   assert.match(workflow, /accessScope:"WORK"/);
   assert.match(workflow, /accessScope:"MAINTENANCE"/);
   assert.match(workflow, /action:"v4_inspect", workId, checkpointId, workContext:context\(\)/);
-  assert.match(workflow, /kind:"MAINTENANCE", destinations:\["maintenance"\]/);
+  assert.match(workflow, /kind:"MAINTENANCE"[\s\S]*destinations:\["maintenance"\]/);
   assert.doesNotMatch(workflow, /mcp\("\/mcp\/light"/);
 });
 
@@ -39,4 +39,12 @@ test("all post-deploy governed smoke calls stay bound to one WorkContext", () =>
   assert.match(workflow, /name: "go_hub_drive_health", arguments: \{ workContext \}/);
   assert.doesNotMatch(workflow, /name: "go_hub_observer_latest", arguments: \{\}/);
   assert.doesNotMatch(workflow, /name: "go_hub_drive_health", arguments: \{\}/);
+});
+
+
+test("maintenance deploy smoke carries bounded BIG-approved repair scope", () => {
+  const workflow = fs.readFileSync(".github/workflows/go-hub-deploy.yml", "utf8");
+  assert.match(workflow, /kind:"MAINTENANCE"/);
+  assert.match(workflow, /ownerApproval:"BIG_APPROVED"/);
+  assert.match(workflow, /repairScope:\["production runtime owner-binding route verification"\]/);
 });
