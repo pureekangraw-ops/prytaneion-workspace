@@ -335,7 +335,14 @@ async function controlRoomRead({ request, env, fetchImpl }) {
   }
 
   const controls = [
-    { id:"refresh-observations", label:"Refresh observations", mode:"READ", available:true },
+    { id:"refresh-observations", label:"Refresh observations", mode:"READ", owner:"CONTROL_ROOM", available:true },
+    { id:"inspect-centre", label:"Inspect Centre", mode:"READ", owner:"CENTRE", tool:"go_hub_centre_inspect", available:Boolean(env?.GO_HUB_CENTRE_STATE) },
+    { id:"inspect-factory", label:"Inspect Factory", mode:"READ", owner:"FACTORY", tool:"go_hub_factory_v4", action:"inspect", available:Boolean(env?.GO_HUB_FACTORY_STATE) },
+    { id:"diagnose-reprobe", label:"Diagnose / reprobe", mode:"WORK", owner:"MAINTENANCE", tool:"go_hub_maintenance", action:"run_system_check", available:true },
+    { id:"inspect-pixie-result", label:"Inspect PIXIE result", mode:"READ", owner:"PIXIE", tool:"go_hub_pixie_result", available:Boolean(env?.GITHUB_TOKEN) },
+    { id:"inspect-lighthouse", label:"Inspect LIGHTHOUSE", mode:"READ", owner:"LIGHTHOUSE", tool:"go_hub_lighthouse_control_port_state", available:Boolean(env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS) },
+    { id:"inspect-project-status", label:"Inspect project status", mode:"READ", owner:"PROJECT_STATUS", tool:"go_hub_project_status", available:Boolean(env?.GITHUB_TOKEN) },
+    { id:"return-centre", label:"Return to Centre", mode:"WORK", owner:"CENTRE", tool:"go_hub_centre_live_action", action:"v4_return", available:Boolean(env?.GO_HUB_CENTRE_STATE) },
   ];
   const googleConfigured = Boolean(env?.GOOGLE_WORKSPACE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_WORKSPACE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN || env?.GOOGLE_OAUTH_REFRESH_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN);
   const driveConfigured = Boolean(env?.GOOGLE_DRIVE_ACCESS_TOKEN || env?.DRIVE_ACCESS_TOKEN || env?.GDRIVE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GDRIVE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN || env?.DRIVE_REFRESH_TOKEN || env?.GDRIVE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN);
@@ -365,6 +372,8 @@ async function controlRoomRead({ request, env, fetchImpl }) {
     ok:true, room:"GO_CONTROL_ROOM", entryAuthority:"GO", mode:"LIVE_OBSERVATION_AND_AVAILABLE_CONTROLS",
     workId, checkpointId, observedAt:new Date().toISOString(),
     centre:centre.work, projectStatus, factory, board, github, cloudflare,
+    currentCard:centre?.mission?.memory?.cardMachine?.current || centre?.card || null,
+    pending:{ factory:factory?.nextAction || null, board:board?.nextAction || null },
     toolReality:observations.toolReality,
     observations, controls:observations.availableControls,
   });
