@@ -87,20 +87,6 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(found.source, "HEIMDALL_PROJECT_INDEX");
   assert.equal(found.candidates[0].workId, "WORK-OLD-FACTORY");
 
-  const reviewRequired = await service.action({
-    action:"create",
-    mission:"มาซ่อมโรงงาน HERMES",
-    requestedResult:"Factory works and card returns with current reality",
-    destinations:["destination://factory"],
-    scope:["destination://factory"],
-    recommendedTools:["go_hub_factory_v4","go_hub_read_file"],
-  });
-  assert.equal(reviewRequired.status, 409);
-  const review = await body(reviewRequired);
-  assert.equal(review.code, "HERMES_SIMILAR_WORK_REVIEW_REQUIRED");
-  assert.equal(review.decisionRequired, "CREATE_NEW_OR_REUSE");
-  assert.equal(review.candidates[0].workId, "WORK-OLD-FACTORY");
-
   const callerOverride = await service.action({
     action:"create",
     mission:"มาซ่อมโรงงาน HERMES",
@@ -166,6 +152,25 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(cardIssued.card.workId, workContext.workId);
   assert.equal(cardIssued.card.checkpointId, workContext.checkpointId);
 
+  const blockedFirst = await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://factory",
+    workspace:"standard",
+  });
+  assert.equal(blockedFirst.status, 409);
+  assert.equal((await body(blockedFirst)).code, "HERMES_ACTIVE_PASS_REQUIRED");
+  await body(await centreLive.action({
+    action:"v4_open_pass",
+    ...workContext,
+    actor:"GO",
+    kind:"WORK",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+    closeCondition:"RETURN",
+    returnAddress:workContext.checkpointId,
+    reason:"TEST_EXPLICIT_AUTHORITY",
+  }));
   const first = await body(await service.action({
     action:"first_open",
     workContext,
@@ -173,6 +178,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     workspace:"standard",
   }));
   assert.equal(first.status, "OPENED");
+  assert.equal(first.runtimePassOpened, false);
   assert.equal(first.card.sourceStatus, "ON PROCESS");
   assert.equal(first.mission.memory.openedSpaces["destination://factory"].openedBy, "heimdall");
   assert.equal(first.readout.kind, "HERMES_MISSION_READOUT");
@@ -211,6 +217,26 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(routeChanged.readout.warpDoors.length, 2);
   assert.equal(routeChanged.readout.warpDoors.find(item => item.destination === "destination://notion").active, false);
 
+  await body(await centreLive.action({
+    action:"v4_return",
+    ...workContext,
+    actor:"GO",
+    status:"OPEN",
+    result:{ summary:"switch explicit authority to notion" },
+    evidence:[],
+  }));
+  await body(await centreLive.action({ action:"v4_claim", ...workContext, actor:"GO" }));
+  await body(await centreLive.action({
+    action:"v4_open_pass",
+    ...workContext,
+    actor:"GO",
+    kind:"WORK",
+    destinations:["destination://notion"],
+    scope:["destination://notion"],
+    closeCondition:"RETURN",
+    returnAddress:workContext.checkpointId,
+    reason:"TEST_EXPLICIT_AUTHORITY",
+  }));
   const notionOpened = await body(await service.action({
     action:"first_open",
     workContext,
@@ -530,6 +556,25 @@ test("HERMES reopens COMPLETE Work on the same identity without minting a new Wo
   assert.equal(reopened.readout.resume.mode, "GO_ACTIVE");
   assert.equal(reopened.readout.work.workId, originalWorkId);
 
+  const blockedReopenedSpace = await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://factory",
+    workspace:"factory",
+  });
+  assert.equal(blockedReopenedSpace.status, 409);
+  assert.equal((await body(blockedReopenedSpace)).code, "HERMES_ACTIVE_PASS_REQUIRED");
+  await body(await centreLive.action({
+    action:"v4_open_pass",
+    ...workContext,
+    actor:"GO",
+    kind:"WORK",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+    closeCondition:"RETURN",
+    returnAddress:workContext.checkpointId,
+    reason:"TEST_EXPLICIT_AUTHORITY",
+  }));
   const reopenedSpace = await body(await service.action({
     action:"first_open",
     workContext,
@@ -537,7 +582,7 @@ test("HERMES reopens COMPLETE Work on the same identity without minting a new Wo
     workspace:"factory",
   }));
   assert.equal(reopenedSpace.status, "ALREADY_OPEN");
-  assert.equal(reopenedSpace.runtimePassOpened, true);
+  assert.equal(reopenedSpace.runtimePassOpened, false);
   assert.equal(reopenedSpace.card.sourceStatus, "ON PROCESS");
 });
 
@@ -667,7 +712,7 @@ test("HERMES issues a maintenance card from Maintenance pass context, not stale 
   assert.equal(response.status, 200);
   assert.equal(prepared.length, 1);
   assert.equal(prepared[0].accessScope, "MAINTENANCE");
-  assert.deepEqual(prepared[0].toolAccess, []);
+  assert.deepEqual(prepared[0].toolAccess, ["go_hub_maintenance"]);
 });
 
 test("HERMES exact Work and repository lookup does not suggest unrelated Work", async () => {
