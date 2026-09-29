@@ -54,8 +54,8 @@ test("governed mutation keeps granted tool authority when Centre has not registe
   assert.equal(executed.workContext.requestedResult, "Commit files and prepare a PR");
   assert.equal(executed.workContext.destination, "destination://factory");
   assert.equal(audit.length, 2);
-  assert.equal(audit[0].event.type, "TOOL_MUTATION_INTENT");
-  assert.equal(audit[1].event.type, "TOOL_MUTATION_RESULT");
+  assert.equal(audit[0].type, "TOOL_MUTATION_INTENT");
+  assert.equal(audit[1].type, "TOOL_MUTATION_RESULT");
 });
 
 test("governed mutation still enforces active ownership when Centre has a governed Work", async () => {
