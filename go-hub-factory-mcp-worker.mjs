@@ -412,19 +412,26 @@ export function createGovernedMutationRunner({ centreLive, globalAudit } = {}) {
       return json({ code: "WORK_IDENTITY_REQUIRED" }, 400);
     }
 
+    // Actor/tool authority is resolved by the actor-specific MCP registry before this
+    // governed runner is reached. Centre Work enriches execution context; a missing
+    // Work record must not revoke authority that the registry has already granted.
     const inspected = await inspectCentreCompat(centreLive, workContext);
     const centre = await responsePayload(inspected);
-    if (!inspected.ok) return json({ code: centre.code || "CENTRE_WORK_UNAVAILABLE" }, inspected.status || 502);
-    if (String(centre.checkpointId || "") !== String(workContext.checkpointId || "")) {
+    const centreCode = workText(centre?.code);
+    const workNotFound = !inspected.ok && centreCode === "CENTRE_WORK_NOT_FOUND";
+    if (!inspected.ok && !workNotFound) {
+      return json({ code: centre.code || "CENTRE_WORK_UNAVAILABLE" }, inspected.status || 502);
+    }
+    if (!workNotFound && String(centre.checkpointId || "") !== String(workContext.checkpointId || "")) {
       return json({ code: "CENTRE_CHECKPOINT_MISMATCH" }, 409);
     }
 
-    const ownership = centre.ownership || {};
+    const ownership = workNotFound ? {} : (centre.ownership || {});
     if (ownership.enforced === true && ownership.active !== true) {
       return json({ code: "CENTRE_WORK_LEASE_INACTIVE" }, 409);
     }
 
-    const centreWork = centre.work && typeof centre.work === "object" ? centre.work : {};
+    const centreWork = !workNotFound && centre.work && typeof centre.work === "object" ? centre.work : {};
     const maintenanceMutation = workText(centreWork.workType).toUpperCase() === "MAINTENANCE" && !String(operation || "").startsWith("heimdall.pass.");
     if (maintenanceMutation) {
       const pass = centreWork.pass && typeof centreWork.pass === "object" ? centreWork.pass : {};
@@ -441,9 +448,9 @@ export function createGovernedMutationRunner({ centreLive, globalAudit } = {}) {
       checkpointId:workText(centre.checkpointId) || workText(centreWork.checkpointId) || workText(workContext.checkpointId),
       returnAddress:workText(centre.returnAddress) || workText(centre.checkpointId) || workText(workContext.checkpointId),
       destination:operationDestination(operation),
-      task:workText(centreWork.task) || operation,
-      requestedResult:workText(centreWork.requestedResult) || operation,
-      lensReference:"GO_HUB_RESOLVED",
+      task:workText(centreWork.task) || workText(workContext.task) || operation,
+      requestedResult:workText(centreWork.requestedResult) || workText(workContext.requestedResult) || operation,
+      lensReference:workText(workContext.lensReference) || "GO_HUB_RESOLVED",
       ...(ownership.enforced === true ? {
         ownerId:workText(ownership.ownerId),
         leaseId:workText(ownership.leaseId),
