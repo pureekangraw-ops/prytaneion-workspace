@@ -1,3 +1,4 @@
+import { isCurrentAgentMissionTool } from "./go-hub-agent-mission-contract.mjs";
 const ACTIVE_CENTRE = new Set(["ACTIVE", "ON PROCESS", "DOING", "PROCESSING"]);
 const IDLE_PROJECT = new Set(["IDLE", "UNKNOWN", ""]);
 const STATUS_VALUES = new Set(["PASS", "LIVE", "VERIFIED", "CONFLICT", "MISMATCH", "STALE", "UNKNOWN"]);
@@ -177,11 +178,8 @@ export function readCurrentAgentMissionExposure({ listTools, now = () => new Dat
   } catch {
     tools = null;
   }
-  const entry = Array.isArray(tools) ? tools.find(tool => tool?.name === "go_hub_agent_mission") : null;
-  const actions = entry?.inputSchema?.properties?.action?.enum;
-  if (!Array.isArray(tools) || !Array.isArray(actions) ||
-      !actions.includes("find") || !actions.includes("enter") ||
-      !entry.inputSchema.required?.includes("action")) {
+  const entry = Array.isArray(tools) ? tools.find(isCurrentAgentMissionTool) : null;
+  if (!Array.isArray(tools) || !isCurrentAgentMissionTool(entry)) {
     return Object.freeze({
       status:"UNKNOWN", source:"GO_CONTROL_ROOM_CURRENT_MCP_LIST",
       reason:"CURRENT_AGENT_MISSION_CONTRACT_UNVERIFIED", observedAt, tools:[],
