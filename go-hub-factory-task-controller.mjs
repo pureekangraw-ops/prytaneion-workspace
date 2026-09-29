@@ -375,6 +375,29 @@ export function createFactoryController({ lifecycle, state, now = () => new Date
         return save({ revision: current.revision, task: next, receipt, action, before });
       }
 
+      if (action === "track_deploy") {
+        const deploymentSha = before.merge?.mergeSha || before.merge?.sha || before.headSha;
+        const response = await lifecycle.getWorkflowRuns({ repository: before.repository, sha: deploymentSha });
+        const parsed = await parseResponse(response);
+        const runs = parsed.ok ? (parsed.payload.runs || []) : [];
+        const deployRuns = runs.filter(run => /deploy|production/i.test(String(run.name || "")));
+        const terminal = deployRuns.filter(run => String(run.status || "") === "completed");
+        const failed = terminal.find(run => String(run.conclusion || "") !== "success");
+        const successful = terminal.find(run => String(run.conclusion || "") === "success");
+        const nextState = failed ? "DEPLOY_FAILED" : successful ? "DEPLOYED" : "DEPLOYING";
+        const receipt = createRealityReceipt({
+          id:createId(), action, status:parsed.ok ? "success" : "failure", repository:before.repository,
+          observedAt:now(), source:"github",
+          identity:{ baseBranch:before.baseBranch, baseSha:before.baseSha, workBranch:before.workBranch, headSha:deploymentSha, pullRequestNumber:before.pullRequest?.number || null },
+          result:parsed.payload,
+          evidence:{ runs:deployRuns },
+        });
+        if (!parsed.ok) return save({ revision:current.revision, task, receipt, action, before });
+        const deployment = successful ? { status:"success", sha:deploymentSha, runId:successful.id, target:successful.name || "production", url:successful.url || null } : { status:failed ? "failure" : "running", sha:deploymentSha, runs:deployRuns };
+        const next = task.transition(nextState, { headSha:before.headSha, deployment });
+        return save({ revision:current.revision, task:next, receipt, action, before });
+      }
+
       const recorders = {
         capture_baseline: ["recordProductionStep", input => ({ step: "BASELINE", evidence: input.evidence || input })],
         trace_system: ["recordProductionStep", input => ({ step: "TRACE", evidence: input.evidence || input })],
