@@ -421,6 +421,56 @@ export function createAgentMissionService({
     });
   }
 
+  async function reopen(input = {}) {
+    const workContext = requireWorkContext(input);
+    let current = await readMission(workContext);
+    let work = current.work || await inspectWork(workContext);
+    if (text(work.status).toUpperCase() !== "COMPLETE") {
+      return json({
+        code:"HERMES_COMPLETE_WORK_REQUIRED",
+        action:"reopen",
+        workContext,
+        readout:composeMissionReadout(work, current.mission),
+      }, 409);
+    }
+
+    const sessionStatus = text(current.mission?.session?.status).toUpperCase();
+    if (sessionStatus === "RETURNED") {
+      await centre({ action:"v4_mission_exit", ...workContext });
+      current = await readMission(workContext);
+    } else if (sessionStatus && sessionStatus !== "EXITED") {
+      return json({
+        code:"HERMES_ACTIVE_SESSION_MUST_RETURN_OR_EXIT",
+        action:"reopen",
+        workContext,
+        readout:composeMissionReadout(work, current.mission),
+      }, 409);
+    }
+
+    const reopened = await centre({ action:"v4_reopen", ...workContext, actor:"GO" });
+    work = reopened.work;
+    const memory = current.mission?.memory || {};
+    const entered = await centre({
+      action:"v4_mission_enter",
+      ...workContext,
+      sessionId:text(input.sessionId) || createId("HERMES-SESSION"),
+      agentId:text(input.agentId) || "GO",
+      mission:text(input.mission) || memory.mission || work.command || work.name,
+      requestedResult:text(input.requestedResult) || memory.requestedResult || work.expectedResult || null,
+    });
+    return json({
+      ok:true,
+      action:"reopen",
+      reopened:true,
+      sameWork:true,
+      workContext,
+      card:workCardView(work),
+      mission:entered.mission,
+      readout:composeMissionReadout(work, entered.mission),
+      prompt:"เปิด Work เดิมกลับมาทำต่อแล้วครับ ใช้ Work ID / Checkpoint เดิม",
+    });
+  }
+
   async function create(input = {}) {
     const mission = text(input.mission);
     const requestedResult = text(input.requestedResult);
@@ -955,6 +1005,7 @@ export function createAgentMissionService({
         switch (text(input.action).toLowerCase()) {
           case "find": return await find(input);
           case "enter": return await enter(input);
+          case "reopen": return await reopen(input);
           case "create": return await create(input);
           case "issue_card": return await issueCard(input);
           case "prepare_route_change": return await prepareRouteChange(input);
