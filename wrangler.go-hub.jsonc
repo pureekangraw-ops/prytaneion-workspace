@@ -34,6 +34,10 @@
         "class_name": "ObserverSessionRegistry"
       },
       {
+        "name": "FACTORY_EYE_SESSIONS",
+        "class_name": "FactoryEyeSessionRegistry"
+      },
+      {
         "name": "GO_HUB_GLOBAL_AUDIT",
         "class_name": "GoHubGlobalAuditLog"
       },
@@ -141,6 +145,12 @@
       "new_sqlite_classes": [
         "GoHubPixieMonitorState"
       ]
+    },
+    {
+      "tag": "v14-ergasterion-factory-eye",
+      "new_sqlite_classes": [
+        "FactoryEyeSessionRegistry"
+      ]
     }
   ],
   "vars": {
@@ -166,6 +176,7 @@
       "/hub/api/lighthouse-control-port/*",
       "/hub/lighthouse",
       "/hub/api/browser/*",
+      "/hub/api/factory-eye/*",
       "/hub/api/github-workspace/*",
       "/hub/api/notion-light/*",
       "/hub/observer",

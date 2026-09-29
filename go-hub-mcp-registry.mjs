@@ -147,6 +147,7 @@ function assertWork(value) {
 }
 
 const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission"]);
+const CARD_READ_BYPASS_TOOLS = new Set(["go_hub_observer_latest","go_hub_observer_screenshot"]);
 function cardToolAllowed(card, toolName) {
   if (toolName === "go_hub_maintenance") {
     return String(card?.access_scope || "").trim().toUpperCase() === "MAINTENANCE";
@@ -154,7 +155,7 @@ function cardToolAllowed(card, toolName) {
   return Array.isArray(card?.tool_access) && card.tool_access.includes(toolName);
 }
 async function assertCardAccess(lifecycle, name, args) {
-  if (CARD_BOOTSTRAP_TOOLS.has(name)) return;
+  if (CARD_BOOTSTRAP_TOOLS.has(name) || CARD_READ_BYPASS_TOOLS.has(name)) return;
   assertWork(args.workContext);
   if (typeof lifecycle.agentMission !== "function") throw new Error("HERMES_CARD_READER_UNAVAILABLE");
   const response = await lifecycle.agentMission({ action:"inspect", workContext:args.workContext });

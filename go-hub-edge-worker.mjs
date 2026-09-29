@@ -8,6 +8,7 @@ import { createProjectStatusReadService } from "./go-hub-project-status-service.
 import { correlateControlRoomTruth } from "./go-hub-control-room.js";
 import { createAccessToken } from "./go-hub-oauth.mjs";
 import { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
+import { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 import { createCentreLiveService } from "./go-hub-centre-live.mjs";
 import { createBroadcastService } from "./go-hub-broadcast-state.mjs";
 import { createNotionLightService } from "./go-hub-notion-light.mjs";
@@ -25,6 +26,7 @@ export { createGoHubV4, CUTOVER_CONTRACT };
 export { GoHubFactoryState } from "./go-hub-factory-state.mjs";
 export { GoHubPixieMonitorState } from "./go-hub-pixie-monitor.mjs";
 export { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
+export { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 export { GoHubCentreState } from "./go-hub-centre-live.mjs";
 export { GoHubGlobalAuditLog } from "./go-hub-global-audit.mjs";
 export { GoHubCounterState, GoHubCounterInboxState } from "./go-hub-counter.mjs";
@@ -38,6 +40,7 @@ const CENTRE_API_ROOT = "/hub/api/centre";
 const COUNTER_API_ROOT = "/hub/api/counter";
 const BROWSER_API_ROOT = "/hub/api/browser";
 const OBSERVER_API_ROOT = `${BROWSER_API_ROOT}/observer`;
+const FACTORY_EYE_API_ROOT = "/hub/api/factory-eye";
 const FACTORY_ACTION_PATH = "/hub/api/github-workspace/factory-action";
 const CONTROL_ROOM_PATH = "/hub/api/centre/control-room";
 const LIGHT_MCP_OWNER_PATH = "/hub/light-mcp";
@@ -114,6 +117,10 @@ function isObserverApiPath(pathname) {
   return pathname === OBSERVER_API_ROOT || pathname.startsWith(`${OBSERVER_API_ROOT}/`);
 }
 
+function isFactoryEyeApiPath(pathname) {
+  return pathname === FACTORY_EYE_API_ROOT || pathname.startsWith(`${FACTORY_EYE_API_ROOT}/`);
+}
+
 function gumroadOrigin(value) {
   try {
     const url = new URL(String(value || ""));
@@ -184,6 +191,60 @@ function sessionCredentials(request) {
     sessionId: String(request.headers.get("x-go-observer-session-id") || ""),
     sessionToken: String(request.headers.get("x-go-observer-session-token") || ""),
   };
+}
+
+function factoryEyeSessionsFor(env) {
+  if (env?.FACTORY_EYE_SESSIONS && typeof env.FACTORY_EYE_SESSIONS.getByName === "function") {
+    const durable = env.FACTORY_EYE_SESSIONS.getByName("ergasterion-factory-eye-v1");
+    if (!durable) return null;
+    if (typeof durable.fetch !== "function") return durable;
+    const call = async (path, input = {}) => {
+      const response = await durable.fetch(new Request("https://factory-eye.internal/" + path, {
+        method:"POST",
+        headers:{ "content-type":"application/json" },
+        body:JSON.stringify(input),
+      }));
+      const body = await response.json().catch(() => ({ code:"FACTORY_EYE_UNAVAILABLE" }));
+      return response.ok ? body : { ok:false, code:body?.code || "FACTORY_EYE_UNAVAILABLE" };
+    };
+    return Object.freeze({
+      start:input => call("start", input),
+      register:input => call("register", input),
+      heartbeat:input => call("heartbeat", input),
+      observe:input => call("observe", input),
+      receipt:input => call("receipt", input),
+      pullCommands:input => call("commands", input),
+      stop:input => call("stop", input),
+      latest:() => call("latest"),
+      screenshot:input => call("screenshot", input),
+    });
+  }
+  return null;
+}
+
+function factoryEyeCredentials(request) {
+  return {
+    sessionId:String(request.headers.get("x-factory-eye-session-id") || ""),
+    sessionToken:String(request.headers.get("x-factory-eye-session-token") || ""),
+  };
+}
+
+function factoryEyeStatus(code) {
+  if (code === "FACTORY_EYE_SESSION_EXPIRED") return 410;
+  if (code === "FACTORY_EYE_OBSERVATION_STALE") return 409;
+  if (code === "FACTORY_EYE_UNAVAILABLE") return 503;
+  if (code === "FACTORY_EYE_SESSION_INACTIVE" || code === "FACTORY_EYE_ADAPTER_MISMATCH") return 403;
+  return 400;
+}
+
+function factoryEyeOwnerAuthFailure(request, env) {
+  const configuredPasscode = String(env?.GOHUB_OWNER_PASSCODE || "");
+  if (!configuredPasscode) return json({ code:"FACTORY_EYE_OWNER_AUTH_NOT_CONFIGURED" }, 503);
+  const suppliedPasscode = String(request.headers.get("x-go-owner-passcode") || "");
+  if (!timingSafeEqual(suppliedPasscode, configuredPasscode)) {
+    return json({ code:"FACTORY_EYE_OWNER_AUTH_FAILED" }, 403);
+  }
+  return null;
 }
 
 function observerStatus(code) {
@@ -587,6 +648,55 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           nextTool:"go_hub_factory_v4",
         }, 410);
       }
+      if (isFactoryEyeApiPath(url.pathname)) {
+        const sessions = factoryEyeSessionsFor(env);
+        if (!sessions) return json({ code:"FACTORY_EYE_UNAVAILABLE" }, 503);
+
+        if (url.pathname === `${FACTORY_EYE_API_ROOT}/session/start`) {
+          if (request.method !== "POST") return json({ code:"METHOD_NOT_ALLOWED" }, 405);
+          const authFailure = factoryEyeOwnerAuthFailure(request, env);
+          if (authFailure) return authFailure;
+          const body = await request.json().catch(() => null);
+          if (!body || typeof body !== "object" || Array.isArray(body)) return json({ code:"INVALID_JSON" }, 400);
+          const result = await sessions.start({
+            adapterId:String(body.adapterId || ""),
+            ttlMs:30 * 24 * 60 * 60 * 1000,
+          });
+          if (!result?.ok) return json({ code:result?.code || "FACTORY_EYE_UNAVAILABLE" }, factoryEyeStatus(result?.code));
+          return json({ ...result, hub_origin:url.origin, bridge:"ERGASTERION_FACTORY_EYE_REMOTE_V1" }, 200);
+        }
+
+        const credentials = factoryEyeCredentials(request);
+        if (!credentials.sessionId || !credentials.sessionToken) {
+          return json({ code:"FACTORY_EYE_SESSION_INACTIVE" }, 403);
+        }
+        const adapterId = request.method === "GET"
+          ? String(url.searchParams.get("adapterId") || "")
+          : "";
+
+        if (request.method === "GET" && url.pathname === `${FACTORY_EYE_API_ROOT}/commands`) {
+          const result = await sessions.pullCommands({ ...credentials, adapterId });
+          return json(result?.ok ? result : { code:result?.code || "FACTORY_EYE_UNAVAILABLE" },
+            result?.ok ? 200 : factoryEyeStatus(result?.code));
+        }
+
+        if (request.method !== "POST") return json({ code:"METHOD_NOT_ALLOWED" }, 405);
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json({ code:"INVALID_JSON" }, 400);
+        const input = { ...credentials, ...body };
+
+        let result = null;
+        if (url.pathname === `${FACTORY_EYE_API_ROOT}/register`) result = await sessions.register(input);
+        else if (url.pathname === `${FACTORY_EYE_API_ROOT}/heartbeat`) result = await sessions.heartbeat(input);
+        else if (url.pathname === `${FACTORY_EYE_API_ROOT}/observe`) result = await sessions.observe(input);
+        else if (url.pathname === `${FACTORY_EYE_API_ROOT}/receipt`) result = await sessions.receipt(input);
+        else if (url.pathname === `${FACTORY_EYE_API_ROOT}/session/stop`) result = await sessions.stop(input);
+        else return json({ code:"NOT_FOUND" }, 404);
+
+        return json(result?.ok ? result : { code:result?.code || "FACTORY_EYE_UNAVAILABLE" },
+          result?.ok ? 200 : factoryEyeStatus(result?.code));
+      }
+
       if (!isBrowserApiPath(url.pathname)) {
         return delegate.fetch(request, env);
       }

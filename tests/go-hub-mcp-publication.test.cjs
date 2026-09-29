@@ -14,6 +14,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     "/hub/api/lighthouse-control-port/*",
     "/hub/lighthouse",
     "/hub/api/browser/*",
+    "/hub/api/factory-eye/*",
     "/hub/api/github-workspace/*",
     "/hub/api/notion-light/*",
     "/hub/observer",
@@ -30,6 +31,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     { name: "GO_HUB_CENTRE_STATE", class_name: "GoHubCentreState" },
     { name: "LIGHTHOUSE_CONTROL_PORT_SESSIONS", class_name: "LighthouseControlPortSessionRegistry" },
     { name: "OBSERVER_SESSIONS", class_name: "ObserverSessionRegistry" },
+    { name: "FACTORY_EYE_SESSIONS", class_name: "FactoryEyeSessionRegistry" },
     { name: "GO_HUB_GLOBAL_AUDIT", class_name: "GoHubGlobalAuditLog" },
     { name: "GO_HUB_COUNTER_STATE", class_name: "GoHubCounterState" },
     { name: "GO_HUB_COUNTER_INBOX", class_name: "GoHubCounterInboxState" },
@@ -46,6 +48,8 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("GoHubPixieMonitorState")));
   assert.ok(wrangler.migrations?.some(item =>
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("ObserverSessionRegistry")));
+  assert.ok(wrangler.migrations?.some(item =>
+    Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("FactoryEyeSessionRegistry")));
   assert.ok(wrangler.migrations?.some(item =>
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("GoHubCentreState")));
   assert.ok(wrangler.migrations?.some(item =>
@@ -70,6 +74,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     "go-hub-browser-interface.js",
     "go-hub-browser-observer.js",
     "go-hub-browser-observer-session.js",
+    "go-hub-factory-eye-session.mjs",
     "go-hub-edge-worker.mjs",
     "go-hub-factory-controller.mjs",
     "go-hub-factory-task-controller.mjs",
