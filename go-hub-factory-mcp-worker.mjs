@@ -661,6 +661,9 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         issuer: url.origin,
         signingKey: env?.GOHUB_MASTER_KEY,
         clientId,
+        acceptedClientIds: lightMcp
+          ? ["go-hub-light", "go-hub-notion"]
+          : ["go-hub-go", "go-hub-chatgpt"],
         resource,
         requireClientId: true,
         allowLegacyClientId: true,
