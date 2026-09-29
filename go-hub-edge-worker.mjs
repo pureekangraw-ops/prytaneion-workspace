@@ -396,13 +396,13 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           issuer:url.origin,
           signingKey:env.GOHUB_MASTER_KEY,
           clientId:"go-hub-light",
-          resource:url.origin + "/mcp/light",
+          resource:url.origin + "/mcp",
           subject:"LIGHT",
           scope:"go-hub-light",
           ttlSeconds:LIGHT_MCP_TOKEN_TTL_SECONDS,
         });
         return lightMcpOwnerPage({
-          mcpUrl:url.origin + "/mcp/light",
+          mcpUrl:url.origin + "/mcp",
           token,
           expiresLabel:"in 30 days",
         });
