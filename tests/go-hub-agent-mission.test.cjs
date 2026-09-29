@@ -207,6 +207,19 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(routeChanged.card.checkpointId, workContext.checkpointId);
   assert.deepEqual(routeChanged.card.destinations, ["destination://factory","destination://notion"]);
   assert.equal(routeChanged.audit.event, "CARD_REPLACED");
+  assert.deepEqual(routeChanged.readout.currentRoute, ["destination://factory","destination://notion"]);
+  assert.equal(routeChanged.readout.warpDoors.length, 2);
+  assert.equal(routeChanged.readout.warpDoors.find(item => item.destination === "destination://notion").active, false);
+
+  const notionOpened = await body(await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://notion",
+    workspace:"notion",
+  }));
+  assert.equal(notionOpened.status, "OPENED");
+  assert.equal(notionOpened.readout.warpDoors.find(item => item.destination === "destination://notion").active, true);
+  assert.equal(notionOpened.readout.currentRoute.includes("destination://notion"), true);
 
   const touched = await body(await service.action({
     action:"touch",
