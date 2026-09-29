@@ -193,14 +193,50 @@ function workDestinationAllowed(work, destination) {
     ...(Array.isArray(work?.pass?.scope) ? work.pass.scope : []),
   ].map(text);
   return allowed.includes(destination) ||
+    allowed.some(item => sameDestination(item, destination)) ||
     allowed.includes(destination.replace(/^destination:\/\//, "")) ||
     allowed.includes("ALL_GO_HUB_OWNED_AREAS");
 }
 
-function destinationTool(destination) {
-  const value = text(destination).replace(/^destination:\/\//, "").toLowerCase();
-  const map = { factory:"go_hub_factory_v4", notion:"go_hub_notion_light", drive:"go_hub_drive_capabilities", github:"go_hub_inspect_repository", counter:"go_hub_counter_create", lighthouse:"go_hub_lighthouse_control_port_state", maintenance:"go_hub_maintenance" };
-  return map[value] || null;
+function destinationKind(destination) {
+  const value = text(destination).toLowerCase();
+  if (!value) return null;
+  if (value.startsWith("destination://")) return value.slice("destination://".length).split(/[/?#]/)[0] || null;
+  if (value.startsWith("github://")) return "github";
+  if (value.startsWith("drive://")) return "drive";
+  if (value.startsWith("notion://")) return "notion";
+  return value.includes("://") ? value.split("://")[0] : value;
+}
+
+function sameDestination(left, right) {
+  const a = destinationKind(left);
+  const b = destinationKind(right);
+  return Boolean(a && b && a === b);
+}
+
+const DEFAULT_DESTINATION_TOOL_ACCESS = Object.freeze({
+  github:Object.freeze([
+    "go_hub_inspect_repository",
+    "go_hub_read_file",
+    "go_hub_create_branch",
+    "go_hub_put_file",
+    "go_hub_compare_refs",
+    "go_hub_open_pull_request",
+    "go_hub_get_pull_request",
+    "go_hub_get_ci",
+    "go_hub_get_failure_evidence",
+    "go_hub_rerun_failed_jobs",
+    "go_hub_get_workflow_runs",
+  ]),
+  factory:Object.freeze(["go_hub_factory_v4"]),
+  drive:Object.freeze(["go_hub_drive_capabilities"]),
+  counter:Object.freeze(["go_hub_counter_create"]),
+  lighthouse:Object.freeze(["go_hub_lighthouse_control_port_state"]),
+  maintenance:Object.freeze(["go_hub_maintenance"]),
+});
+
+function destinationTools(destination) {
+  return [...(DEFAULT_DESTINATION_TOOL_ACCESS[destinationKind(destination)] || [])];
 }
 
 function lightCandidates(lightResult = {}) {
@@ -411,7 +447,7 @@ export function createAgentMissionService({
       recommendedTools = unique(foundBody?.recommendedTools);
     }
     if (accessScope === "WORK" && !recommendedTools.length) {
-      recommendedTools = unique(destinations.map(destination => destinationTool(destination)).filter(Boolean));
+      recommendedTools = unique(destinations.flatMap(destinationTools));
     }
     if (accessScope === "WORK" && !recommendedTools.length) return json({
       code:"HERMES_TOOL_RECOMMENDATION_REQUIRED",
@@ -580,13 +616,11 @@ export function createAgentMissionService({
     if (!normalizedDestination) throw Object.assign(new Error("HERMES_DESTINATION_REQUIRED"), { status:400 });
 
     const requested = unique(work.requestedDestinations);
-    if (!requested.includes(normalizedDestination) && work.status === "OPEN") {
-      const updated = await centre({
-        action:"v4_update_destinations",
-        ...workContext,
-        destinations:[...requested, normalizedDestination],
+    if (!requested.some(destination => sameDestination(destination, normalizedDestination))) {
+      throw Object.assign(new Error("HERMES_ROUTE_CHANGE_REQUIRED"), {
+        status:409,
+        body:{ destination:normalizedDestination, requestedDestinations:requested },
       });
-      work = updated.work;
     }
 
     if (work.status === "WAIT CONFIRM") {
