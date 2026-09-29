@@ -131,15 +131,15 @@
       ]
     },
     {
-      "tag": "v13-go-hub-pixie-monitor",
-      "new_sqlite_classes": [
-        "GoHubPixieMonitorState"
-      ]
-    },
-    {
       "tag": "v12-go-hub-broadcast-state",
       "new_sqlite_classes": [
         "GoHubBroadcastState"
+      ]
+    },
+    {
+      "tag": "v13-go-hub-pixie-monitor",
+      "new_sqlite_classes": [
+        "GoHubPixieMonitorState"
       ]
     }
   ],
