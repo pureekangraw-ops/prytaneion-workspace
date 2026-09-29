@@ -40,7 +40,7 @@ test("Worker owns OAuth discovery and protected MCP routes before assets", async
   assert.match(denied.headers.get("www-authenticate"), /oauth-protected-resource/);
 });
 
-test("Worker keeps legacy Notion and canonical LIGHT OAuth clients on the LIGHT resource during migration", async () => {
+test("Worker keeps legacy Notion and canonical LIGHT OAuth clients on the shared GO resource during migration", async () => {
   const { createWorkerHandler } = await import(workerUrl + "?notion-client=" + Date.now());
   const handler = createWorkerHandler({ fetchImpl: async () => { throw new Error("no upstream expected"); } });
   const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
@@ -65,6 +65,6 @@ test("Worker keeps legacy Notion and canonical LIGHT OAuth clients on the LIGHT 
 
   assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", migrationEnv)).status, 200);
   assert.equal((await authorize("go-hub-light", "https://hub.example/mcp", migrationEnv)).status, 200);
-  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", migrationEnv)).status, 400);
+  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp/light", migrationEnv)).status, 400);
   assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", env)).status, 400);
 });
