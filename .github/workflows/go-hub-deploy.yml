@@ -774,7 +774,17 @@ jobs:
           // MAINTENANCE pass + card for the maintenance-only tool boundary.
           // Full-system verification requires live Control Room truth; this remains a route-only safe probe.
           await centre({ action:"v4_claim", workId, actor });
-          await centre({ action:"v4_open_pass", workId, actor, kind:"MAINTENANCE", destinations:["maintenance"] });
+          await centre({
+            action:"v4_open_pass",
+            workId,
+            actor,
+            kind:"MAINTENANCE",
+            destinations:["maintenance"],
+            audit:{
+              ownerApproval:"BIG_APPROVED",
+              repairScope:["production runtime owner-binding route verification"],
+            },
+          });
           await setMissionCard({
             accessScope:"MAINTENANCE",
             destinations:["destination://maintenance"],
