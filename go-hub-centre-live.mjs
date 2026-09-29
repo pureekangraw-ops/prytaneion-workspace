@@ -1,7 +1,7 @@
 import { CENTRE_STATES, createCentrePassage } from "./go-hub-centre.js";
 import { routeInterruptionReturn } from "./go-hub-city-route.js";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
-import { createWorkRecord as createV4WorkRecord, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, reopenWork as reopenV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
+import { createWorkRecord as createV4WorkRecord, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, reopenWork as reopenV4Work, emergencyEnterWork as emergencyEnterV4Work, emergencyExitWork as emergencyExitV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
 import { createHeimdallV4 } from "./go-hub-heimdall-v4.js";
 import { prepareStandardMissionTicket, issueStandardMissionTicket, replaceStandardMissionTicket, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 
@@ -288,6 +288,40 @@ function v4MissionAction(state, action, input = {}) {
 
   if (action === "v4_mission_get") {
     return { state, readOnly:true, mission:missionView(state) };
+  }
+
+  if (action === "v4_mission_emergency_enter") {
+    let mission = missionSidecar(state);
+    const sessionId = required(input.sessionId, "HERMES Session ID");
+    const agentId = required(input.agentId || "GO", "HERMES Agent ID");
+    const missionText = required(input.mission || state.work?.command || state.work?.name, "HERMES Mission");
+    if (!mission.memory.mission) mission.memory.mission = missionText;
+    if (!mission.memory.requestedResult) {
+      mission.memory.requestedResult = String(input.requestedResult || state.work?.expectedResult || "").trim() || null;
+    }
+    mission.session = {
+      sessionId,
+      agentId,
+      status:"ENTERED",
+      missionInput:missionText,
+      enteredAt:at,
+      returnedAt:null,
+      exitedAt:null,
+      lastDestination:null,
+      emergency:true,
+    };
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_EMERGENCY_ENTERED"), mission };
+  }
+
+  if (action === "v4_mission_emergency_exit") {
+    let mission = missionSidecar(state);
+    if (!mission.session) return { state, mission, idempotent:true };
+    mission.session.status = "EXITED";
+    mission.session.exitedAt = at;
+    mission.session.emergency = true;
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_EMERGENCY_EXITED"), mission };
   }
 
   if (action === "v4_mission_enter") {
@@ -722,6 +756,8 @@ export class GoHubCentreState {
       else if (action === "v4_wait") state.work = waitV4Work(state.work, { reason: input.reason });
       else if (action === "v4_resume") state.work = resumeV4Work(state.work, { actor: input.actor });
       else if (action === "v4_reopen") state.work = reopenV4Work(state.work, { actor: input.actor });
+      else if (action === "v4_emergency_enter") state.work = emergencyEnterV4Work(state.work);
+      else if (action === "v4_emergency_exit") state.work = emergencyExitV4Work(state.work);
       else if (action === "v4_return") state.work = await this.v4Heimdall(state.work).closePass(state.work.workId, { actor: input.actor, holder: input.actor, status: input.status, result: input.result, evidence: input.evidence });
       else throw Object.assign(new Error("unsupported Centre V4 action"), { status: 400 });
       await createCentreBackedWorkIndex({ storage: this.ctx.storage }).replace(state.work);
