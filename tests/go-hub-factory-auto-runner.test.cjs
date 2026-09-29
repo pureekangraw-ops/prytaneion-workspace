@@ -14,6 +14,12 @@ test("Factory auto runner keeps advancing actionable lifecycle states",async()=>
   assert.equal(result.status,"DONE"); assert.deepEqual(actions,["check_ci","check_ci"]); assert.equal(result.receipts.length,2);
 });
 
+test("Factory auto runner fails closed on an unknown action",async()=>{
+  const {classifyFactoryAutoAction}=await import(url+"?unknown="+Date.now());
+  const decision=classifyFactoryAutoAction({state:"PR_OPEN",nextAction:"brand-new-action",factoryStage:null});
+  assert.equal(decision.mode,"WAIT"); assert.equal(decision.reason,"UNKNOWN_ACTION");
+});
+
 test("Factory auto runner stops on owner-required state",async()=>{
   const {createFactoryAutoRunner}=await import(url);
   const runner=createFactoryAutoRunner({loadTask:async()=>({task:{state:"BLOCKED",nextAction:"resolve-blocker",factoryStage:null},revision:3}),executeAction:async()=>{throw new Error("must not execute");}});
