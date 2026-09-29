@@ -121,6 +121,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     createDecision:"CREATE_NEW",
     destinations:["destination://factory"],
     scope:["destination://factory"],
+    recommendedTools:["go_hub_factory_v4","go_hub_read_file"],
   });
   assert.equal(createdResponse.status, 201);
   const created = await body(createdResponse);
