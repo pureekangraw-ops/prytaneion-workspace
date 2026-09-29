@@ -322,7 +322,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     destination:"destination://factory",
     workspace:"standard",
   }));
-  assert.equal(secondOpen.status, "OPENED", "a new mission session may reopen an already provisioned space");
+  assert.equal(secondOpen.status, "ALREADY_OPEN", "provisioning identity remains stable across mission re-entry");
   assert.equal(secondOpen.runtimePassOpened, false, "HERMES must never mint runtime authority during first-open");
 });
 
