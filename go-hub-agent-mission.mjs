@@ -326,7 +326,10 @@ export function createAgentMissionService({
       mission,
       requestedResult,
     });
-    entered.mission.memory.recommendedTools = unique(input.recommendedTools);
+    if (unique(input.recommendedTools).length) {
+      await centre({ action:"v4_mission_recommended_tools", ...workContext, recommendedTools:unique(input.recommendedTools) });
+      entered.mission.memory.recommendedTools = unique(input.recommendedTools);
+    }
     return json({
       ok:true,
       action:"create",
