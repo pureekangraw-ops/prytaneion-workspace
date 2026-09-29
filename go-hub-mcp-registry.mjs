@@ -91,6 +91,9 @@ const definitions = [
   def("go_hub_cloudflare_health", "Verify Cloudflare account authentication and Workers API reachability without exposing credentials.", "cloudflareHealth", schema({}), ann(true)),
   def("go_hub_cloudflare_list_workers", "List sanitized Cloudflare Worker metadata for the configured account.", "cloudflareListWorkers", schema({}), ann(true)),
   def("go_hub_cloudflare_inspect_worker", "Read sanitized Worker bindings and deployment metadata without returning secret values.", "cloudflareInspectWorker", schema({ scriptName: str }, ["scriptName"]), ann(true)),
+  def("go_hub_notion_status", "Read the current GO Hub Notion MCP connection state without exposing credentials.", "notionStatus", schema({}), ann(true)),
+  def("go_hub_notion_connect", "Prepare the existing GO Hub to Notion MCP OAuth connection and return the owner authorization URL.", "notionConnect", schema({}), ann(false)),
+  def("go_hub_notion_search", "Search the connected Notion workspace through the existing GO Hub Notion MCP bridge.", "notionSearch", schema({ query: str }, ["query"]), ann(true)),
   def("go_hub_gmail_capabilities", "Inspect governed Gmail bridge configuration.", "gmailCapabilities", schema({}), ann(true)),
   def("go_hub_gmail_diagnostics", "Read sanitized Gmail OAuth diagnostics.", "gmailDiagnostics", schema({}), ann(true)),
   def("go_hub_gmail_profile", "Read Gmail profile metadata.", "gmailProfile", schema({}), ann(true)),
@@ -146,7 +149,7 @@ function assertWork(value) {
   for (const key of Object.keys(value)) if (!Object.hasOwn(workContext.properties, key)) throw new Error("unknown workContext field: " + key);
 }
 
-const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission"]);
+const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect"]);
 const CARD_READ_BYPASS_TOOLS = new Set(["go_hub_observer_latest","go_hub_observer_screenshot"]);
 function cardToolAllowed(card, toolName) {
   if (toolName === "go_hub_maintenance") {
