@@ -344,7 +344,7 @@ export function createAgentMissionService({
     const workType = text(work.workType).toUpperCase();
     const accessScope = workType === "MAINTENANCE" ? "MAINTENANCE" : "WORK";
     const recommendedTools = unique(input.toolAccess?.length ? input.toolAccess : current.mission?.memory?.recommendedTools);
-    const toolAccess = accessScope === "MAINTENANCE" ? ["ALL_GO_HUB_TOOLS"] : recommendedTools;
+    const toolAccess = accessScope === "MAINTENANCE" ? [] : recommendedTools;
     if (accessScope === "WORK" && !toolAccess.length) return json({
       code:"HERMES_TOOL_RECOMMENDATION_REQUIRED",
       prompt:"ยังไม่มีหลักฐานพอจะระบุเครื่องมือสำหรับงานนี้ HERMES ต้องค้นหา/เสนอเครื่องมือก่อนออกบัตร ห้ามเดาสิทธิ์",
