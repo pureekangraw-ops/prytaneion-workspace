@@ -326,9 +326,10 @@ export function createAgentMissionService({
       mission,
       requestedResult,
     });
-    if (unique(input.recommendedTools).length) {
-      await centre({ action:"v4_mission_recommended_tools", ...workContext, recommendedTools:unique(input.recommendedTools) });
-      entered.mission.memory.recommendedTools = unique(input.recommendedTools);
+    const discoveredTools = unique(input.recommendedTools);
+    if (discoveredTools.length) {
+      const remembered = await centre({ action:"v4_mission_recommended_tools", ...workContext, recommendedTools:discoveredTools });
+      entered.mission = remembered.mission;
     }
     return json({
       ok:true,
