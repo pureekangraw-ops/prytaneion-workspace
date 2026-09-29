@@ -679,6 +679,7 @@ export class GoHubCentreState {
         });
         state.work = {
           ...state.work,
+          requestedDestinations:missionUnique(replaced.current.destinations),
           accessScope:replaced.current.access_scope,
           toolAccess:clone(replaced.current.tool_access || []),
           snapshotKey:replaced.current.snapshot_key || state.work?.snapshotKey || null,
