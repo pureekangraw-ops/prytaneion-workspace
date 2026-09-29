@@ -394,3 +394,68 @@ test("HERMES Factory card stops on uncertainty and requires GO final confirmatio
   assert.equal(issued.acceptedBy, "GO");
   assert.equal(issued.factoryForm.repository, factory.repository);
 });
+
+
+test("HERMES reconciles indexed checkpoint pointers against Centre owner truth", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?pointer-drift=" + Date.now());
+  const workId = "WORK-POINTER-DRIFT";
+  const ownerCheckpoint = "CP-GO-HUB-SYSTEM-CHECK-001";
+  const centreLive = {
+    async action(input) {
+      if (input.action === "v4_inspect") {
+        return new Response(JSON.stringify({ ok:true, v4:true, work:{ workId, checkpointId:ownerCheckpoint } }), { headers:{ "content-type":"application/json" } });
+      }
+      throw new Error("unexpected Centre action " + input.action);
+    },
+  };
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[{
+      workId,
+      title:"GO Hub system check",
+      detail:"inspect current system",
+      updatedAt:"2026-09-29T08:00:00.000Z",
+      card:{ checkpointId:"CP-WORK-GO-HUB-SYSTEM-CHECK-20260924-001", title:"GO Hub system check", detail:"inspect current system" },
+    }] }), { headers:{ "content-type":"application/json" } }),
+  });
+  const response = await service.action({ action:"find", mission:"GO Hub system check" });
+  const result = await response.json();
+  assert.equal(result.candidates[0].checkpointId, ownerCheckpoint);
+  assert.equal(result.candidates[0].checkpointStatus, "OWNER_CORRECTED");
+  assert.equal(result.candidates[0].checkpointDrift, true);
+});
+
+
+test("HERMES issues a maintenance card from Maintenance pass context, not stale recommendations", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?maintenance-scope=" + Date.now());
+  const workContext = { workId:"WORK-MAINTENANCE-SCOPE", checkpointId:"CP-MAINTENANCE-SCOPE" };
+  const work = {
+    ...workContext,
+    workType:"NORMAL",
+    command:"Inspect GO Hub maintenance",
+    name:"Inspect GO Hub maintenance",
+    expectedResult:"Maintenance inspection",
+    requestedDestinations:["destination://maintenance"],
+    pass:{ kind:"MAINTENANCE", state:"ACTIVE", allowedDestinations:["ALL_GO_HUB_OWNED_AREAS"] },
+  };
+  const prepared = [];
+  const centreLive = {
+    async action(input) {
+      if (input.action === "v4_mission_get") return new Response(JSON.stringify({ ok:true, work, mission:{ session:{ status:"ENTERED" }, memory:{ mission:work.command, recommendedTools:["PIXIE_VISUAL_WORKBENCH"], selectedContext:[] } } }), { headers:{ "content-type":"application/json" } });
+      if (input.action === "v4_mission_card_prepare") { prepared.push(input); return new Response(JSON.stringify({ ok:true, mission:{} }), { headers:{ "content-type":"application/json" } }); }
+      if (input.action === "v4_mission_card_issue") return new Response(JSON.stringify({ ok:true, mission:{ memory:{ cardMachine:{ current:{ access_scope:"MAINTENANCE", tool_access:[] } } } } }), { headers:{ "content-type":"application/json" } });
+      throw new Error("unexpected Centre action " + input.action);
+    },
+  };
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+  });
+  const response = await service.action({ action:"issue_card", workContext });
+  assert.equal(response.status, 200);
+  assert.equal(prepared.length, 1);
+  assert.equal(prepared[0].accessScope, "MAINTENANCE");
+  assert.deepEqual(prepared[0].toolAccess, []);
+});

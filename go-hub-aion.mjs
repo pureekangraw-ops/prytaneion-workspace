@@ -1,12 +1,30 @@
+import { isCurrentAgentMissionTool } from "./go-hub-control-room.js";
+
+export const AGENT_MISSION_ACTIONS = Object.freeze([
+  "find",
+  "enter",
+  "create",
+  "issue_card",
+  "prepare_route_change",
+  "confirm_route_change",
+  "select_context",
+  "note",
+  "ask_light",
+  "first_open",
+  "touch",
+  "return",
+  "update_card",
+  "exit",
+  "inspect",
+]);
+
+
 const text = value => String(value ?? "").trim();
 const clone = value => value == null ? value : structuredClone(value);
 
 export function resolveCurrentAgentMissionEntry(tools = []) {
-  const current = (Array.isArray(tools) ? tools : []).find(tool => tool?.name === "go_hub_agent_mission");
-  if (!current?.inputSchema || typeof current.inputSchema !== "object" ||
-      !current.inputSchema.required?.includes("action") ||
-      !current.inputSchema.properties?.action?.enum?.includes("find") ||
-      !current.inputSchema.properties?.action?.enum?.includes("enter")) {
+  const current = (Array.isArray(tools) ? tools : []).find(isCurrentAgentMissionTool);
+  if (!isCurrentAgentMissionTool(current)) {
     return Object.freeze({ status:"UNKNOWN", reason:"CURRENT_AGENT_MISSION_ENTRY_NOT_EXPOSED", entry:null });
   }
   return Object.freeze({

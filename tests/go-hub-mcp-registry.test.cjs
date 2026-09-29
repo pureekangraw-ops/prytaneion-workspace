@@ -240,3 +240,22 @@ test("registry preserves domain failures and rejects unknown tools", async () =>
   assert.deepEqual(blocked.structuredContent, { code: "DEFAULT_BRANCH_WRITE_BLOCKED" });
   await assert.rejects(registry.callTool("unknown", {}), /unknown MCP tool/);
 });
+
+
+test("Maintenance card scope authorizes maintenance without inheriting tool_access", async () => {
+  const { createMcpRegistry } = await import(registryUrl + "?maintenance-card=" + Date.now());
+  const registry = createMcpRegistry({
+    lifecycle:{
+      agentMission:async input => new Response(JSON.stringify({
+        ok:true,
+        card:input.action === "inspect" ? { access_scope:"MAINTENANCE", tool_access:[] } : null,
+      }), { headers:{ "content-type":"application/json" } }),
+      maintenance:async () => new Response(JSON.stringify({ ok:true, status:"MAINTENANCE_READY" }), { headers:{ "content-type":"application/json" } }),
+    },
+  });
+  const result = await registry.callTool("go_hub_maintenance", {
+    action:"inspect",
+    workContext:{ workId:"WORK-MAINTENANCE-SCOPE", checkpointId:"CP-MAINTENANCE-SCOPE" },
+  });
+  assert.equal(result.structuredContent.status, "MAINTENANCE_READY");
+});

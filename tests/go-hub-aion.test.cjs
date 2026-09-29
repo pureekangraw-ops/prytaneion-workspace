@@ -8,7 +8,7 @@ function missionTool(version) {
   return {
     name:"go_hub_agent_mission",
     description:"Agent Mission " + version,
-    inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["find","enter"] }, version:{ const:version } }, required:["action"] },
+    inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["find","enter","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"] }, version:{ const:version } }, required:["action"] },
     annotations:{ readOnlyHint:false, destructiveHint:false },
   };
 }
@@ -119,4 +119,25 @@ test("MCP AION hands explicit existing Work context to Agent Mission enter", asy
   assert.deepEqual(received, {
     action:"enter", workId:"WORK-A", checkpointId:"CP-A", agentId:"GO", mission:"Continue existing work",
   });
+});
+
+
+test("AION.OPEN returns UNKNOWN when only a legacy Agent Mission surface is exposed", async () => {
+  const { createAionGate } = await mod();
+  const gate = createAionGate({
+    queryControlRoom:async () => ({
+      status:"CURRENT",
+      source:"GO_CONTROL_ROOM_CURRENT_MCP_LIST",
+      observedAt:"NOW",
+      tools:[{
+        name:"go_hub_agent_mission",
+        inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["prepare_card","confirm_card"] } }, required:["action"] },
+      }],
+    }),
+    now:() => "NOW",
+  });
+  const result = await gate.open({ context:{ mission:"legacy surface" } });
+  assert.equal(result.status, "UNKNOWN");
+  assert.equal(result.reason, "CURRENT_AGENT_MISSION_ENTRY_NOT_EXPOSED");
+  assert.equal(result.transfer, null);
 });

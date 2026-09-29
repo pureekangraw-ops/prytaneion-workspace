@@ -88,7 +88,7 @@ export function rankMissionCandidates(mission, pins = [], { limit = 6, threshold
     .slice(0, Math.max(1, Math.min(Number(limit) || 6, 20)))
     .map(({ pin, score }) => Object.freeze({
       workId:text(pin.workId),
-      checkpointId:text(pin.card?.checkpointId) || (text(pin.workId) ? "CP-" + text(pin.workId) : null),
+      checkpointId:text(pin.card?.checkpointId || pin.checkpointId) || null,
       cardId:text(pin.card?.cardId) || null,
       jobCode:text(pin.card?.jobCode || pin.jobCode) || null,
       title:text(pin.card?.title || pin.title) || null,
@@ -232,6 +232,24 @@ export function createAgentMissionService({
     return view.work;
   }
 
+  async function reconcileCandidate(candidate) {
+    if (!candidate?.workId) return { ...candidate, checkpointStatus:"UNKNOWN", checkpointDrift:false };
+    try {
+      const inspected = await centre({ action:"v4_inspect", workId:candidate.workId });
+      const ownerCheckpoint = text(inspected?.work?.checkpointId);
+      if (!ownerCheckpoint) return { ...candidate, checkpointId:null, checkpointStatus:"UNKNOWN", checkpointDrift:false };
+      const indexedCheckpoint = text(candidate.checkpointId);
+      return {
+        ...candidate,
+        checkpointId:ownerCheckpoint,
+        checkpointStatus:indexedCheckpoint === ownerCheckpoint ? "OWNER_VERIFIED" : "OWNER_CORRECTED",
+        checkpointDrift:Boolean(indexedCheckpoint && indexedCheckpoint !== ownerCheckpoint),
+      };
+    } catch {
+      return { ...candidate, checkpointId:null, checkpointStatus:"UNKNOWN", checkpointDrift:false };
+    }
+  }
+
   async function find(input = {}) {
     const mission = text(input.mission);
     if (!mission) return json({ code:"HERMES_MISSION_REQUIRED" }, 400);
@@ -243,9 +261,10 @@ export function createAgentMissionService({
     const exactSnapshot = /^SNAP-\d{8}-[A-Z0-9]{6}$/i.test(mission)
       ? board.pins.filter(pin => text(pin.card?.snapshot_key || pin.snapshotKey).toUpperCase() === mission.toUpperCase())
       : [];
-    const candidates = exactSnapshot.length
-      ? exactSnapshot.map(pin => ({ workId:text(pin.workId), checkpointId:text(pin.card?.checkpointId) || "CP-" + text(pin.workId), cardId:text(pin.card?.cardId)||null, jobCode:text(pin.card?.jobCode||pin.jobCode)||null, title:text(pin.card?.title||pin.title)||null, detail:text(pin.card?.detail||pin.detail)||null, status:text(pin.card?.sourceStatus||pin.status)||null, snapshotKey:mission.toUpperCase(), toolAccess:unique(pin.card?.tool_access||pin.toolAccess), score:1, source:"SNAPSHOT_KEY" }))
+    const indexedCandidates = exactSnapshot.length
+      ? exactSnapshot.map(pin => ({ workId:text(pin.workId), checkpointId:text(pin.card?.checkpointId || pin.checkpointId) || null, cardId:text(pin.card?.cardId)||null, jobCode:text(pin.card?.jobCode||pin.jobCode)||null, title:text(pin.card?.title||pin.title)||null, detail:text(pin.card?.detail||pin.detail)||null, status:text(pin.card?.sourceStatus||pin.status)||null, snapshotKey:mission.toUpperCase(), toolAccess:unique(pin.card?.tool_access||pin.toolAccess), score:1, source:"SNAPSHOT_KEY" }))
       : rankMissionCandidates(mission, board.pins, { limit:input.limit, threshold:input.threshold });
+    const candidates = await Promise.all(indexedCandidates.map(reconcileCandidate));
     return json({
       ok:true,
       action:"find",
@@ -355,7 +374,12 @@ export function createAgentMissionService({
     const work = current.work || await inspectWork(workContext);
     const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
     const workType = text(work.workType).toUpperCase();
-    const accessScope = workType === "MAINTENANCE" ? "MAINTENANCE" : "WORK";
+    const passKind = text(work.pass?.kind).toUpperCase();
+    const persistedScope = text(work.accessScope).toUpperCase();
+    const maintenanceDestination = destinations.some(destination => text(destination).replace(/^destination:\/\//, "").toLowerCase() === "maintenance");
+    const accessScope = workType === "MAINTENANCE" || passKind === "MAINTENANCE" || persistedScope === "MAINTENANCE" || maintenanceDestination
+      ? "MAINTENANCE"
+      : "WORK";
     let recommendedTools = unique(current.mission?.memory?.recommendedTools);
     if (accessScope === "WORK" && !recommendedTools.length) {
       const found = await find({ mission:current.mission?.memory?.mission || work.command || work.name, limit:5 });

@@ -1,3 +1,30 @@
+export const AGENT_MISSION_ACTIONS = Object.freeze([
+  "find",
+  "enter",
+  "create",
+  "issue_card",
+  "prepare_route_change",
+  "confirm_route_change",
+  "select_context",
+  "note",
+  "ask_light",
+  "first_open",
+  "touch",
+  "return",
+  "update_card",
+  "exit",
+  "inspect",
+]);
+
+export function isCurrentAgentMissionTool(tool) {
+  const actions = tool?.inputSchema?.properties?.action?.enum;
+  return tool?.name === "go_hub_agent_mission" &&
+    tool?.inputSchema?.type === "object" &&
+    Array.isArray(actions) &&
+    tool.inputSchema.required?.includes("action") &&
+    AGENT_MISSION_ACTIONS.every(action => actions.includes(action));
+}
+
 const ACTIVE_CENTRE = new Set(["ACTIVE", "ON PROCESS", "DOING", "PROCESSING"]);
 const IDLE_PROJECT = new Set(["IDLE", "UNKNOWN", ""]);
 const STATUS_VALUES = new Set(["PASS", "LIVE", "VERIFIED", "CONFLICT", "MISMATCH", "STALE", "UNKNOWN"]);
@@ -177,11 +204,8 @@ export function readCurrentAgentMissionExposure({ listTools, now = () => new Dat
   } catch {
     tools = null;
   }
-  const entry = Array.isArray(tools) ? tools.find(tool => tool?.name === "go_hub_agent_mission") : null;
-  const actions = entry?.inputSchema?.properties?.action?.enum;
-  if (!Array.isArray(tools) || !Array.isArray(actions) ||
-      !actions.includes("find") || !actions.includes("enter") ||
-      !entry.inputSchema.required?.includes("action")) {
+  const entry = Array.isArray(tools) ? tools.find(isCurrentAgentMissionTool) : null;
+  if (!Array.isArray(tools) || !isCurrentAgentMissionTool(entry)) {
     return Object.freeze({
       status:"UNKNOWN", source:"GO_CONTROL_ROOM_CURRENT_MCP_LIST",
       reason:"CURRENT_AGENT_MISSION_CONTRACT_UNVERIFIED", observedAt, tools:[],
