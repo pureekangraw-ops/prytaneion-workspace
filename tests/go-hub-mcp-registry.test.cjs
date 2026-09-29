@@ -34,6 +34,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
     "go_hub_observer_latest", "go_hub_observer_screenshot", "go_hub_linear_list_projects", "go_hub_linear_get_issue",
     "go_hub_linear_create_issue", "go_hub_linear_update_issue",
     "go_hub_cloudflare_capabilities", "go_hub_cloudflare_health", "go_hub_cloudflare_list_workers", "go_hub_cloudflare_inspect_worker",
+    "go_hub_notion_status", "go_hub_notion_connect", "go_hub_notion_search",
     "go_hub_gmail_capabilities", "go_hub_gmail_diagnostics", "go_hub_gmail_profile", "go_hub_gmail_search", "go_hub_gmail_get_message", "go_hub_gmail_send_message",
     "go_hub_calendar_capabilities", "go_hub_calendar_diagnostics", "go_hub_calendar_list", "go_hub_calendar_events", "go_hub_calendar_create_event",
     "go_hub_drive_capabilities", "go_hub_drive_health", "go_hub_drive_diagnostics", "go_hub_drive_root", "go_hub_drive_get_item", "go_hub_drive_list_children", "go_hub_drive_read_document", "go_hub_drive_download_file",
@@ -88,6 +89,9 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_cloudflare_health").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_cloudflare_list_workers").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_cloudflare_inspect_worker").annotations.readOnlyHint, true);
+  assert.equal(tools.find(tool => tool.name === "go_hub_notion_status").annotations.readOnlyHint, true);
+  assert.equal(tools.find(tool => tool.name === "go_hub_notion_connect").annotations.readOnlyHint, false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_notion_search").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_capabilities").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_health").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_diagnostics").annotations.readOnlyHint, true);
