@@ -252,10 +252,16 @@ test("Maintenance card scope authorizes maintenance without inheriting tool_acce
       }), { headers:{ "content-type":"application/json" } }),
       maintenance:async () => new Response(JSON.stringify({ ok:true, status:"MAINTENANCE_READY" }), { headers:{ "content-type":"application/json" } }),
     },
+    enforceCardAccess:true,
   });
+  const workContext = { workId:"WORK-MAINTENANCE-SCOPE", checkpointId:"CP-MAINTENANCE-SCOPE" };
   const result = await registry.callTool("go_hub_maintenance", {
     action:"inspect",
-    workContext:{ workId:"WORK-MAINTENANCE-SCOPE", checkpointId:"CP-MAINTENANCE-SCOPE" },
+    workContext,
   });
   assert.equal(result.structuredContent.status, "MAINTENANCE_READY");
+  await assert.rejects(
+    registry.callTool("go_hub_inspect_repository", { repository:"owner/repo", workContext }),
+    /CARD_TOOL_ACCESS_DENIED/,
+  );
 });
