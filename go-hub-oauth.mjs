@@ -219,11 +219,15 @@ export async function verifyAccessToken(request, config = {}) {
       ? oauthClients(config).map(client => client.subject + "\u0000" + client.scope)
       : [(config.subject || "big") + "\u0000" + (config.scope || "go-hub")];
   const expectedClientId = String(config.clientId || "").trim();
+  const acceptedClientIds = new Set([
+    expectedClientId,
+    ...(Array.isArray(config.acceptedClientIds) ? config.acceptedClientIds : []),
+  ].map(value => String(value || "").trim()).filter(Boolean));
   if (payload.type !== "access" || payload.iss !== config.issuer || payload.aud !== expectedResource ||
       !acceptedIdentities.includes(String(payload.sub) + "\u0000" + String(payload.scope)) ||
-      (config.requireClientId === true && (!expectedClientId ||
+      (config.requireClientId === true && (!acceptedClientIds.size ||
         (payload.client_id == null && config.allowLegacyClientId !== true) ||
-        (payload.client_id != null && payload.client_id !== expectedClientId)))) {
+        (payload.client_id != null && !acceptedClientIds.has(String(payload.client_id)))))) {
     throw new Error("invalid access token");
   }
   if (!Number.isFinite(payload.exp) || payload.exp <= nowSeconds(config)) throw new Error("expired access token");
