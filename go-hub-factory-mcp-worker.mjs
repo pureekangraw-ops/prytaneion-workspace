@@ -718,6 +718,13 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const pixie = createPixieCommandService({ fetchImpl, token:env.GITHUB_TOKEN });
       const pixieCommand = async input => {
         const response = await runMutation("pixie.command", input, () => pixie.command(input));
+        if (response.ok && env?.GO_HUB_PIXIE_MONITOR_STATE?.getByName) {
+          const body = await response.clone().json().catch(() => null);
+          if (body?.status === "QUEUED" && body?.requestId) {
+            const stub = env.GO_HUB_PIXIE_MONITOR_STATE.getByName("go-hub-pixie-monitor");
+            await stub.fetch(new Request("https://pixie-monitor.internal/watch", { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ requestId:body.requestId, workContext:input.workContext || null }) }));
+          }
+        }
         return response;
       };
       const pixieResult = async input => {
