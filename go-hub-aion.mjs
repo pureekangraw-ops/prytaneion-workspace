@@ -1,6 +1,7 @@
 import { isCurrentAgentMissionTool } from "./go-hub-control-room.js";
 
 export const AGENT_MISSION_ACTIONS = Object.freeze([
+  "arrive",
   "find",
   "enter",
   "create",

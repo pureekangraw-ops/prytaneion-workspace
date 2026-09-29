@@ -49,7 +49,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.deepEqual(
     tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.action.enum,
-    ["find","enter","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"]
+    ["arrive","find","enter","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"]
   );
   assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /HERMES owns the user-facing route operation/);
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, { type:"string", enum:["WORK","MAINTENANCE"] });

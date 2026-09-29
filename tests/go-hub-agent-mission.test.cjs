@@ -31,6 +31,20 @@ async function body(response) {
   return response.json();
 }
 
+test("HERMES arrival does not require a historical index or mint a Work", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?arrival=" + Date.now());
+  const service = createAgentMissionService({
+    centreLive:{ action:async () => { throw new Error("Centre Work must not be touched at arrival"); } },
+    counterDispatch:{ create:async () => { throw new Error("Counter must not be created at arrival"); } },
+    boardRead:async () => { throw new Error("history unavailable"); },
+  });
+  const result = await body(await service.action({ action:"arrive", agentId:"GO", mission:"Prepare Factory" }));
+  assert.equal(result.ok, true);
+  assert.equal(result.route, "UNKNOWN");
+  assert.equal(result.workContext, null);
+  assert.equal(result.authorityCreated, false);
+});
+
 test("HERMES production flow uses existing Work Card, durable memory, LIGHT, first-open, mandatory return, and exit", async () => {
   const { createAgentMissionService } = await import(agentUrl + "?flow=" + Date.now());
   const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?flow=" + Date.now());
@@ -483,4 +497,47 @@ test("HERMES exact Work and repository lookup does not suggest unrelated Work", 
   const unrelated = await body(await service.action({ action:"find", mission:"OLYMPUS version registry release governance LIGHT app update", threshold:0 }));
   assert.deepEqual(unrelated.candidates, []);
   assert.deepEqual(unrelated.recommendedTools, []);
+  const historical = await body(await service.action({ action:"find", mission:"WORK-PIXIE-20260929-001" }));
+  assert.deepEqual(historical.candidates[0].toolAccess, ["PIXIE_VISUAL_WORKBENCH"]);
+  assert.deepEqual(historical.recommendedTools, [], "historical Card tools are not current authority");
+});
+
+test("HERMES issues a current-route Card without retrieving historical Work tools", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?current-route=" + Date.now());
+  const workContext = { workId:"WORK-CURRENT-ROUTE", checkpointId:"CP-CURRENT-ROUTE" };
+  const work = { ...workContext, workType:"NORMAL", requestedDestinations:["destination://factory"] };
+  let prepared;
+  const service = createAgentMissionService({
+    centreLive:{ async action(input) {
+      if (input.action === "v4_mission_get") return new Response(JSON.stringify({ ok:true, work, mission:{ memory:{ mission:"Current Factory work", selectedContext:[] } } }));
+      if (input.action === "v4_mission_card_prepare") { prepared = input; return new Response(JSON.stringify({ ok:true })); }
+      if (input.action === "v4_mission_card_issue") return new Response(JSON.stringify({ ok:true, mission:{ memory:{ cardMachine:{ current:{ tool_access:prepared.toolAccess } } } } }));
+      throw new Error("unexpected Centre action");
+    } },
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => { throw new Error("historical Work lookup must be optional"); },
+  });
+  const response = await service.action({ action:"issue_card", workContext });
+  assert.equal(response.status, 200);
+  assert.deepEqual(prepared.toolAccess, ["go_hub_factory_v4"]);
+});
+
+test("HERMES creates a distinct Work without a historical review gate when no match exists", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?new-work=" + Date.now());
+  const actions = [];
+  const service = createAgentMissionService({
+    now:() => "2026-09-29T13:00:00.000Z",
+    centreLive:{ async action(input) {
+      actions.push(input);
+      if (input.action === "v4_create") return new Response(JSON.stringify({ ok:true, work:{ ...input.work, checkpointId:"CP-NEW" } }));
+      if (input.action === "v4_mission_enter") return new Response(JSON.stringify({ ok:true, mission:{ memory:{} } }));
+      throw new Error("unexpected Centre action");
+    } },
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] })),
+  });
+  const response = await service.action({ action:"create", mission:"Build unique runtime parser", requestedResult:"Parser runs", destinations:["destination://factory"] });
+  assert.equal(response.status, 201);
+  assert.equal(actions.some(input => input.action === "v4_create"), true);
+  assert.equal(actions.some(input => input.action === "v4_mission_recommended_tools"), false);
 });

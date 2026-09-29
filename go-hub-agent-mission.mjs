@@ -293,10 +293,23 @@ export function createAgentMissionService({
       action:"find",
       mission,
       candidates,
-      recommendedTools:unique(candidates.flatMap(item => item.toolAccess || [])),
+      recommendedTools:[],
       source:exactSnapshot.length ? "SNAPSHOT_KEY" : exactMissionReference(mission)?.type || "HEIMDALL_PROJECT_INDEX",
       noMatch:candidates.length === 0,
       boardExposed:false,
+    });
+  }
+
+  function arrive(input = {}) {
+    return json({
+      ok:true,
+      action:"arrive",
+      agentId:text(input.agentId) || "GO",
+      mission:text(input.mission) || null,
+      workContext:null,
+      route:"UNKNOWN",
+      authorityCreated:false,
+      workCreated:false,
     });
   }
 
@@ -332,13 +345,12 @@ export function createAgentMissionService({
       return json({ code:"HERMES_HEIMDALL_INDEX_UNAVAILABLE" }, 503);
     }
     const similar = rankMissionCandidates(mission, board.pins, { limit:input.limit, threshold:input.threshold });
-    if (text(input.createDecision).toUpperCase() !== "CREATE_NEW") {
+    if (similar.length && text(input.createDecision).toUpperCase() !== "CREATE_NEW") {
       return json({
         code:"HERMES_SIMILAR_WORK_REVIEW_REQUIRED",
         action:"create",
         mission,
         candidates:similar,
-        recommendedTools:unique(similar.flatMap(item => item.toolAccess || [])),
         decisionRequired:"CREATE_NEW_OR_REUSE",
         hint:"Review candidates first. Enter an existing Work to reuse it, or call create again with createDecision=CREATE_NEW.",
         boardExposed:false,
@@ -353,7 +365,7 @@ export function createAgentMissionService({
       pins:board.pins,
       at:now(),
     });
-    const recommendedTools = unique(input.recommendedTools?.length ? input.recommendedTools : similar.flatMap(item => item.toolAccess || []));
+    const recommendedTools = unique(input.recommendedTools);
     const created = await centre({
       action:"v4_create",
       workId,
@@ -405,11 +417,6 @@ export function createAgentMissionService({
       ? "MAINTENANCE"
       : "WORK";
     let recommendedTools = unique(current.mission?.memory?.recommendedTools);
-    if (accessScope === "WORK" && !recommendedTools.length) {
-      const found = await find({ mission:current.mission?.memory?.mission || work.command || work.name, limit:5 });
-      const foundBody = await payload(found);
-      recommendedTools = unique(foundBody?.recommendedTools);
-    }
     if (accessScope === "WORK" && !recommendedTools.length) {
       recommendedTools = unique(destinations.map(destination => destinationTool(destination)).filter(Boolean));
     }
@@ -843,6 +850,7 @@ export function createAgentMissionService({
     async action(input = {}) {
       try {
         switch (text(input.action).toLowerCase()) {
+          case "arrive": return arrive(input);
           case "find": return await find(input);
           case "enter": return await enter(input);
           case "create": return await create(input);

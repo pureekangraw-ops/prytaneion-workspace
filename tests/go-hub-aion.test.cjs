@@ -8,7 +8,7 @@ function missionTool(version) {
   return {
     name:"go_hub_agent_mission",
     description:"Agent Mission " + version,
-    inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["find","enter","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"] }, version:{ const:version } }, required:["action"] },
+    inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["arrive","find","enter","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"] }, version:{ const:version } }, required:["action"] },
     annotations:{ readOnlyHint:false, destructiveHint:false },
   };
 }
@@ -85,8 +85,8 @@ test("MCP AION reads the current contract twice in one chat and reaches Agent Mi
   assert.equal(second.contract.inputSchema.properties.version.const, "v2");
   assert.equal(second.handoff.status, "ARRIVED");
   assert.deepEqual(received, [
-    { action:"find", mission:"Inspect current contract" },
-    { action:"find", mission:"Inspect current contract" },
+    { action:"arrive", mission:"Inspect current contract", agentId:"GO" },
+    { action:"arrive", mission:"Inspect current contract", agentId:"GO" },
   ]);
   assert.equal(second.workCreated, false);
 
@@ -96,6 +96,23 @@ test("MCP AION reads the current contract twice in one chat and reaches Agent Mi
   assert.equal(stale.structuredContent.status, "UNKNOWN");
   assert.equal(stale.structuredContent.transfer, null);
   assert.equal(received.length, 2);
+});
+
+test("MCP AION reaches Agent Mission without requiring historical context", async () => {
+  const { createMcpRegistry } = await import("../go-hub-mcp-registry.mjs?empty=" + Date.now());
+  const received = [];
+  const registry = createMcpRegistry({
+    currentTools:() => [missionTool("current")],
+    lifecycle:{ agentMission:async input => {
+      received.push(input);
+      return new Response(JSON.stringify({ ok:true, action:"arrive", workContext:null, route:"UNKNOWN" }));
+    } },
+  });
+  const result = (await registry.callTool("go_hub_aion_open", { context:{} })).structuredContent;
+  assert.equal(result.ok, true);
+  assert.equal(result.handoff.status, "ARRIVED");
+  assert.equal(result.handoff.readback.route, "UNKNOWN");
+  assert.deepEqual(received, [{ action:"arrive", agentId:"GO" }]);
 });
 
 test("MCP AION hands explicit existing Work context to Agent Mission enter", async () => {
