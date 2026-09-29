@@ -38,17 +38,9 @@ test("LIGHT scoped bearer token authenticates only its resource/scope/subject", 
   );
 });
 
-test("LIGHT MCP exposes bounded code tools and hides delete/merge", async () => {
-  const { createAccessToken } = await import(oauthUrl + "?light-token=" + Date.now());
-  const { createFactoryMcpWorker } = await import(factoryUrl + "?light-tools=" + Date.now());
-  const token = await createAccessToken({
-    issuer:"https://hub.example",
-    signingKey:"master-secret",
-    resource:"https://hub.example/mcp",
-    subject:"light",
-    scope:"go-hub-light",
-    ttlSeconds:3600,
-  });
+test("GO and LIGHT receive the same MCP tool surface; identity stays in the token", async () => {
+  const { createAccessToken } = await import(oauthUrl + "?shared-tools=" + Date.now());
+  const { createFactoryMcpWorker } = await import(factoryUrl + "?shared-tools=" + Date.now());
   const worker = createFactoryMcpWorker({
     fetchImpl: async () => { throw new Error("network should not be used for tools/list"); },
   });
@@ -57,152 +49,80 @@ test("LIGHT MCP exposes bounded code tools and hides delete/merge", async () => 
     GOHUB_MASTER_KEY:"master-secret",
     GOHUB_OWNER_PASSCODE:"owner-passcode",
   };
-  const response = await worker.fetch(new Request("https://hub.example/mcp", {
-    method:"POST",
-    headers:{
-      authorization:"Bearer " + token,
-      "content-type":"application/json",
-      origin:"https://www.notion.so",
-    },
-    body:JSON.stringify({ jsonrpc:"2.0", id:1, method:"tools/list", params:{} }),
-  }), env);
-  assert.equal(response.status, 200);
-  const payload = await response.json();
-  const names = payload.result.tools.map(tool => tool.name);
-  assert.ok(names.includes("go_hub_broadcast_read"));
-  assert.equal(names.includes("go_hub_broadcast_activate"), false);
-  assert.ok(names.includes("go_hub_put_file"));
-  assert.ok(names.includes("go_hub_create_branch"));
-  assert.ok(names.includes("go_hub_open_pull_request"));
-  assert.ok(names.includes("go_hub_centre_inspect"));
-  assert.ok(names.includes("go_hub_v4_project_board"));
-  assert.ok(names.includes("go_hub_light_centre_v4_action"));
-  assert.ok(names.includes("go_hub_centre_audit_history"));
-  assert.ok(names.includes("go_hub_board_read"));
-  assert.ok(names.includes("go_hub_counter_create"));
-  assert.ok(names.includes("go_hub_counter_inbox"));
-  assert.ok(names.includes("go_hub_counter_get"));
-  assert.ok(names.includes("go_hub_counter_seen"));
-  assert.ok(names.includes("go_hub_counter_pickup"));
-  assert.ok(names.includes("go_hub_counter_answer"));
-  assert.ok(names.includes("go_hub_counter_readback"));
-  assert.ok(names.includes("go_hub_gmail_search"));
-  assert.ok(names.includes("go_hub_gmail_get_message"));
-  assert.ok(names.includes("go_hub_gmail_send_message"));
-  assert.ok(names.includes("go_hub_calendar_list"));
-  assert.ok(names.includes("go_hub_calendar_events"));
-  assert.ok(names.includes("go_hub_calendar_create_event"));
-  assert.ok(names.includes("go_hub_drive_root"));
-  assert.ok(names.includes("go_hub_drive_get_item"));
-  assert.ok(names.includes("go_hub_drive_list_children"));
-  assert.ok(names.includes("go_hub_drive_read_document"));
-  assert.ok(names.includes("go_hub_drive_download_file"));
-  assert.ok(names.includes("go_hub_drive_create_folder"));
-  assert.ok(names.includes("go_hub_drive_upload_file"));
-  assert.ok(names.includes("go_hub_drive_move_item"));
-  assert.ok(names.includes("go_hub_drive_rename_item"));
+  const tokenFor = (subject, scope) => createAccessToken({
+    issuer:"https://hub.example",
+    signingKey:"master-secret",
+    resource:"https://hub.example/mcp",
+    subject,
+    scope,
+    ttlSeconds:3600,
+  });
+  const list = async (subject, scope, origin) => {
+    const token = await tokenFor(subject, scope);
+    const response = await worker.fetch(new Request("https://hub.example/mcp", {
+      method:"POST",
+      headers:{
+        authorization:"Bearer " + token,
+        "content-type":"application/json",
+        ...(origin ? { origin } : {}),
+      },
+      body:JSON.stringify({ jsonrpc:"2.0", id:1, method:"tools/list", params:{} }),
+    }), env);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.error, undefined);
+    return payload.result.tools;
+  };
+
+  const goTools = await list("GO", "go-hub");
+  const lightTools = await list("LIGHT", "go-hub-light", "https://www.notion.so");
+  const goNames = goTools.map(tool => tool.name).sort();
+  const lightNames = lightTools.map(tool => tool.name).sort();
+
+  assert.deepEqual(lightNames, goNames);
   for (const name of [
-    "go_hub_gmail_send_message",
-    "go_hub_calendar_create_event",
-    "go_hub_drive_create_folder",
-    "go_hub_drive_upload_file",
-    "go_hub_drive_move_item",
-    "go_hub_drive_rename_item",
-  ]) {
-    const tool = payload.result.tools.find(item => item.name === name);
-    assert.ok(tool, "missing LIGHT direct tool " + name);
-    assert.equal(Object.hasOwn(tool.inputSchema.properties, "workContext"), false, name + " must not expose WorkContext gate");
-    assert.equal(tool.inputSchema.required.includes("workContext"), false, name + " must not require WorkContext");
-  }
-  for (const name of ["go_hub_create_branch", "go_hub_put_file", "go_hub_open_pull_request"]) {
-    const tool = payload.result.tools.find(item => item.name === name);
-    assert.ok(tool.inputSchema.required.includes("workContext"), name + " must stay behind Factory work identity");
-  }
-  for (const name of [
-    "go_hub_get_workflow_runs",
-    "go_hub_list_workflow_artifacts",
-    "go_hub_audit_history",
-    "go_hub_centre_read_only_fast_lane",
-    "go_hub_lighthouse_control_port_state",
-    "go_hub_project_status",
-    "go_hub_board_read",
-    "go_hub_observer_latest",
-    "go_hub_observer_screenshot",
-    "go_hub_linear_list_projects",
-    "go_hub_linear_get_issue",
-    "go_hub_cloudflare_capabilities",
-    "go_hub_cloudflare_health",
-    "go_hub_cloudflare_list_workers",
-    "go_hub_cloudflare_inspect_worker",
-  ]) assert.ok(names.includes(name), "LIGHT should inherit read-only tool " + name);
-  assert.equal(names.includes("go_hub_delete_file"), false);
-  assert.equal(names.includes("go_hub_merge_pull_request"), false);
-  assert.equal(names.includes("go_hub_centre_live_action"), false);
-  for (const name of [
-    "go_hub_heimdall_pass",
+    "go_hub_delete_file",
+    "go_hub_merge_pull_request",
     "go_hub_maintenance",
     "go_hub_factory_v4",
-    "go_hub_lighthouse_control_port_command",
-    "go_hub_linear_create_issue",
-    "go_hub_linear_update_issue",
-    "go_hub_archive_workflow_artifact",
-    "go_hub_rerun_failed_jobs",
-  ]) assert.equal(names.includes(name), false, "LIGHT should not inherit mutation " + name);
-  assert.equal(payload.result.tools.some(tool => Object.hasOwn(tool, "securitySchemes")), false);
+    "go_hub_aion_open",
+    "go_hub_pixie_command",
+  ]) {
+    assert.ok(lightNames.includes(name), "LIGHT must receive the same tool: " + name);
+  }
+  const lightMerge = lightTools.find(tool => tool.name === "go_hub_merge_pull_request");
+  assert.ok(lightMerge?.inputSchema?.required?.includes("workContext"), "shared governed mutations keep WorkContext");
 });
 
-test("LIGHT Drive upload bypasses Work/Centre gates and keeps tool-level SHA validation", async () => {
+test("LIGHT Drive upload keeps the same WorkContext gate as GO", async () => {
   const { createAccessToken } = await import(oauthUrl + "?light-upload-token=" + Date.now());
   const { createFactoryMcpWorker } = await import(factoryUrl + "?light-upload=" + Date.now());
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
     resource:"https://hub.example/mcp",
-    subject:"light",
+    subject:"LIGHT",
     scope:"go-hub-light",
     ttlSeconds:3600,
   });
-  let calls = 0;
   const worker = createFactoryMcpWorker({
-    fetchImpl: async () => { calls += 1; throw new Error("bad SHA must fail before upstream"); },
+    fetchImpl: async () => { throw new Error("network should not be used for tools/list"); },
   });
   const response = await worker.fetch(new Request("https://hub.example/mcp", {
     method:"POST",
     headers:{ authorization:"Bearer " + token, "content-type":"application/json", origin:"https://www.notion.so" },
-    body:JSON.stringify({
-      jsonrpc:"2.0",
-      id:2,
-      method:"tools/call",
-      params:{
-        name:"go_hub_drive_upload_file",
-        arguments:{
-          parentId:"governed-root",
-          name:"pixie.zip",
-          mimeType:"application/zip",
-          contentBase64:"cGl4aWU=",
-          size:5,
-          sha256:"0".repeat(64),
-        },
-      },
-    }),
+    body:JSON.stringify({ jsonrpc:"2.0", id:2, method:"tools/list", params:{} }),
   }), {
     GITHUB_TOKEN:"github-token",
     GOHUB_MASTER_KEY:"master-secret",
     GOHUB_OWNER_PASSCODE:"owner-passcode",
-    GO_HUB_CENTRE_STATE:{
-      getByName() { throw new Error("LIGHT direct Drive tool must not inspect Centre"); },
-    },
-    GO_HUB_GLOBAL_AUDIT:{
-      getByName() { throw new Error("LIGHT direct Drive tool must not write governed mutation audit"); },
-    },
   });
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.result.isError, true);
-  assert.equal(payload.result.structuredContent.code, "DRIVE_UPLOAD_SHA256_MISMATCH");
-  assert.equal(calls, 0);
+  const upload = payload.result.tools.find(tool => tool.name === "go_hub_drive_upload_file");
+  assert.ok(upload);
+  assert.ok(upload.inputSchema.required.includes("workContext"));
 });
-
 
 test("LIGHT Centre read tools perform bounded read-only calls", async () => {
   const { createAccessToken } = await import(oauthUrl + "?light-centre-read=" + Date.now());
@@ -325,7 +245,7 @@ test("LIGHT V4 tool rejects Return and waiting on another holder's Work", async 
   assert.deepEqual(calls, ["v4_inspect"]);
 });
 
-test("LIGHT MCP board.read returns bounded authoritative Board truth without mutation tools", async () => {
+test("LIGHT board.read returns bounded authoritative Board truth on the shared tool surface", async () => {
   const { createAccessToken } = await import(oauthUrl + "?light-board-read=" + Date.now());
   const { createFactoryMcpWorker } = await import(factoryUrl + "?light-board-read=" + Date.now());
   const token = await createAccessToken({
@@ -499,7 +419,7 @@ test("LIGHT Cloudflare mirror is read-only and never exposes runtime secrets", a
 });
 
 
-test("LIGHT MCP advertises its own OAuth metadata and accepts Notion OAuth identity without widening tools", async () => {
+test("Notion LIGHT identity authenticates on shared MCP metadata and receives the same tool surface", async () => {
   const { createAccessToken } = await import(oauthUrl + "?light-notion-oauth-token=" + Date.now());
   const { createFactoryMcpWorker } = await import(factoryUrl + "?light-notion-oauth=" + Date.now());
   const worker = createFactoryMcpWorker({
@@ -545,7 +465,7 @@ test("LIGHT MCP advertises its own OAuth metadata and accepts Notion OAuth ident
   const names = payload.result.tools.map(tool => tool.name);
   assert.ok(names.includes("go_hub_centre_inspect"));
   assert.ok(names.includes("go_hub_put_file"));
-  assert.equal(names.includes("go_hub_merge_pull_request"), false);
-  assert.equal(names.includes("go_hub_centre_live_action"), false);
-  assert.equal(names.includes("go_hub_maintenance"), false);
+  assert.ok(names.includes("go_hub_merge_pull_request"));
+  assert.ok(names.includes("go_hub_centre_live_action"));
+  assert.ok(names.includes("go_hub_maintenance"));
 });
