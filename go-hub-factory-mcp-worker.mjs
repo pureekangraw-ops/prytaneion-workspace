@@ -1016,6 +1016,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           notionStatus: () => notionLight.status(),
           notionConnect: () => notionLight.prepare({ hubOrigin:url.origin }),
           notionSearch: input => notionLight.search(input),
+          notionTools: () => notionLight.tools(),
+          notionCall: input => runOperationalMutation("notion.call", input, () => notionLight.callTool(input)),
           gmailCapabilities: () => googleWorkspace.capabilities(),
           gmailDiagnostics: () => googleWorkspace.diagnostics(),
           gmailProfile: () => googleWorkspace.gmailProfile(),
