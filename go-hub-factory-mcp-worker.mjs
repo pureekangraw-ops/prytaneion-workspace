@@ -506,7 +506,6 @@ export function createObserverEvidenceService({ namespace, factoryEyeNamespace }
       if (!result?.ok) {
         return json({
           code:result?.code || eye?.code || "HUB_UNAVAILABLE",
-          factoryEyeCode:eye?.code || null,
         }, observerStatus(result?.code));
       }
       return json({ ...result, source:"LEGACY_BROWSER_OBSERVER" }, 200);
