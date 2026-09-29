@@ -457,12 +457,6 @@ export class GoHubCounterDispatchState {
       });
     }
 
-    if (target === "LIGHT" && (state.mode || "SEARCH") === "MONITOR") {
-      const result = this.core.blocked({ target, error:"MONITOR_ROUTE_NOT_ACTIVE" }, state);
-      if (!result.idempotent) await this.save(result.dispatch);
-      return publicState(result.dispatch, { monitor:false });
-    }
-
     if (target === "LIGHT" && (state.mode || "SEARCH") === "SEARCH") {
       const namespace = this.env?.GO_HUB_NOTION_LIGHT_STATE;
       const notion = namespace && typeof namespace.getByName === "function"
