@@ -292,14 +292,38 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(reentered.readout.kind, "HERMES_MISSION_READOUT");
   assert.equal(reentered.readout.resume.mode, "RETURNED_OPEN");
   assert.equal(reentered.readout.resume.resumable, true);
+  const blockedSecondOpen = await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://factory",
+    workspace:"standard",
+  });
+  assert.equal(blockedSecondOpen.status, 409);
+  assert.equal((await body(blockedSecondOpen)).code, "HERMES_ACTIVE_PASS_REQUIRED");
+  await body(await centreLive.action({
+    action:"v4_claim",
+    ...workContext,
+    actor:"GO",
+  }));
+  await body(await centreLive.action({
+    action:"v4_open_pass",
+    ...workContext,
+    actor:"GO",
+    kind:"WORK",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+    closeCondition:"RETURN",
+    returnAddress:workContext.checkpointId,
+    reason:"TEST_EXPLICIT_AUTHORITY",
+  }));
   const secondOpen = await body(await service.action({
     action:"first_open",
     workContext,
     destination:"destination://factory",
     workspace:"standard",
   }));
-  assert.equal(secondOpen.status, "ALREADY_OPEN", "Heimdall first-open decision is not repeated for an already provisioned space");
-  assert.equal(secondOpen.runtimePassOpened, true, "runtime access may be reopened automatically without making first-open a new gate");
+  assert.equal(secondOpen.status, "OPENED", "a new mission session may reopen an already provisioned space");
+  assert.equal(secondOpen.runtimePassOpened, false, "HERMES must never mint runtime authority during first-open");
 });
 
 test("HERMES derives bounded GitHub tool access from an existing destination instead of blocking on tool recommendation", async () => {
@@ -581,8 +605,8 @@ test("HERMES reopens COMPLETE Work on the same identity without minting a new Wo
     destination:"destination://factory",
     workspace:"factory",
   }));
-  assert.equal(reopenedSpace.status, "ALREADY_OPEN");
-  assert.equal(reopenedSpace.runtimePassOpened, false);
+  assert.equal(reopenedSpace.status, "OPENED");
+  assert.equal(reopenedSpace.runtimePassOpened, false, "HERMES must use explicit authority without minting a Pass");
   assert.equal(reopenedSpace.card.sourceStatus, "ON PROCESS");
 });
 
