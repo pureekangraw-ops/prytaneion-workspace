@@ -119,6 +119,7 @@ test("MCP AION returns route only and never calls Agent Mission for mission or W
 test("AION route result stays non-error when only legacy Agent Mission is exposed", async () => {
   const { createMcpRegistry } = await import("../go-hub-mcp-registry.mjs?legacy-route=" + Date.now());
   const registry = createMcpRegistry({
+    lifecycle:{},
     currentTools:() => [{
       name:"go_hub_agent_mission",
       inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["prepare_card","confirm_card"] } }, required:["action"] },
