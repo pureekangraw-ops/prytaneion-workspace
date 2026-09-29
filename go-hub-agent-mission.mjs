@@ -341,10 +341,14 @@ export function createAgentMissionService({
     const current = await readMission(workContext);
     const work = current.work || await inspectWork(workContext);
     const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
-    const accessScope = text(input.accessScope).toUpperCase();
-    const toolAccess = unique(input.toolAccess);
-    if (!["WORK","MAINTENANCE"].includes(accessScope)) return json({ code:"HERMES_ACCESS_SCOPE_REQUIRED", prompt:"เลือกขนาดสิทธิ์ก่อนครับ: WORK หรือ MAINTENANCE" }, 409);
-    if (accessScope === "WORK" && !toolAccess.length) return json({ code:"HERMES_TOOL_ACCESS_REQUIRED", prompt:"เลือกเครื่องมือที่จะเปิดสิทธิ์ให้การ์ดครับ" }, 409);
+    const workType = text(work.workType).toUpperCase();
+    const accessScope = workType === "MAINTENANCE" ? "MAINTENANCE" : "WORK";
+    const recommendedTools = unique(input.toolAccess?.length ? input.toolAccess : current.mission?.memory?.recommendedTools);
+    const toolAccess = accessScope === "MAINTENANCE" ? ["ALL_GO_HUB_TOOLS"] : recommendedTools;
+    if (accessScope === "WORK" && !toolAccess.length) return json({
+      code:"HERMES_TOOL_RECOMMENDATION_REQUIRED",
+      prompt:"ยังไม่มีหลักฐานพอจะระบุเครื่องมือสำหรับงานนี้ HERMES ต้องค้นหา/เสนอเครื่องมือก่อนออกบัตร ห้ามเดาสิทธิ์",
+    }, 409);
     const response = await centre({
       action:"v4_mission_card_prepare",
       ...workContext,
@@ -360,7 +364,7 @@ export function createAgentMissionService({
       workContext,
       cardDraft:response.mission?.memory?.cardMachine?.draft || null,
       issued:false,
-      prompt:"นี่ครับบัตรของคุณ ตรวจสอบ access_scope และ tool_access แล้วรบกวนยืนยันครับ",
+      prompt:"เตรียมบัตรจาก Work truth และเครื่องมือที่ HERMES พบแล้วครับ",
     });
   }
 
