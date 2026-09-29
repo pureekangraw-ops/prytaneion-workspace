@@ -394,3 +394,34 @@ test("HERMES Factory card stops on uncertainty and requires GO final confirmatio
   assert.equal(issued.acceptedBy, "GO");
   assert.equal(issued.factoryForm.repository, factory.repository);
 });
+
+
+test("HERMES reconciles indexed checkpoint pointers against Centre owner truth", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?pointer-drift=" + Date.now());
+  const workId = "WORK-POINTER-DRIFT";
+  const ownerCheckpoint = "CP-GO-HUB-SYSTEM-CHECK-001";
+  const centreLive = {
+    async action(input) {
+      if (input.action === "v4_inspect") {
+        return new Response(JSON.stringify({ ok:true, v4:true, work:{ workId, checkpointId:ownerCheckpoint } }), { headers:{ "content-type":"application/json" } });
+      }
+      throw new Error("unexpected Centre action " + input.action);
+    },
+  };
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[{
+      workId,
+      title:"GO Hub system check",
+      detail:"inspect current system",
+      updatedAt:"2026-09-29T08:00:00.000Z",
+      card:{ checkpointId:"CP-WORK-GO-HUB-SYSTEM-CHECK-20260924-001", title:"GO Hub system check", detail:"inspect current system" },
+    }] }), { headers:{ "content-type":"application/json" } }),
+  });
+  const response = await service.action({ action:"find", mission:"GO Hub system check" });
+  const result = await response.json();
+  assert.equal(result.candidates[0].checkpointId, ownerCheckpoint);
+  assert.equal(result.candidates[0].checkpointStatus, "OWNER_CORRECTED");
+  assert.equal(result.candidates[0].checkpointDrift, true);
+});
