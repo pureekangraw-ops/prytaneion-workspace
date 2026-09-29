@@ -303,9 +303,7 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
   const routes = cardUnique(destinations?.length ? destinations : work.requestedDestinations);
   const scope = text(accessScope || work.accessScope || (String(work.workType || "").toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
   if (!["WORK","MAINTENANCE"].includes(scope)) throw new Error("MISSION_TICKET_ACCESS_SCOPE_INVALID");
-  const tools = scope === "MAINTENANCE"
-    ? []
-    : cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
+  const tools = cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
   if (scope === "WORK" && !tools.length) throw new Error("MISSION_TICKET_TOOL_ACCESS_REQUIRED");
   const snapshot = scope === "WORK" ? (text(snapshotKey || work.snapshotKey) || createSnapshotKey({ at:now(), randomId })) : null;
   return freeze({
