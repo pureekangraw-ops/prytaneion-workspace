@@ -716,21 +716,12 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const projectStatus = createProjectStatusReadService({ lifecycle, factoryBinding:env?.GO_HUB_FACTORY_STATE });
       const boardPinRoute = createBoardPinRouteReadService();
       const pixie = createPixieCommandService({ fetchImpl, token:env.GITHUB_TOKEN });
-      const pixiePending = new Map();
       const pixieCommand = async input => {
         const response = await runMutation("pixie.command", input, () => pixie.command(input));
-        if (response.ok) {
-          const body = await response.clone().json().catch(() => null);
-          if (body?.status === "QUEUED" && body?.requestId) pixiePending.set(body.requestId, { workContext:input.workContext || null });
-        }
         return response;
       };
       const pixieResult = async input => {
         const response = await pixie.result(input);
-        if (response.ok) {
-          const body = await response.clone().json().catch(() => null);
-          if (["ANSWERED","FAILED"].includes(String(body?.status || ""))) pixiePending.delete(String(body.requestId || input.requestId || ""));
-        }
         return response;
       };
       const drive = createGoogleDriveService({
