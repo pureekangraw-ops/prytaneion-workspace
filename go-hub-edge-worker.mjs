@@ -224,7 +224,7 @@ function lightMcpOwnerPage(result = null) {
   const resultHtml = result
     ? `<section><h2>LIGHT MCP ready</h2><p>MCP URL</p><textarea readonly rows="2" style="width:100%">${result.mcpUrl}</textarea><p>Bearer token (expires ${result.expiresLabel})</p><textarea readonly rows="6" style="width:100%">${result.token}</textarea><p>Connect this as a custom MCP server in Notion Agent and enable only the code tools you need.</p></section>`
     : "";
-  return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GO Hub LIGHT MCP</title></head><body style="font-family:system-ui;max-width:760px;margin:48px auto;padding:0 20px"><h1>GO Hub × LIGHT</h1><p>Mint a scoped bearer token for LIGHT. This token can only authenticate to the restricted <code>/mcp/light</code> surface; merge/delete are not exposed there.</p><form method="post"><label>Owner passcode <input name="passcode" type="password" autocomplete="current-password" required></label><button type="submit">Create LIGHT token</button></form>${resultHtml}</body></html>`, {
+  return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GO Hub LIGHT MCP</title></head><body style="font-family:system-ui;max-width:760px;margin:48px auto;padding:0 20px"><h1>GO Hub × LIGHT</h1><p>Mint a scoped bearer token for LIGHT. GO and LIGHT share the canonical <code>/mcp</code> entry and the same tool surface; token identity records the actor while Work, Card, Authority, and owner approval govern actions.</p><form method="post"><label>Owner passcode <input name="passcode" type="password" autocomplete="current-password" required></label><button type="submit">Create LIGHT token</button></form>${resultHtml}</body></html>`, {
     headers:{ "content-type":"text/html; charset=utf-8", "cache-control":"no-store" },
   });
 }
@@ -395,13 +395,14 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         const token = await createAccessToken({
           issuer:url.origin,
           signingKey:env.GOHUB_MASTER_KEY,
-          resource:url.origin + "/mcp/light",
-          subject:"light",
+          clientId:"go-hub-light",
+          resource:url.origin + "/mcp",
+          subject:"LIGHT",
           scope:"go-hub-light",
           ttlSeconds:LIGHT_MCP_TOKEN_TTL_SECONDS,
         });
         return lightMcpOwnerPage({
-          mcpUrl:url.origin + "/mcp/light",
+          mcpUrl:url.origin + "/mcp",
           token,
           expiresLabel:"in 30 days",
         });

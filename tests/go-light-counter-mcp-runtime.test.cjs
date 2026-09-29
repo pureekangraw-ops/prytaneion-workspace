@@ -51,7 +51,7 @@ async function callMcp(worker, env, token, pathname, name, args, id) {
     authorization: "Bearer " + token,
     "content-type": "application/json",
   };
-  if (pathname === "/mcp/light") headers.origin = "https://www.notion.so";
+  if (pathname === "/mcp") headers.origin = "https://www.notion.so";
   const response = await worker.fetch(new Request("https://hub.example" + pathname, {
     method: "POST",
     headers,
@@ -118,7 +118,7 @@ async function runtime() {
     GO_HUB_GLOBAL_AUDIT: auditNamespace,
   };
   const goToken = await accessToken("big", "go-hub", "https://hub.example/mcp");
-  const lightToken = await accessToken("light", "go-hub-light", "https://hub.example/mcp/light");
+  const lightToken = await accessToken("light", "go-hub-light", "https://hub.example/mcp");
   return { worker, env, goToken, lightToken, centreCalls, auditCalls };
 }
 
@@ -144,7 +144,7 @@ test("GO -> LIGHT HANDOFF uses recipient inbox and enforced LIGHT mutations", as
   assert.equal(created.dispatch.toActor, "LIGHT");
   assert.equal(created.dispatch.legs.LIGHT.status, "WAITING_PICKUP");
 
-  const inbox = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_inbox", {
+  const inbox = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_inbox", {
     workContext, limit: 10,
   }, 2);
   assert.equal(inbox.inbox.count, 1);
@@ -157,19 +157,19 @@ test("GO -> LIGHT HANDOFF uses recipient inbox and enforced LIGHT mutations", as
     checkpointId:"CP-GO-LIGHT-COUNTER-001",
   });
 
-  const pickedUp = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_pickup", {
+  const pickedUp = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_pickup", {
     counterId: "COUNTER-BIDIR-GO-LIGHT-001", workContext,
   }, 5);
   assert.equal(pickedUp.counter.currentState, "SEEN");
   assert.equal(pickedUp.counter.events.at(-1).actor, "LIGHT");
 
-  const legacySeen = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_seen", {
+  const legacySeen = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_seen", {
     counterId: "COUNTER-BIDIR-GO-LIGHT-001", workContext,
   }, 51);
   assert.equal(legacySeen.idempotent, true);
   assert.equal(legacySeen.counter.currentState, "SEEN");
 
-  const answered = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_answer", {
+  const answered = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_answer", {
     counterId: "COUNTER-BIDIR-GO-LIGHT-001",
     status: "ANSWERED",
     answer: "Source inspected.",
@@ -182,7 +182,7 @@ test("GO -> LIGHT HANDOFF uses recipient inbox and enforced LIGHT mutations", as
   assert.equal(answered.counter.currentState, "ANSWERED");
   assert.equal(answered.counter.events.at(-1).actor, "LIGHT");
 
-  const empty = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_inbox", {
+  const empty = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_inbox", {
     workContext, limit: 10,
   }, 7);
   assert.equal(empty.inbox.count, 0);
@@ -190,18 +190,19 @@ test("GO -> LIGHT HANDOFF uses recipient inbox and enforced LIGHT mutations", as
   assert.ok(auditCalls.length >= 6);
 });
 
-test("LIGHT -> GO HANDOFF is explicit, HANDOFF-only, and supports GO answer plus LIGHT readback", async () => {
+test("LIGHT -> GO Counter uses the same SEARCH/HANDOFF modes and supports GO answer plus LIGHT readback", async () => {
   const { worker, env, goToken, lightToken } = await runtime();
 
-  const blockedSearch = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_create", {
-    counterId: "COUNTER-BIDIR-LIGHT-SEARCH-BLOCKED",
+  const search = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_create", {
+    counterId: "COUNTER-BIDIR-LIGHT-SEARCH-001",
     mode: "SEARCH",
-    request: "Do not allow LIGHT to self-route Search.",
+    request: "LIGHT may use the same Counter search mode as GO.",
     workContext,
   }, 20);
-  assert.equal(blockedSearch.code, "LIGHT_COUNTER_CREATE_HANDOFF_ONLY");
+  assert.equal(search.counter.from, "LIGHT");
+  assert.equal(search.counter.to, "GO");
 
-  const created = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_create", {
+  const created = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_create", {
     counterId: "COUNTER-BIDIR-LIGHT-GO-001",
     mode: "HANDOFF",
     request: "GO, please review the monitor finding.",
@@ -247,14 +248,14 @@ test("LIGHT -> GO HANDOFF is explicit, HANDOFF-only, and supports GO answer plus
   assert.equal(answered.counter.currentState, "ANSWERED");
   assert.equal(answered.counter.events.at(-1).actor, "GO");
 
-  const lightRead = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_get", {
+  const lightRead = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_get", {
     counterId: "COUNTER-BIDIR-LIGHT-GO-001", workContext,
   }, 25);
   assert.equal(lightRead.counter.answer, "Reviewed; keep the finding attached to this Work.");
   assert.equal(lightRead.counter.from, "LIGHT");
   assert.equal(lightRead.counter.to, "GO");
 
-  const readback = await callMcp(worker, env, lightToken, "/mcp/light", "go_hub_counter_readback", {
+  const readback = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_readback", {
     counterId: "COUNTER-BIDIR-LIGHT-GO-001",
     evidence: { kind: "light-readback", accepted: true },
     workContext,

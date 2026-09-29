@@ -40,30 +40,30 @@ test("Worker owns OAuth discovery and protected MCP routes before assets", async
   assert.match(denied.headers.get("www-authenticate"), /oauth-protected-resource/);
 });
 
-test("Worker registers Notion as an independent OAuth client", async () => {
+test("Existing Notion secret authorizes both legacy Notion and canonical LIGHT clients on shared MCP", async () => {
   const { createWorkerHandler } = await import(workerUrl + "?notion-client=" + Date.now());
   const handler = createWorkerHandler({ fetchImpl: async () => { throw new Error("no upstream expected"); } });
   const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
   const challengeBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
   const challenge = Buffer.from(challengeBytes).toString("base64url");
-  const query = new URLSearchParams({
-    response_type: "code",
-    client_id: "go-hub-notion",
-    redirect_uri: "https://app.notion.com/workflows/mcp/oauth/callback",
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    resource: "https://hub.example/mcp",
-  });
+  const authorize = async (clientId, resource, configuredEnv) => {
+    const query = new URLSearchParams({
+      response_type: "code",
+      client_id: clientId,
+      redirect_uri: "https://app.notion.com/workflows/mcp/oauth/callback",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      resource,
+    });
+    return handler.fetch(new Request("https://hub.example/oauth/authorize?" + query), configuredEnv);
+  };
+  const migrationEnv = {
+    ...env,
+    GOHUB_NOTION_CLIENT_SECRET: "notion-secret",
+  };
 
-  const ready = await handler.fetch(
-    new Request("https://hub.example/oauth/authorize?" + query),
-    { ...env, GOHUB_NOTION_CLIENT_SECRET: "notion-secret" },
-  );
-  assert.equal(ready.status, 200);
-
-  const disabled = await handler.fetch(
-    new Request("https://hub.example/oauth/authorize?" + query),
-    env,
-  );
-  assert.equal(disabled.status, 400);
+  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", migrationEnv)).status, 200);
+  assert.equal((await authorize("go-hub-light", "https://hub.example/mcp", migrationEnv)).status, 200);
+  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp/light", migrationEnv)).status, 400);
+  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", env)).status, 400);
 });

@@ -72,7 +72,7 @@ async function callTool(worker, env, pathname, accessToken, id, name, args) {
     authorization: "Bearer " + accessToken,
     "content-type": "application/json",
   };
-  if (pathname === "/mcp/light") headers.origin = "https://www.notion.so";
+  if (pathname === "/mcp") headers.origin = "https://www.notion.so";
   const response = await worker.fetch(new Request(HUB_ORIGIN + pathname, {
     method: "POST",
     headers,
@@ -103,7 +103,7 @@ test("public Counter create reaches WAITING_PICKUP inbox, then LIGHT answers wit
   const worker = createFactoryMcpWorker();
   const env = await makeEnv();
   const publicToken = await token("big", "go-hub", HUB_ORIGIN + "/mcp");
-  const lightToken = await token("light", "go-hub-light", HUB_ORIGIN + "/mcp/light");
+  const lightToken = await token("light", "go-hub-light", HUB_ORIGIN + "/mcp");
   const context = workContext("HANDOFF");
 
   const created = await callTool(worker, env, "/mcp", publicToken, 1, "go_hub_counter_create", {
@@ -122,7 +122,7 @@ test("public Counter create reaches WAITING_PICKUP inbox, then LIGHT answers wit
   assert.equal(created.counter.currentState, "OPEN");
   assert.equal(created.dispatch.legs.LIGHT.status, "WAITING_PICKUP");
 
-  const inbox = await callTool(worker, env, "/mcp/light", lightToken, 2, "go_hub_counter_inbox", {
+  const inbox = await callTool(worker, env, "/mcp", lightToken, 2, "go_hub_counter_inbox", {
     limit: 10,
     workContext: context,
   });
@@ -130,13 +130,13 @@ test("public Counter create reaches WAITING_PICKUP inbox, then LIGHT answers wit
   assert.equal(inbox.inbox.count, 1);
   assert.equal(inbox.inbox.tickets[0].counterId, "COUNTER-E2E-HANDOFF");
 
-  const seen = await callTool(worker, env, "/mcp/light", lightToken, 3, "go_hub_counter_seen", {
+  const seen = await callTool(worker, env, "/mcp", lightToken, 3, "go_hub_counter_seen", {
     counterId: "COUNTER-E2E-HANDOFF",
     workContext: context,
   });
   assert.equal(seen.counter.currentState, "SEEN");
 
-  const answered = await callTool(worker, env, "/mcp/light", lightToken, 4, "go_hub_counter_answer", {
+  const answered = await callTool(worker, env, "/mcp", lightToken, 4, "go_hub_counter_answer", {
     counterId: "COUNTER-E2E-HANDOFF",
     status: "ANSWERED",
     answer: "Found the governed source.",
@@ -150,7 +150,7 @@ test("public Counter create reaches WAITING_PICKUP inbox, then LIGHT answers wit
   assert.deepEqual(answered.counter.sources, ["notion://go-hub/source"]);
   assert.deepEqual(answered.counter.evidence, [{ kind: "notion-page", reference: "notion://go-hub/source" }]);
 
-  const finalInbox = await callTool(worker, env, "/mcp/light", lightToken, 5, "go_hub_counter_inbox", {
+  const finalInbox = await callTool(worker, env, "/mcp", lightToken, 5, "go_hub_counter_inbox", {
     limit: 10,
     workContext: context,
   });
@@ -164,7 +164,7 @@ test("SEARCH Counter stores only the two-key public work identity", async () => 
   const worker = createFactoryMcpWorker();
   const env = await makeEnv();
   const publicToken = await token("big", "go-hub", HUB_ORIGIN + "/mcp");
-  const lightToken = await token("light", "go-hub-light", HUB_ORIGIN + "/mcp/light");
+  const lightToken = await token("light", "go-hub-light", HUB_ORIGIN + "/mcp");
   const context = workContext("SEARCH");
 
   const created = await callTool(worker, env, "/mcp", publicToken, 10, "go_hub_counter_create", {
@@ -176,7 +176,7 @@ test("SEARCH Counter stores only the two-key public work identity", async () => 
   });
   assert.equal(created.counter.currentState, "OPEN");
 
-  const read = await callTool(worker, env, "/mcp/light", lightToken, 11, "go_hub_counter_get", {
+  const read = await callTool(worker, env, "/mcp", lightToken, 11, "go_hub_counter_get", {
     counterId: "COUNTER-E2E-SEARCH",
     workContext: context,
   });

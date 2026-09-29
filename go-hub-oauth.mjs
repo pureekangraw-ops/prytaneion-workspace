@@ -129,10 +129,7 @@ function resolveClientResource(config, client, value) {
   return resource;
 }
 
-function protectedResourceForMetadata(config, path) {
-  if (path === "/.well-known/oauth-protected-resource/mcp/light") {
-    return config.issuer + "/mcp/light";
-  }
+function protectedResourceForMetadata(config, _path) {
   return defaultResource(config);
 }
 
@@ -180,6 +177,7 @@ export async function createAccessToken(config = {}) {
     type: "access",
     iss: config.issuer,
     aud: config.resource || config.issuer + "/mcp",
+    ...(config.clientId ? { client_id: String(config.clientId) } : {}),
     sub: config.subject || "big",
     scope: config.scope || "go-hub",
     iat: issuedAt,
@@ -217,8 +215,16 @@ export async function verifyAccessToken(request, config = {}) {
     : Array.isArray(config.clients) && config.clients.length
       ? oauthClients(config).map(client => client.subject + "\u0000" + client.scope)
       : [(config.subject || "big") + "\u0000" + (config.scope || "go-hub")];
+  const expectedClientId = String(config.clientId || "").trim();
+  const acceptedClientIds = new Set([
+    expectedClientId,
+    ...(Array.isArray(config.acceptedClientIds) ? config.acceptedClientIds : []),
+  ].map(value => String(value || "").trim()).filter(Boolean));
   if (payload.type !== "access" || payload.iss !== config.issuer || payload.aud !== expectedResource ||
-      !acceptedIdentities.includes(String(payload.sub) + "\u0000" + String(payload.scope))) {
+      !acceptedIdentities.includes(String(payload.sub) + "\u0000" + String(payload.scope)) ||
+      (config.requireClientId === true && (!acceptedClientIds.size ||
+        (payload.client_id == null && config.allowLegacyClientId !== true) ||
+        (payload.client_id != null && !acceptedClientIds.has(String(payload.client_id)))))) {
     throw new Error("invalid access token");
   }
   if (!Number.isFinite(payload.exp) || payload.exp <= nowSeconds(config)) throw new Error("expired access token");
@@ -364,7 +370,7 @@ export function createOAuthHandler(config = {}) {
             scope:client.scope,
           });
           return json({
-            access_token: await createTestAccessToken({ ...config, resource, subject: client.subject, scope: client.scope }),
+            access_token: await createTestAccessToken({ ...config, clientId: client.clientId, resource, subject: client.subject, scope: client.scope }),
             token_type: "Bearer",
             expires_in: ACCESS_TOKEN_TTL_SECONDS,
             refresh_token: rotatedRefreshToken,
@@ -389,7 +395,7 @@ export function createOAuthHandler(config = {}) {
           return json({ error: "invalid_grant" }, 400);
         }
         return json({
-          access_token: await createTestAccessToken({ ...config, resource, subject: client.subject, scope: client.scope }),
+          access_token: await createTestAccessToken({ ...config, clientId: client.clientId, resource, subject: client.subject, scope: client.scope }),
           token_type: "Bearer",
           expires_in: ACCESS_TOKEN_TTL_SECONDS,
           refresh_token: await createTestRefreshToken({ ...config, clientId: client.clientId, resource, subject: client.subject, scope: client.scope }),
