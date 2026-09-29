@@ -34,6 +34,10 @@
         "class_name": "ObserverSessionRegistry"
       },
       {
+        "name": "FACTORY_EYE_SESSIONS",
+        "class_name": "FactoryEyeSessionRegistry"
+      },
+      {
         "name": "GO_HUB_GLOBAL_AUDIT",
         "class_name": "GoHubGlobalAuditLog"
       },
@@ -140,6 +144,12 @@
       "tag": "v13-go-hub-pixie-monitor",
       "new_sqlite_classes": [
         "GoHubPixieMonitorState"
+      ]
+    },
+    {
+      "tag": "v14-ergasterion-factory-eye",
+      "new_sqlite_classes": [
+        "FactoryEyeSessionRegistry"
       ]
     }
   ],
