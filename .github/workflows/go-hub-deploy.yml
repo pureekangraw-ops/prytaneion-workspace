@@ -634,6 +634,8 @@ jobs:
             "go_hub_counter_answer",
             "go_hub_counter_readback",
             "go_hub_board_read",
+            "go_hub_observer_latest",
+            "go_hub_drive_health",
           ];
           await centre({
             action:"v4_mission_enter",

@@ -48,3 +48,12 @@ test("maintenance deploy smoke carries bounded BIG-approved repair scope", () =>
   assert.match(workflow, /ownerApproval:"BIG_APPROVED"/);
   assert.match(workflow, /repairScope:\["production runtime owner-binding route verification"\]/);
 });
+
+
+test("post-V4 Observer and Drive remain on the exact smoke Work card", () => {
+  const workflow = fs.readFileSync(".github/workflows/go-hub-deploy.yml", "utf8");
+  const match = workflow.match(/const workCardTools = \[([\s\S]*?)\n\s*\];/);
+  assert.ok(match, "workCardTools block must exist");
+  assert.match(match[1], /"go_hub_observer_latest"/);
+  assert.match(match[1], /"go_hub_drive_health"/);
+});
