@@ -23,6 +23,7 @@ import {
 export { HephaestusForeman } from "./go-hub-factory-controller.mjs";
 export { createGoHubV4, CUTOVER_CONTRACT };
 export { GoHubFactoryState } from "./go-hub-factory-state.mjs";
+export { GoHubPixieMonitorState } from "./go-hub-pixie-monitor.mjs";
 export { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
 export { GoHubCentreState } from "./go-hub-centre-live.mjs";
 export { GoHubGlobalAuditLog } from "./go-hub-global-audit.mjs";
