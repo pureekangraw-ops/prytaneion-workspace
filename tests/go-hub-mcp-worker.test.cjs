@@ -63,8 +63,8 @@ test("Worker keeps legacy Notion and canonical LIGHT OAuth clients on the LIGHT 
     GOHUB_LIGHT_CLIENT_SECRET: "light-secret",
   };
 
-  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp/light", migrationEnv)).status, 200);
-  assert.equal((await authorize("go-hub-light", "https://hub.example/mcp/light", migrationEnv)).status, 200);
+  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", migrationEnv)).status, 200);
+  assert.equal((await authorize("go-hub-light", "https://hub.example/mcp", migrationEnv)).status, 200);
   assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", migrationEnv)).status, 400);
-  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp/light", env)).status, 400);
+  assert.equal((await authorize("go-hub-notion", "https://hub.example/mcp", env)).status, 400);
 });
