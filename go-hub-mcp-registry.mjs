@@ -148,9 +148,6 @@ function assertWork(value) {
 
 const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission"]);
 function cardToolAllowed(card, toolName) {
-  if (toolName === "go_hub_maintenance") {
-    return String(card?.access_scope || "").trim().toUpperCase() === "MAINTENANCE";
-  }
   return Array.isArray(card?.tool_access) && card.tool_access.includes(toolName);
 }
 async function assertCardAccess(lifecycle, name, args) {
