@@ -94,6 +94,8 @@ const definitions = [
   def("go_hub_notion_status", "Read the current GO Hub Notion MCP connection state without exposing credentials.", "notionStatus", schema({}), ann(true)),
   def("go_hub_notion_connect", "Prepare the existing GO Hub to Notion MCP OAuth connection and return the owner authorization URL.", "notionConnect", schema({}), ann(false)),
   def("go_hub_notion_search", "Search the connected Notion workspace through the existing GO Hub Notion MCP bridge.", "notionSearch", schema({ query: str }, ["query"]), ann(true)),
+  def("go_hub_notion_tools", "List the complete live tool catalog and schemas currently exposed by upstream Notion MCP.", "notionTools", schema({}), ann(true)),
+  def("go_hub_notion_call", "Call any tool currently exposed by upstream Notion MCP. The upstream tool name and arguments must match go_hub_notion_tools. Mutating use remains governed by Work/Card authority.", "notionCall", schema({ toolName: str, arguments: obj, workContext }, ["toolName","arguments","workContext"]), ann(false, true)),
   def("go_hub_gmail_capabilities", "Inspect governed Gmail bridge configuration.", "gmailCapabilities", schema({}), ann(true)),
   def("go_hub_gmail_diagnostics", "Read sanitized Gmail OAuth diagnostics.", "gmailDiagnostics", schema({}), ann(true)),
   def("go_hub_gmail_profile", "Read Gmail profile metadata.", "gmailProfile", schema({}), ann(true)),
@@ -124,6 +126,7 @@ const maintenanceTools = new Set(["go_hub_maintenance"]);
 const linearMutationTools = new Set(["go_hub_linear_create_issue", "go_hub_linear_update_issue"]);
 const gmailMutationTools = new Set(["go_hub_gmail_send_message"]);
 const calendarMutationTools = new Set(["go_hub_calendar_create_event"]);
+const notionMutationTools = new Set(["go_hub_notion_call"]);
 const driveMutationTools = new Set(["go_hub_drive_create_folder", "go_hub_drive_upload_file", "go_hub_drive_move_item", "go_hub_drive_rename_item", "go_hub_archive_workflow_artifact"]);
 const counterTools = new Set(["go_hub_counter_create", "go_hub_counter_inbox", "go_hub_counter_get", "go_hub_counter_seen", "go_hub_counter_answer", "go_hub_counter_readback"]);
 const pixieMutationTools = new Set(["go_hub_pixie_command", "go_hub_pixie_go_works_action", "go_hub_pixie_debug_factory_action"]);
@@ -149,7 +152,7 @@ function assertWork(value) {
   for (const key of Object.keys(value)) if (!Object.hasOwn(workContext.properties, key)) throw new Error("unknown workContext field: " + key);
 }
 
-const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect"]);
+const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect","go_hub_notion_tools"]);
 const CARD_READ_BYPASS_TOOLS = new Set(["go_hub_observer_latest","go_hub_observer_screenshot"]);
 function cardToolAllowed(card, toolName) {
   if (toolName === "go_hub_maintenance") {
@@ -169,7 +172,7 @@ async function assertCardAccess(lifecycle, name, args) {
 function assertLifecycle(name, args) {
   if (factoryTools.has(name) || linearMutationTools.has(name) || maintenanceTools.has(name) ||
       driveMutationTools.has(name) || gmailMutationTools.has(name) || calendarMutationTools.has(name) ||
-      counterTools.has(name) || pixieMutationTools.has(name)) assertWork(args.workContext);
+      notionMutationTools.has(name) || counterTools.has(name) || pixieMutationTools.has(name)) assertWork(args.workContext);
 }
 
 async function toolResult(response, broadcastReadback = null) {
