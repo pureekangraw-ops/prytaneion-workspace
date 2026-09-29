@@ -55,6 +55,18 @@ test("GO Hub publishes and wires the existing Notion MCP bridge", async () => {
               searchOnly:true,
             });
           }
+          if (action === "tools") {
+            return jsonResponse({
+              ok:true,
+              count:4,
+              tools:[
+                { name:"notion-fetch", inputSchema:{ type:"object" } },
+                { name:"notion-create-pages", inputSchema:{ type:"object" } },
+                { name:"notion-update-page", inputSchema:{ type:"object" } },
+                { name:"notion-create-comment", inputSchema:{ type:"object" } },
+              ],
+            });
+          }
           return jsonResponse({ ok:false, code:"UNEXPECTED_ACTION" }, 400);
         },
       };
@@ -93,7 +105,7 @@ test("GO Hub publishes and wires the existing Notion MCP bridge", async () => {
 
   const listed = await rpc(1, "tools/list");
   const names = listed.tools.map(tool => tool.name);
-  for (const name of ["go_hub_notion_status","go_hub_notion_connect","go_hub_notion_search"]) {
+  for (const name of ["go_hub_notion_status","go_hub_notion_connect","go_hub_notion_search","go_hub_notion_tools","go_hub_notion_call"]) {
     assert.ok(names.includes(name), "missing Notion MCP tool: " + name);
   }
 
@@ -120,15 +132,28 @@ test("GO Hub publishes and wires the existing Notion MCP bridge", async () => {
   assert.equal(search.tool, "notion-ai-search");
   assert.equal(search.workspaceName, "Big Workspace");
 
-  const aionResult = await rpc(5, "tools/call", {
+  const toolsResult = await rpc(5, "tools/call", {
+    name:"go_hub_notion_tools",
+    arguments:{},
+  });
+  const upstreamTools = JSON.parse(toolsResult.content[0].text);
+  assert.equal(upstreamTools.count, 4);
+  assert.deepEqual(upstreamTools.tools.map(tool => tool.name), [
+    "notion-fetch",
+    "notion-create-pages",
+    "notion-update-page",
+    "notion-create-comment",
+  ]);
+
+  const aionResult = await rpc(6, "tools/call", {
     name:"go_hub_aion_open",
     arguments:{ context:{ intent:"inspect", requestedResult:"see current Notion capability" } },
   });
   const aion = JSON.parse(aionResult.content[0].text);
   const currentNames = aion.capabilities.map(item => item.name);
-  for (const name of ["go_hub_notion_status","go_hub_notion_connect","go_hub_notion_search"]) {
+  for (const name of ["go_hub_notion_status","go_hub_notion_connect","go_hub_notion_search","go_hub_notion_tools","go_hub_notion_call"]) {
     assert.ok(currentNames.includes(name), "AION CURRENT missing Notion capability: " + name);
   }
 
-  assert.deepEqual(seen.map(item => item.action), ["status","prepare","search"]);
+  assert.deepEqual(seen.map(item => item.action), ["status","prepare","search","tools"]);
 });
