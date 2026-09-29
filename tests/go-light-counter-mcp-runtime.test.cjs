@@ -190,16 +190,17 @@ test("GO -> LIGHT HANDOFF uses recipient inbox and enforced LIGHT mutations", as
   assert.ok(auditCalls.length >= 6);
 });
 
-test("LIGHT -> GO HANDOFF is explicit, HANDOFF-only, and supports GO answer plus LIGHT readback", async () => {
+test("LIGHT -> GO Counter uses the same SEARCH/HANDOFF modes and supports GO answer plus LIGHT readback", async () => {
   const { worker, env, goToken, lightToken } = await runtime();
 
-  const blockedSearch = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_create", {
-    counterId: "COUNTER-BIDIR-LIGHT-SEARCH-BLOCKED",
+  const search = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_create", {
+    counterId: "COUNTER-BIDIR-LIGHT-SEARCH-001",
     mode: "SEARCH",
-    request: "Do not allow LIGHT to self-route Search.",
+    request: "LIGHT may use the same Counter search mode as GO.",
     workContext,
   }, 20);
-  assert.equal(blockedSearch.code, "LIGHT_COUNTER_CREATE_HANDOFF_ONLY");
+  assert.equal(search.counter.from, "LIGHT");
+  assert.equal(search.counter.to, "GO");
 
   const created = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_create", {
     counterId: "COUNTER-BIDIR-LIGHT-GO-001",
