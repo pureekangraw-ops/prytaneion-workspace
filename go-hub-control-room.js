@@ -68,6 +68,15 @@ function capabilityView(capabilities = []) {
 }
 
 
+function responseForToolStatus(status) {
+  if (status === "AUTH_REQUIRED") return Object.freeze({ owner:"GO", action:"AUTHORIZE" });
+  if (status === "STALE") return Object.freeze({ owner:"SOURCE_OWNER", action:"REFRESH" });
+  if (status === "OFFLINE" || status === "DEGRADED") return Object.freeze({ owner:"MAINTENANCE", action:"DIAGNOSE_REPROBE" });
+  if (status === "UNKNOWN") return Object.freeze({ owner:"HERMES", action:"INSPECT_REALITY" });
+  if (status === "NOT_CONFIGURED" || status === "NOT_EXPOSED") return Object.freeze({ owner:"GO", action:"DECIDE_ENABLEMENT" });
+  return Object.freeze({ owner:null, action:null });
+}
+
 export function normalizeToolReality(sources = {}) {
   const entries = Object.entries(sources && typeof sources === "object" ? sources : {});
   return Object.freeze(Object.fromEntries(entries.map(([name, value]) => {
@@ -88,6 +97,7 @@ export function normalizeToolReality(sources = {}) {
       status, exposed, configured, authenticated,
       reason:text(source.reason || source.code) || null,
       evidenceRef:evidenceRef(source.evidenceRef),
+      response:responseForToolStatus(status),
     })];
   })));
 }
