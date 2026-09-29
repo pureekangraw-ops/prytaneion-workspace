@@ -223,6 +223,50 @@ async function callNotionTool(fetchImpl, accessToken, toolName, args) {
   return called.payload?.result || {};
 }
 
+async function listNotionTools(fetchImpl, accessToken) {
+  const init = await mcpPost(fetchImpl, accessToken, {
+    jsonrpc:"2.0",
+    id:1,
+    method:"initialize",
+    params:{
+      protocolVersion:MCP_PROTOCOL_VERSION,
+      capabilities:{},
+      clientInfo:{ name:"go-hub", version:"1.0.0" },
+    },
+  });
+  if (!init.response.ok || init.payload?.error) {
+    throw Object.assign(new Error("NOTION_MCP_INITIALIZE_FAILED"), { status:init.response.status || 502 });
+  }
+  const sessionId = init.sessionId;
+  await mcpPost(fetchImpl, accessToken, {
+    jsonrpc:"2.0",
+    method:"notifications/initialized",
+  }, sessionId);
+
+  const tools = [];
+  let cursor = null;
+  for (let page = 0; page < 20; page += 1) {
+    const listed = await mcpPost(fetchImpl, accessToken, {
+      jsonrpc:"2.0",
+      id:2 + page,
+      method:"tools/list",
+      params:cursor ? { cursor } : {},
+    }, sessionId);
+    if (!listed.response.ok || listed.payload?.error) {
+      throw Object.assign(new Error("NOTION_MCP_TOOLS_LIST_FAILED"), { status:listed.response.status || 502 });
+    }
+    const result = listed.payload?.result || {};
+    for (const tool of Array.isArray(result.tools) ? result.tools : []) {
+      if (tool && typeof tool === "object" && text(tool.name)) tools.push(clone(tool));
+    }
+    cursor = text(result.nextCursor || result.next_cursor);
+    if (!cursor) break;
+  }
+  const unique = new Map();
+  for (const tool of tools) unique.set(tool.name, tool);
+  return [...unique.values()];
+}
+
 export class GoHubNotionLightState {
   constructor(ctx, env) {
     this.ctx = ctx;
@@ -418,6 +462,24 @@ export class GoHubNotionLightState {
     };
   }
 
+  async tools() {
+    const token = await this.accessToken();
+    const tools = await listNotionTools(this.fetchImpl, token);
+    return { ok:true, count:tools.length, tools };
+  }
+
+  async callTool(input = {}) {
+    const toolName = text(input.toolName);
+    if (!toolName) throw Object.assign(new Error("NOTION_TOOL_NAME_REQUIRED"), { status:400 });
+    const args = input.arguments == null ? {} : input.arguments;
+    if (!args || typeof args !== "object" || Array.isArray(args)) {
+      throw Object.assign(new Error("NOTION_TOOL_ARGUMENTS_INVALID"), { status:400 });
+    }
+    const token = await this.accessToken();
+    const result = await callNotionTool(this.fetchImpl, token, toolName, args);
+    return { ok:true, tool:toolName, result };
+  }
+
   async ring(input = {}) {
     const bellType = text(input.bellType || "LIGHT_HANDOFF").toUpperCase();
     const counterId = text(input.counterId);
@@ -506,6 +568,8 @@ export class GoHubNotionLightState {
         : action === "prepare" ? await this.prepare(input)
         : action === "callback" ? await this.callback(input)
         : action === "search" ? await this.search(input)
+        : action === "tools" ? await this.tools()
+        : action === "call" ? await this.callTool(input)
         : action === "ring" ? await this.ring(input)
         : (() => { throw Object.assign(new Error("NOTION_LIGHT_ACTION_UNSUPPORTED"), { status:400 }); })();
       return json(result, result?.ok === false ? 409 : 200);
@@ -535,6 +599,8 @@ export function createNotionLightService({ namespace } = {}) {
     prepare:input => call("prepare", input),
     callback:input => call("callback", input),
     search:input => call("search", input),
+    tools:() => call("tools"),
+    callTool:input => call("call", input),
     ring:input => call("ring", input),
   });
 }
