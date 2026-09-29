@@ -13,3 +13,17 @@ test("LIGHTHOUSE deploy smoke retries propagation failures without weakening the
   assert.match(workflow, /const denied = await fetch\(origin \+ "\/hub\/lighthouse"/);
   assert.match(workflow, /denied\.status !== 403/);
 });
+
+
+test("V4 deploy smoke outfits the existing Work with current HERMES card contracts", () => {
+  const workflow = fs.readFileSync(".github/workflows/go-hub-deploy.yml", "utf8");
+  assert.match(workflow, /action:"v4_mission_enter"/);
+  assert.match(workflow, /action:"v4_mission_recommended_tools"/);
+  assert.match(workflow, /action:"v4_mission_card_prepare"/);
+  assert.match(workflow, /action:"v4_mission_card_issue"/);
+  assert.match(workflow, /accessScope:"WORK"/);
+  assert.match(workflow, /accessScope:"MAINTENANCE"/);
+  assert.match(workflow, /action:"v4_inspect", workId, checkpointId, workContext:context\(\)/);
+  assert.match(workflow, /kind:"MAINTENANCE", destinations:\["maintenance"\]/);
+  assert.doesNotMatch(workflow, /mcp\("\/mcp\/light"/);
+});
