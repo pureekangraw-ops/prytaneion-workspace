@@ -129,10 +129,7 @@ function resolveClientResource(config, client, value) {
   return resource;
 }
 
-function protectedResourceForMetadata(config, path) {
-  if (path === "/.well-known/oauth-protected-resource/mcp/light") {
-    return config.issuer + "/mcp/light";
-  }
+function protectedResourceForMetadata(config, _path) {
   return defaultResource(config);
 }
 
