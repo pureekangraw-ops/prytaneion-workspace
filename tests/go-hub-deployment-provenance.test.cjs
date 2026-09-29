@@ -8,7 +8,7 @@ const serviceUrl = new URL("../go-hub-deployment-provenance.mjs", pathToFileURL(
 test("receipt corroborates exact live deployment, every version, and workflow head", async () => {
   const { verifyDeploymentReceipt } = await import(serviceUrl);
   const live = { id:"dep-1", versions:[{ versionId:"version-a", percentage:75 }, { versionId:"version-b", percentage:25 }] };
-  const receipt = { repository:"pureekangraw-ops/standard-", worker:"go-hub", workflowRunId:123, sourceSha:"a".repeat(40),
+  const receipt = { repository:"pureekangraw-ops/prytaneion-workspace", worker:"go-hub", workflowRunId:123, sourceSha:"a".repeat(40),
     deploymentId:"dep-1", versions:[{ versionId:"version-a", percentage:75 }, { versionId:"version-b", percentage:25 }] };
   assert.equal(verifyDeploymentReceipt({ receipt, deployment:live, run:{ id:123, head_sha:"a".repeat(40), name:"GO Hub Deploy" } }).status, "VERIFIED");
   assert.equal(verifyDeploymentReceipt({ receipt, deployment:{ ...live, versions:[live.versions[0]] }, run:{ id:123, head_sha:"a".repeat(40), name:"GO Hub Deploy" } }).status, "UNKNOWN");
@@ -19,7 +19,7 @@ test("receipt corroborates exact live deployment, every version, and workflow he
 test("receipt reader accepts only matching artifact and workflow identity", async () => {
   const { createDeploymentProvenanceReader } = await import(serviceUrl);
   const sha = "a".repeat(40);
-  const receipt = { repository:"pureekangraw-ops/standard-", worker:"go-hub", workflowRunId:123, sourceSha:sha,
+  const receipt = { repository:"pureekangraw-ops/prytaneion-workspace", worker:"go-hub", workflowRunId:123, sourceSha:sha,
     deploymentId:"dep-1", versions:[{ versionId:"v-1", percentage:100 }] };
   const fetchImpl = async url => {
     const path = String(url);
@@ -34,5 +34,5 @@ test("receipt reader accepts only matching artifact and workflow identity", asyn
   const proof = await reader.read({ deployment:{ id:"dep-1", versions:[{versionId:"v-1",percentage:100}] } });
   assert.equal(proof.status, "VERIFIED");
   assert.equal(proof.sourceSha, sha);
-  assert.equal(proof.evidenceRef, "github://pureekangraw-ops/standard-/actions/runs/123/artifacts/42");
+  assert.equal(proof.evidenceRef, "github://pureekangraw-ops/prytaneion-workspace/actions/runs/123/artifacts/42");
 });

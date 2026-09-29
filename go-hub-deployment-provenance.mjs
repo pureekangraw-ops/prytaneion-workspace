@@ -1,12 +1,19 @@
 import { extractZipEntry } from "./go-hub-workflow-artifact-service.mjs";
 
-const REPOSITORY = "pureekangraw-ops/standard-";
+const DEFAULT_REPOSITORY = "pureekangraw-ops/prytaneion-workspace";
 const WORKER = "go-hub";
 const ARTIFACT_PREFIX = "go-hub-deployment-receipt-";
 const UNKNOWN = reason => ({ status:"UNKNOWN", reason });
 
-export function verifyDeploymentReceipt({ receipt, deployment, run } = {}) {
-  if (receipt?.repository !== REPOSITORY || receipt?.worker !== WORKER ||
+function normalizeRepository(value) {
+  const repository = String(value || "").trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error("REPOSITORY_INVALID");
+  return repository;
+}
+
+export function verifyDeploymentReceipt({ receipt, deployment, run, repository = DEFAULT_REPOSITORY } = {}) {
+  const expectedRepository = normalizeRepository(repository);
+  if (receipt?.repository !== expectedRepository || receipt?.worker !== WORKER ||
       !/^[a-f0-9]{40}$/.test(String(receipt?.sourceSha || "")) ||
       !Number.isSafeInteger(receipt?.workflowRunId) || receipt.workflowRunId <= 0 ||
       run?.id !== receipt.workflowRunId || run?.head_sha !== receipt.sourceSha ||
@@ -31,12 +38,13 @@ async function decodeReceiptZip(response) {
   return new TextDecoder().decode(entry);
 }
 
-export function createDeploymentProvenanceReader({ fetchImpl = fetch, token, decodeArchive = decodeReceiptZip } = {}) {
+export function createDeploymentProvenanceReader({ fetchImpl = fetch, token, decodeArchive = decodeReceiptZip, repository = DEFAULT_REPOSITORY } = {}) {
+  const fixedRepository = normalizeRepository(repository);
   const headers = {
     authorization:`Bearer ${token}`, accept:"application/vnd.github+json",
     "x-github-api-version":"2022-11-28", "user-agent":"go-hub-deployment-provenance",
   };
-  const root = `https://api.github.com/repos/${REPOSITORY}`;
+  const root = `https://api.github.com/repos/${fixedRepository}`;
   const github = async path => {
     const response = await fetchImpl(root + path, { headers });
     if (!response.ok) throw new Error("GITHUB_RECEIPT_READ_FAILED");
@@ -62,11 +70,11 @@ export function createDeploymentProvenanceReader({ fetchImpl = fetch, token, dec
           catch { continue; }
           if (receipt?.workflowRunId !== runId || receipt?.deploymentId !== deployment.id) continue;
           const run = await github(`/actions/runs/${runId}`);
-          const verified = verifyDeploymentReceipt({ receipt, deployment, run });
+          const verified = verifyDeploymentReceipt({ receipt, deployment, run, repository:fixedRepository });
           if (verified.status !== "VERIFIED") continue;
           return {
             ...verified,
-            evidenceRef:`github://${REPOSITORY}/actions/runs/${runId}/artifacts/${artifact.id}`,
+            evidenceRef:`github://${fixedRepository}/actions/runs/${runId}/artifacts/${artifact.id}`,
           };
         }
         return UNKNOWN("MATCHING_DEPLOYMENT_RECEIPT_UNAVAILABLE");
