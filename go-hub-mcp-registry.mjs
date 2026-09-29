@@ -195,7 +195,7 @@ function withoutWorkContext(definition) {
   return copy;
 }
 
-export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [], currentTools = null, enforceCardAccess = false } = {}) {
+export function createMcpRegistry({ lifecycle, speaker = null, workContextOptionalTools = [], currentTools = null, enforceCardAccess = false, cardAccessBypass = null } = {}) {
   if (!lifecycle) throw new Error("lifecycle service is required");
   const optionalWorkContext = new Set(workContextOptionalTools);
   const publishedDefinitions = definitions.map(item => {
@@ -217,7 +217,11 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
       if (!definition) throw new Error("unknown MCP tool: " + name);
       assertArgs(definition, args);
       if (!optionalWorkContext.has(name)) assertLifecycle(name, args);
-      if (enforceCardAccess && !optionalWorkContext.has(name)) await assertCardAccess(lifecycle, name, args);
+      const bypassCardAccess = typeof cardAccessBypass === "function" &&
+        cardAccessBypass({ name, args, definition }) === true;
+      if (enforceCardAccess && !optionalWorkContext.has(name) && !bypassCardAccess) {
+        await assertCardAccess(lifecycle, name, args);
+      }
       let broadcastReadback = null;
       if (typeof speaker === "function" && name !== "go_hub_broadcast_activate") {
         const heard = await speaker({ area: definition.operation, observed: args.broadcast || null });

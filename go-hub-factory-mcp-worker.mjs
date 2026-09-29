@@ -27,6 +27,18 @@ import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { createAgentPersonaRoom } from "./go-hub-agent-persona-room.mjs";
 import { sealReadyGate } from "./go-hub-ready-gate.js";
 
+const LIGHT_REPOSITORY_READ_TOOLS = new Set([
+  "go_hub_inspect_repository",
+  "go_hub_list_repositories",
+  "go_hub_read_file",
+  "go_hub_compare_refs",
+  "go_hub_get_pull_request",
+  "go_hub_get_ci",
+  "go_hub_get_failure_evidence",
+  "go_hub_get_workflow_runs",
+  "go_hub_list_workflow_artifacts",
+]);
+
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -1054,6 +1066,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       registry = createMcpRegistry({
         enforceCardAccess: String(env?.GO_HUB_CARD_ACCESS_V2 || "").trim() === "1",
         workContextOptionalTools: ["go_hub_cloudflare_health"],
+        cardAccessBypass: ({ name }) =>
+          authenticatedActor === "LIGHT" && LIGHT_REPOSITORY_READ_TOOLS.has(name),
         lifecycle: registryLifecycle,
         speaker,
       });
