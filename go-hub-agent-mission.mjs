@@ -239,6 +239,69 @@ function destinationTools(destination) {
   return [...(DEFAULT_DESTINATION_TOOL_ACCESS[destinationKind(destination)] || [])];
 }
 
+function routeDoor(work = {}, destination, currentCard = null) {
+  const pass = work?.pass || {};
+  const cardDestinations = unique(currentCard?.destinations);
+  const active = text(pass.state).toUpperCase() === "ACTIVE" && workDestinationAllowed(work, destination);
+  return {
+    destination:text(destination),
+    kind:destinationKind(destination) || "unknown",
+    declared:true,
+    cardListed:cardDestinations.some(item => sameDestination(item, destination)),
+    active,
+    authority:text(currentCard?.access_scope || work?.accessScope || pass.kind).toUpperCase() || "UNKNOWN",
+    returnAddress:text(pass.returnAddress || work?.checkpointId) || null,
+    returnCondition:text(pass.closeCondition) || "RETURN",
+    reason:active ? (text(pass.reason) || "ACTIVE_WORK_PASS") : "WORK_REQUESTED_DESTINATION",
+  };
+}
+
+function resumeView(work = {}) {
+  const status = text(work.status).toUpperCase();
+  const holder = text(work.holder) || null;
+  if (status === "OPEN") return { resumable:true, mode:"RETURNED_OPEN", holder:null, next:"FIRST_OPEN_CURRENT_ROUTE" };
+  if (status === "WAIT CONFIRM") return { resumable:true, mode:"WAIT_CONFIRM", holder, next:"FIRST_OPEN_CURRENT_ROUTE" };
+  if (status === "ON PROCESS" && holder === "GO") return { resumable:true, mode:"GO_ACTIVE", holder, next:"CONTINUE_CURRENT_ROUTE" };
+  if (["COMPLETE","CANCEL"].includes(status)) return { resumable:false, mode:"TERMINAL", holder:null, next:null };
+  return { resumable:false, mode:"UNKNOWN", holder, next:null };
+}
+
+function composeMissionReadout(work = {}, mission = null) {
+  const memory = mission?.memory || {};
+  const currentCard = memory.cardMachine?.current || null;
+  const route = unique(work.requestedDestinations);
+  const latest = memory.latestReality || null;
+  return {
+    kind:"HERMES_MISSION_READOUT",
+    mode:"READ_ONLY",
+    identity:{
+      agentId:text(mission?.session?.agentId) || null,
+      sessionStatus:text(mission?.session?.status) || null,
+    },
+    activeIntent:text(memory.mission || work.command || work.name) || null,
+    requestedResult:text(memory.requestedResult || work.expectedResult) || null,
+    work:{
+      workId:text(work.workId) || null,
+      checkpointId:text(work.checkpointId) || null,
+      sourceStatus:text(work.status) || null,
+      holder:text(work.holder) || null,
+      ownerSource:"CENTRE_DURABLE_STORE",
+    },
+    currentRoute:route,
+    warpDoors:route.map(destination => routeDoor(work, destination, currentCard)),
+    access:{
+      accessScope:text(currentCard?.access_scope || work.accessScope).toUpperCase() || null,
+      passKind:text(work.pass?.kind).toUpperCase() || null,
+      passState:text(work.pass?.state).toUpperCase() || null,
+    },
+    resume:resumeView(work),
+    nextAction:text(latest?.nextAction) || null,
+    unknowns:unique(latest?.unknowns),
+    lastLocation:text(latest?.lastLocation || mission?.session?.lastDestination) || null,
+    observedFrom:["CENTRE_WORK","HERMES_MISSION_MEMORY","CURRENT_CARD"],
+  };
+}
+
 function lightCandidates(lightResult = {}) {
   const candidates = [];
   let n = 0;
@@ -353,6 +416,7 @@ export function createAgentMissionService({
       card:workCardView(work),
       workContext,
       mission:response.mission,
+      readout:composeMissionReadout(work, response.mission),
       noGate:true,
     });
   }
@@ -770,6 +834,7 @@ export function createAgentMissionService({
       runtimePassOpened:access.passOpened,
       card:workCardView(access.work),
       mission:recorded.mission,
+      readout:composeMissionReadout(access.work, recorded.mission),
     });
   }
 
@@ -842,10 +907,12 @@ export function createAgentMissionService({
       workContext,
       card:workCardView(work),
       mission:recorded.mission,
+      readout:composeMissionReadout(work, recorded.mission),
       readbackVerified:true,
       exitAllowed:true,
+      cardUpdateRequired:false,
       retrievalCode:recorded.mission?.memory?.cardMachine?.current?.snapshot_key || missionTicketSearchCode(work.workId),
-      prompt:"กรุณาอัปเดตการ์ดก่อนออกครับ",
+      prompt:"Return และ owner readback เรียบร้อย พร้อมออกจาก Mission ได้เลยครับ",
     });
   }
 
@@ -870,7 +937,15 @@ export function createAgentMissionService({
   async function inspect(input = {}) {
     const workContext = requireWorkContext(input);
     const response = await readMission(workContext);
-    return json({ ok:true, action:"inspect", workContext, work:response.work, card:workCardView(response.work), mission:response.mission });
+    return json({
+      ok:true,
+      action:"inspect",
+      workContext,
+      work:response.work,
+      card:workCardView(response.work),
+      mission:response.mission,
+      readout:composeMissionReadout(response.work, response.mission),
+    });
   }
 
   return Object.freeze({
