@@ -52,8 +52,8 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
     ["find","enter","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"]
   );
   assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /HERMES owns the user-facing route operation/);
-  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, undefined);
-  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.toolAccess, undefined);
+  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, { type:"string", enum:["WORK","MAINTENANCE"] });
+  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.toolAccess, { type:"array", items:{ type:"string", minLength:1 } });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.confirmation, { type:"string", enum:["GO_CONFIRMED"] });
   assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /Heimdall remains the internal enforcement engine/);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_ready_gate"), false);
