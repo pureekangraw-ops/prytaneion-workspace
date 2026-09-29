@@ -442,6 +442,24 @@ export function createAgentMissionService({
   }
 
   async function enter(input = {}) {
+    const hasWorkContext = Boolean(
+      text(input?.workContext?.workId || input.workId) &&
+      text(input?.workContext?.checkpointId || input.checkpointId)
+    );
+    if (!hasWorkContext) {
+      return json({
+        ok:true,
+        action:"enter",
+        entered:true,
+        workContext:null,
+        workSelected:false,
+        noGate:true,
+        authorityCreated:false,
+        routeSelected:false,
+        nextActions:["find","create"],
+        prompt:"HERMES ready. No Work selected; GO may find or create explicitly.",
+      });
+    }
     const workContext = requireWorkContext(input);
     const work = await inspectWork(workContext);
     const response = await centre({
@@ -647,19 +665,7 @@ export function createAgentMissionService({
     if (!okResponse(raw) || !Array.isArray(board?.pins)) {
       return json({ code:"HERMES_HEIMDALL_INDEX_UNAVAILABLE" }, 503);
     }
-    const similar = rankMissionCandidates(mission, board.pins, { limit:input.limit, threshold:input.threshold });
-    if (text(input.createDecision).toUpperCase() !== "CREATE_NEW") {
-      return json({
-        code:"HERMES_SIMILAR_WORK_REVIEW_REQUIRED",
-        action:"create",
-        mission,
-        candidates:similar,
-        recommendedTools:unique(similar.flatMap(item => item.toolAccess || [])),
-        decisionRequired:"CREATE_NEW_OR_REUSE",
-        hint:"Review candidates first. Enter an existing Work to reuse it, or call create again with createDecision=CREATE_NEW.",
-        boardExposed:false,
-      }, 409);
-    }
+    // Reuse search is explicit. GO calls find when it wants candidates; create never performs hidden similarity review.
     if (text(input.workId)) {
       return json({ code:"HERMES_WORK_ID_CALLER_OVERRIDE_FORBIDDEN" }, 400);
     }
@@ -669,7 +675,9 @@ export function createAgentMissionService({
       pins:board.pins,
       at:now(),
     });
-    const recommendedTools = unique(input.recommendedTools?.length ? input.recommendedTools : similar.flatMap(item => item.toolAccess || []));
+    const recommendedTools = unique(input.recommendedTools?.length
+      ? input.recommendedTools
+      : unique(input.destinations).flatMap(destinationTools));
     const created = await centre({
       action:"v4_create",
       workId,
@@ -720,13 +728,11 @@ export function createAgentMissionService({
     const accessScope = workType === "MAINTENANCE" || passKind === "MAINTENANCE" || persistedScope === "MAINTENANCE" || maintenanceDestination
       ? "MAINTENANCE"
       : "WORK";
-    let recommendedTools = unique(current.mission?.memory?.recommendedTools);
-    if (accessScope === "WORK" && !recommendedTools.length) {
-      const found = await find({ mission:current.mission?.memory?.mission || work.command || work.name, limit:5 });
-      const foundBody = await payload(found);
-      recommendedTools = unique(foundBody?.recommendedTools);
-    }
-    if (accessScope === "WORK" && !recommendedTools.length) {
+    let recommendedTools = accessScope === "MAINTENANCE"
+      ? unique(destinations.flatMap(destinationTools))
+      : unique(current.mission?.memory?.recommendedTools);
+    // Card issuance must not search Work history. Tool suggestions come from mission memory or declared destinations.
+    if (!recommendedTools.length) {
       recommendedTools = unique(destinations.flatMap(destinationTools));
     }
     if (accessScope === "WORK" && !recommendedTools.length) return json({
@@ -738,7 +744,7 @@ export function createAgentMissionService({
       ...workContext,
       destinations,
       accessScope,
-      toolAccess:accessScope === "MAINTENANCE" ? [] : recommendedTools,
+      toolAccess:recommendedTools,
       reason:text(input.reason) || "MISSION_ENTRY",
       context:clone(current.mission?.memory?.selectedContext || []),
     });
@@ -920,20 +926,15 @@ export function createAgentMissionService({
       return { work, passOpened:false, alreadyProvisioned };
     }
 
-    const opened = await centre({
-      action:"v4_open_pass",
-      ...workContext,
-      actor:"GO",
-      kind:"WORK",
-      destinations:[normalizedDestination],
-      scope:[normalizedDestination],
-      closeCondition:"RETURN",
-      returnAddress:workContext.checkpointId,
-      reason:alreadyProvisioned
-        ? "HERMES automatic session access for already-open mission space."
-        : "HERMES first-open standardization for mission space.",
+    throw Object.assign(new Error("HERMES_ACTIVE_PASS_REQUIRED"), {
+      status:409,
+      body:{
+        destination:normalizedDestination,
+        authorityCreated:false,
+        routeChanged:false,
+        hint:"Destination is on the Work route, but HERMES does not create Authority. Open an authorized Pass explicitly, then call first_open again.",
+      },
     });
-    return { work:opened.work, passOpened:true, alreadyProvisioned };
   }
 
   function factoryField(value, source, confidence = "VERIFIED") {
