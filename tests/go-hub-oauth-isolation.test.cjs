@@ -105,3 +105,57 @@ test("refresh tokens are bound to the original client and exact resource", async
   }));
   assert.equal(crossedResource.status, 400);
 });
+
+
+test("legacy client ids stay bounded to their canonical actor resources during migration", async () => {
+  const { createAccessToken, verifyAccessToken } = await import(oauthUrl + "?legacy-client-bridge=" + Date.now());
+  const now = () => 1_789_391_000;
+  const legacyGo = await createAccessToken({
+    issuer,
+    signingKey,
+    clientId:"go-hub-chatgpt",
+    resource:issuer + "/mcp",
+    subject:"big",
+    scope:"go-hub",
+    now,
+  });
+  const legacyLight = await createAccessToken({
+    issuer,
+    signingKey,
+    clientId:"go-hub-notion",
+    resource:issuer + "/mcp/light",
+    subject:"notion",
+    scope:"go-hub",
+    now,
+  });
+
+  assert.deepEqual(await verifyAccessToken(
+    new Request(issuer + "/mcp", { headers:{ authorization:"Bearer " + legacyGo } }),
+    {
+      issuer, signingKey, resource:issuer + "/mcp", clientId:"go-hub-go",
+      acceptedClientIds:["go-hub-go","go-hub-chatgpt"], requireClientId:true,
+      acceptedIdentities:[{ subject:"GO", scope:"go-hub" }, { subject:"big", scope:"go-hub" }], now,
+    },
+  ), { subject:"big", scope:"go-hub" });
+
+  assert.deepEqual(await verifyAccessToken(
+    new Request(issuer + "/mcp/light", { headers:{ authorization:"Bearer " + legacyLight } }),
+    {
+      issuer, signingKey, resource:issuer + "/mcp/light", clientId:"go-hub-light",
+      acceptedClientIds:["go-hub-light","go-hub-notion"], requireClientId:true,
+      acceptedIdentities:[{ subject:"LIGHT", scope:"go-hub-light" }, { subject:"notion", scope:"go-hub" }], now,
+    },
+  ), { subject:"notion", scope:"go-hub" });
+
+  await assert.rejects(
+    verifyAccessToken(
+      new Request(issuer + "/mcp/light", { headers:{ authorization:"Bearer " + legacyGo } }),
+      {
+        issuer, signingKey, resource:issuer + "/mcp/light", clientId:"go-hub-light",
+        acceptedClientIds:["go-hub-light","go-hub-notion"], requireClientId:true,
+        acceptedIdentities:[{ subject:"LIGHT", scope:"go-hub-light" }, { subject:"notion", scope:"go-hub" }], now,
+      },
+    ),
+    /invalid access token/,
+  );
+});
