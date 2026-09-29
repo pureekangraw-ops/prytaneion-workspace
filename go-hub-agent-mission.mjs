@@ -583,7 +583,8 @@ export function createAgentMissionService({
       replaced:true,
       routeOpened:false,
       audit:response.audit || null,
-      prompt:"เรียบร้อยครับ Mission ออกการ์ดใบใหม่แทนใบเดิมแล้ว เครื่องมือจะอ่านสิทธิ์จากการ์ดใหม่นี้โดยตรง",
+      readout:composeMissionReadout(response.work, response.mission),
+      prompt:"เรียบร้อยครับ Route ที่ยืนยันแล้วถูกเขียนกลับ Owner Work และออกการ์ดใบใหม่พร้อมกัน โดยยังไม่เปิดปลายทางจนกว่าจะ first_open",
     });
   }
 
