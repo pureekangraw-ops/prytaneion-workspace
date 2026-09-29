@@ -253,6 +253,125 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(secondOpen.runtimePassOpened, true, "runtime access may be reopened automatically without making first-open a new gate");
 });
 
+test("HERMES derives bounded GitHub tool access from an existing destination instead of blocking on tool recommendation", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?github-route-tools=" + Date.now());
+  const workContext = { workId:"WORK-HUB-DREAM-ROUTE", checkpointId:"CP-WORK-HUB-DREAM-ROUTE" };
+  const work = {
+    ...workContext,
+    workType:"NORMAL",
+    status:"OPEN",
+    command:"Improve GO Hub",
+    name:"Improve GO Hub",
+    expectedResult:"Open a reviewable GitHub revision",
+    requestedDestinations:["github://pureekangraw-ops/prytaneion-workspace"],
+    scope:["github://pureekangraw-ops/prytaneion-workspace"],
+    pass:null,
+  };
+  let prepared = null;
+  const centreLive = {
+    async action(input) {
+      if (input.action === "v4_mission_get") {
+        return new Response(JSON.stringify({
+          ok:true,
+          work,
+          mission:{ session:{ status:"ENTERED" }, memory:{ mission:work.command, recommendedTools:[], selectedContext:[] } },
+        }), { headers:{ "content-type":"application/json" } });
+      }
+      if (input.action === "v4_inspect") {
+        return new Response(JSON.stringify({ ok:true, work }), { headers:{ "content-type":"application/json" } });
+      }
+      if (input.action === "v4_mission_card_prepare") {
+        prepared = structuredClone(input);
+        return new Response(JSON.stringify({ ok:true, mission:{ memory:{ cardMachine:{ draft:{ state:"DRAFT" } } } } }), { headers:{ "content-type":"application/json" } });
+      }
+      if (input.action === "v4_mission_card_issue") {
+        return new Response(JSON.stringify({
+          ok:true,
+          mission:{ memory:{ cardMachine:{ current:{
+            state:"CURRENT",
+            workId:workContext.workId,
+            checkpointId:workContext.checkpointId,
+            destinations:prepared.destinations,
+            access_scope:prepared.accessScope,
+            tool_access:prepared.toolAccess,
+          } } } },
+        }), { headers:{ "content-type":"application/json" } });
+      }
+      throw new Error("unexpected centre action " + input.action);
+    },
+  };
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+  });
+
+  const response = await service.action({ action:"issue_card", workContext });
+  assert.equal(response.status, 200);
+  const issued = await body(response);
+  assert.equal(issued.issued, true);
+  assert.ok(prepared.toolAccess.includes("go_hub_inspect_repository"));
+  assert.ok(prepared.toolAccess.includes("go_hub_read_file"));
+  assert.ok(prepared.toolAccess.includes("go_hub_create_branch"));
+  assert.ok(prepared.toolAccess.includes("go_hub_put_file"));
+  assert.ok(prepared.toolAccess.includes("go_hub_open_pull_request"));
+  assert.ok(prepared.toolAccess.includes("go_hub_get_ci"));
+  assert.equal(prepared.toolAccess.includes("go_hub_delete_file"), false);
+  assert.equal(prepared.toolAccess.includes("go_hub_merge_pull_request"), false);
+});
+
+test("HERMES first-open never widens the Work route behind GO's back", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?route-no-widen=" + Date.now());
+  const workContext = { workId:"WORK-HERMES-NO-WIDEN", checkpointId:"CP-WORK-HERMES-NO-WIDEN" };
+  const work = {
+    ...workContext,
+    workType:"NORMAL",
+    status:"OPEN",
+    holder:null,
+    command:"Factory-only mission",
+    name:"Factory-only mission",
+    expectedResult:"Stay inside the confirmed route",
+    requestedDestinations:["destination://factory"],
+    scope:["destination://factory"],
+    pass:null,
+  };
+  const actions = [];
+  const centreLive = {
+    async action(input) {
+      actions.push(input.action);
+      if (input.action === "v4_mission_get") {
+        return new Response(JSON.stringify({
+          ok:true,
+          work,
+          mission:{ session:{ status:"ENTERED" }, memory:{ openedSpaces:{} } },
+        }), { headers:{ "content-type":"application/json" } });
+      }
+      if (input.action === "v4_inspect") {
+        return new Response(JSON.stringify({ ok:true, work }), { headers:{ "content-type":"application/json" } });
+      }
+      throw new Error("unexpected centre action " + input.action);
+    },
+  };
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+  });
+
+  const response = await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://notion",
+  });
+  assert.equal(response.status, 409);
+  const result = await body(response);
+  assert.equal(result.code, "HERMES_ROUTE_CHANGE_REQUIRED");
+  assert.deepEqual(result.cause.requestedDestinations, ["destination://factory"]);
+  assert.equal(actions.includes("v4_update_destinations"), false);
+  assert.equal(actions.includes("v4_claim"), false);
+  assert.equal(actions.includes("v4_open_pass"), false);
+});
+
 test("Centre sidecar refuses fake first-open, fake return, and exit without owner return readback", async () => {
   const { GoHubCentreState } = await import(centreUrl + "?guards=" + Date.now());
   const instance = new GoHubCentreState({ storage:new MemoryStorage() }, {});
