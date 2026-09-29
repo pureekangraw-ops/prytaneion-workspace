@@ -201,6 +201,22 @@ test("LIGHT -> GO Counter uses the same SEARCH/HANDOFF modes and supports GO ans
   }, 20);
   assert.equal(search.counter.from, "LIGHT");
   assert.equal(search.counter.to, "GO");
+  assert.equal(search.dispatch.legs.GO.status, "WAITING_PICKUP");
+
+  const searchInbox = await callMcp(worker, env, goToken, "/mcp", "go_hub_counter_inbox", {
+    workContext, limit: 10,
+  }, 201);
+  assert.equal(searchInbox.inbox.count, 1);
+  assert.equal(searchInbox.inbox.tickets[0].counterId, "COUNTER-BIDIR-LIGHT-SEARCH-001");
+  assert.equal(searchInbox.inbox.tickets[0].mode, "SEARCH");
+  assert.equal(searchInbox.inbox.tickets[0].from, "LIGHT");
+  assert.equal(searchInbox.inbox.tickets[0].to, "GO");
+
+  const searchPickedUp = await callMcp(worker, env, goToken, "/mcp", "go_hub_counter_pickup", {
+    counterId: "COUNTER-BIDIR-LIGHT-SEARCH-001", workContext,
+  }, 202);
+  assert.equal(searchPickedUp.counter.currentState, "SEEN");
+  assert.equal(searchPickedUp.counter.events.at(-1).actor, "GO");
 
   const created = await callMcp(worker, env, lightToken, "/mcp", "go_hub_counter_create", {
     counterId: "COUNTER-BIDIR-LIGHT-GO-001",
