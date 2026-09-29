@@ -425,3 +425,37 @@ test("HERMES reconciles indexed checkpoint pointers against Centre owner truth",
   assert.equal(result.candidates[0].checkpointStatus, "OWNER_CORRECTED");
   assert.equal(result.candidates[0].checkpointDrift, true);
 });
+
+
+test("HERMES issues a maintenance card from Maintenance pass context, not stale recommendations", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?maintenance-scope=" + Date.now());
+  const workContext = { workId:"WORK-MAINTENANCE-SCOPE", checkpointId:"CP-MAINTENANCE-SCOPE" };
+  const work = {
+    ...workContext,
+    workType:"NORMAL",
+    command:"Inspect GO Hub maintenance",
+    name:"Inspect GO Hub maintenance",
+    expectedResult:"Maintenance inspection",
+    requestedDestinations:["destination://maintenance"],
+    pass:{ kind:"MAINTENANCE", state:"ACTIVE", allowedDestinations:["ALL_GO_HUB_OWNED_AREAS"] },
+  };
+  const prepared = [];
+  const centreLive = {
+    async action(input) {
+      if (input.action === "v4_mission_get") return new Response(JSON.stringify({ ok:true, work, mission:{ session:{ status:"ENTERED" }, memory:{ mission:work.command, recommendedTools:["PIXIE_VISUAL_WORKBENCH"], selectedContext:[] } } }), { headers:{ "content-type":"application/json" } });
+      if (input.action === "v4_mission_card_prepare") { prepared.push(input); return new Response(JSON.stringify({ ok:true, mission:{} }), { headers:{ "content-type":"application/json" } }); }
+      if (input.action === "v4_mission_card_issue") return new Response(JSON.stringify({ ok:true, mission:{ memory:{ cardMachine:{ current:{ access_scope:"MAINTENANCE", tool_access:[] } } } } }), { headers:{ "content-type":"application/json" } });
+      throw new Error("unexpected Centre action " + input.action);
+    },
+  };
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+  });
+  const response = await service.action({ action:"issue_card", workContext });
+  assert.equal(response.status, 200);
+  assert.equal(prepared.length, 1);
+  assert.equal(prepared[0].accessScope, "MAINTENANCE");
+  assert.deepEqual(prepared[0].toolAccess, []);
+});
