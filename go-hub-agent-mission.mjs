@@ -174,6 +174,12 @@ function workDestinationAllowed(work, destination) {
     allowed.includes("ALL_GO_HUB_OWNED_AREAS");
 }
 
+function destinationTool(destination) {
+  const value = text(destination).replace(/^destination:\/\//, "").toLowerCase();
+  const map = { factory:"go_hub_factory_v4", notion:"go_hub_notion_light", drive:"go_hub_drive_capabilities", github:"go_hub_inspect_repository", counter:"go_hub_counter_create", lighthouse:"go_hub_lighthouse_control_port_state", maintenance:"go_hub_maintenance" };
+  return map[value] || null;
+}
+
 function lightCandidates(lightResult = {}) {
   const candidates = [];
   let n = 0;
@@ -355,6 +361,9 @@ export function createAgentMissionService({
       const found = await find({ mission:current.mission?.memory?.mission || work.command || work.name, limit:5 });
       const foundBody = await payload(found);
       recommendedTools = unique(foundBody?.recommendedTools);
+    }
+    if (accessScope === "WORK" && !recommendedTools.length) {
+      recommendedTools = unique(destinations.map(destination => destinationTool(destination)).filter(Boolean));
     }
     if (accessScope === "WORK" && !recommendedTools.length) return json({
       code:"HERMES_TOOL_RECOMMENDATION_REQUIRED",
