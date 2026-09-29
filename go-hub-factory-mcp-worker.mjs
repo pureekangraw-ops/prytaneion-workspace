@@ -454,18 +454,23 @@ function observerStatus(code) {
   return 403;
 }
 
-export function createObserverEvidenceService({ namespace } = {}) {
-  function stub() {
+export function createObserverEvidenceService({ namespace, factoryEyeNamespace } = {}) {
+  function legacyStub() {
     if (!namespace || typeof namespace.getByName !== "function") return null;
     return namespace.getByName("go-browser-observer-v1");
   }
-  async function call(method, input = {}) {
-    const current = stub();
+
+  function factoryEyeStub() {
+    if (!factoryEyeNamespace || typeof factoryEyeNamespace.getByName !== "function") return null;
+    return factoryEyeNamespace.getByName("ergasterion-factory-eye-v1");
+  }
+
+  async function callStub(current, baseUrl, method, input = {}) {
     if (!current) return { ok:false, code:"HUB_UNAVAILABLE" };
     try {
       if (typeof current.fetch === "function") {
         const path = method === "latest" ? "latest" : "screenshot";
-        const response = await current.fetch(new Request("https://observer-session.internal/" + path, {
+        const response = await current.fetch(new Request(baseUrl + path, {
           method:"POST",
           headers:{ "content-type":"application/json" },
           body:JSON.stringify(input),
@@ -479,18 +484,49 @@ export function createObserverEvidenceService({ namespace } = {}) {
       return { ok:false, code:"HUB_UNAVAILABLE" };
     }
   }
+
+  const callLegacy = (method, input = {}) =>
+    callStub(legacyStub(), "https://observer-session.internal/", method, input);
+
+  const callFactoryEye = (method, input = {}) =>
+    callStub(factoryEyeStub(), "https://factory-eye.internal/", method, input);
+
   return Object.freeze({
     async latest() {
-      const result = await call("latest");
-      if (!result?.ok) return json({ code: result?.code || "HUB_UNAVAILABLE" }, observerStatus(result?.code));
-      return json(result, 200);
+      const eye = await callFactoryEye("latest");
+      if (eye?.ok) {
+        return json({
+          ...eye,
+          source:"FACTORY_EYE",
+          legacyBrowserPolicyUsed:false,
+        }, 200);
+      }
+
+      const result = await callLegacy("latest");
+      if (!result?.ok) {
+        return json({
+          code:result?.code || eye?.code || "HUB_UNAVAILABLE",
+          factoryEyeCode:eye?.code || null,
+        }, observerStatus(result?.code));
+      }
+      return json({ ...result, source:"LEGACY_BROWSER_OBSERVER" }, 200);
     },
+
     async screenshot({ screenshotRef } = {}) {
       const ref = String(screenshotRef || "").trim();
-      if (!ref) return json({ code: "SCHEMA_REJECTED" }, 400);
-      const result = await call("screenshot", { screenshotRef: ref });
-      if (!result?.ok) return json({ code: result?.code || "HUB_UNAVAILABLE" }, observerStatus(result?.code));
-      return json(result, 200);
+      if (!ref) return json({ code:"SCHEMA_REJECTED" }, 400);
+
+      if (ref.startsWith("factory-eye-shot:")) {
+        const eye = await callFactoryEye("screenshot", { screenshotRef:ref });
+        if (!eye?.ok) {
+          return json({ code:eye?.code || "FACTORY_EYE_SCREENSHOT_NOT_FOUND" }, 404);
+        }
+        return json({ ...eye, source:"FACTORY_EYE", legacyBrowserPolicyUsed:false }, 200);
+      }
+
+      const result = await callLegacy("screenshot", { screenshotRef:ref });
+      if (!result?.ok) return json({ code:result?.code || "HUB_UNAVAILABLE" }, observerStatus(result?.code));
+      return json({ ...result, source:"LEGACY_BROWSER_OBSERVER" }, 200);
     },
   });
 }
@@ -657,7 +693,10 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         token: env?.CLOUDFLARE_RUNTIME_API_TOKEN,
         accountId: env?.CLOUDFLARE_ACCOUNT_ID,
       });
-      const observer = createObserverEvidenceService({ namespace: env?.OBSERVER_SESSIONS });
+      const observer = createObserverEvidenceService({
+        namespace:env?.OBSERVER_SESSIONS,
+        factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
+      });
       const centreLive = createCentreLiveService({ namespace: env?.GO_HUB_CENTRE_STATE });
       const broadcast = createBroadcastService({ namespace: env?.GO_HUB_BROADCAST_STATE });
       const globalAudit = createGlobalAuditService({ namespace: env?.GO_HUB_GLOBAL_AUDIT });
