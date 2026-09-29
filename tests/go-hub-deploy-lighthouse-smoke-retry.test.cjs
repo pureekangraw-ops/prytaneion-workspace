@@ -40,3 +40,11 @@ test("all post-deploy governed smoke calls stay bound to one WorkContext", () =>
   assert.doesNotMatch(workflow, /name: "go_hub_observer_latest", arguments: \{\}/);
   assert.doesNotMatch(workflow, /name: "go_hub_drive_health", arguments: \{\}/);
 });
+
+
+test("maintenance deploy smoke carries bounded BIG-approved repair scope", () => {
+  const workflow = fs.readFileSync(".github/workflows/go-hub-deploy.yml", "utf8");
+  assert.match(workflow, /kind:"MAINTENANCE"/);
+  assert.match(workflow, /ownerApproval:"BIG_APPROVED"/);
+  assert.match(workflow, /repairScope:\["production runtime owner-binding route verification"\]/);
+});
