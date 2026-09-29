@@ -714,7 +714,7 @@ export function createWorkerHandler({ fetchImpl = fetch } = {}) {
           },
           {
             clientId: "go-hub-light",
-            clientSecret: env?.GOHUB_LIGHT_CLIENT_SECRET,
+            clientSecret: env?.GOHUB_LIGHT_CLIENT_SECRET || env?.GOHUB_NOTION_CLIENT_SECRET,
             redirectUris: [env?.GOHUB_LIGHT_REDIRECT_URI || "https://app.notion.com/workflows/mcp/oauth/callback"],
             resources: [url.origin + "/mcp"],
             subject: "LIGHT",
