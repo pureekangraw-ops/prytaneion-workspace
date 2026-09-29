@@ -1,5 +1,6 @@
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LIVE_AFTER_MS = 20_000;
+const FRESH_OBSERVATION_VERSION = "0.2.3";
 const MAX_TABS = 100;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1_800_000;
 const SCREENSHOT_CHUNK_CHARS = 80_000;
@@ -47,6 +48,69 @@ function sessionState(session, nowMs) {
   if (!Number.isFinite(Number(session.expiresAt)) || nowMs >= Number(session.expiresAt)) return "EXPIRED";
   const seen = Number(session.lastSeenAt || 0);
   return seen > 0 && nowMs - seen <= LIVE_AFTER_MS ? "LIVE" : "STALE";
+}
+
+function versionAtLeast(value, target) {
+  const parse = input => String(input || "").split(".").map(part => Number.parseInt(part, 10) || 0);
+  const left = parse(value);
+  const right = parse(target);
+  const size = Math.max(left.length, right.length, 3);
+  for (let i = 0; i < size; i += 1) {
+    const a = left[i] || 0;
+    const b = right[i] || 0;
+    if (a !== b) return a > b;
+  }
+  return true;
+}
+
+function isWebUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function sameOrigin(left, right) {
+  try {
+    return new URL(String(left || "")).origin === new URL(String(right || "")).origin;
+  } catch {
+    return false;
+  }
+}
+
+function observationFreshness(session, latest, nowMs) {
+  const transportState = sessionState(session, nowMs);
+  const activeTabId = Number.isInteger(Number(session?.activeTabId)) ? Number(session.activeTabId) : null;
+  const observationTabId = Number.isInteger(Number(latest?.tab?.tabId)) ? Number(latest.tab.tabId) : null;
+  const receivedMs = Date.parse(String(latest?.receivedAt || latest?.observedAt || ""));
+  const ageMs = Number.isFinite(receivedMs) ? Math.max(0, nowMs - receivedMs) : null;
+  const tabMatch = activeTabId !== null && observationTabId === activeTabId && latest?.tab?.active === true;
+  const generationRequired = versionAtLeast(session?.version, FRESH_OBSERVATION_VERSION) && isWebUrl(latest?.tab?.url);
+  const generationMatch = !generationRequired ||
+    clean(latest?.contentScriptVersion, 80) === clean(session?.version, 80);
+  const visibleMatch = !generationRequired || latest?.documentVisible === true;
+  const freshEnough = ageMs !== null && ageMs <= LIVE_AFTER_MS;
+  const evidenceLive = tabMatch && generationMatch && visibleMatch && freshEnough;
+  const state = transportState === "LIVE"
+    ? (evidenceLive ? "LIVE" : "WARMING_UP")
+    : transportState;
+  return {
+    state,
+    transportState,
+    activeTabId,
+    observationTabId,
+    ageMs,
+    tabMatch,
+    generationRequired,
+    generationMatch,
+    visibleMatch,
+    freshEnough,
+    evidenceLive,
+    expectedVersion:clean(session?.version, 80) || null,
+    observedVersion:clean(latest?.contentScriptVersion, 80) || null,
+  };
 }
 
 function normalizeTab(tab = {}) {
@@ -113,6 +177,9 @@ function normalizePage(page) {
       label: clean(item.label, 320) || null,
     })),
     capturedAt: clean(page.capturedAt, 80) || null,
+    observerVersion: clean(page.observerVersion, 80) || null,
+    visibilityState: clean(page.visibilityState, 40) || null,
+    documentFocused: page.documentFocused === true,
     capturesInputValues: false,
     createsAuthority: false,
   };
@@ -306,6 +373,27 @@ export function createFactoryEyeSessionService({
         return { ok:false, code:"FACTORY_EYE_PAGE_SUMMARY_INVALID" };
       }
 
+      const contentScriptVersion = clean(input.contentScriptVersion || page?.observerVersion, 80) || null;
+      const documentVisible = input.documentVisible === true || page?.visibilityState === "visible";
+      const documentFocused = input.documentFocused === true || page?.documentFocused === true;
+      const freshnessContractRequired = versionAtLeast(auth.session.version, FRESH_OBSERVATION_VERSION) &&
+        isWebUrl(tab.url);
+
+      if (status === "OBSERVED" && freshnessContractRequired) {
+        if (tab.active !== true) {
+          return { ok:false, code:"FACTORY_EYE_OBSERVATION_NOT_ACTIVE" };
+        }
+        if (contentScriptVersion !== clean(auth.session.version, 80)) {
+          return { ok:false, code:"FACTORY_EYE_SCRIPT_VERSION_STALE" };
+        }
+        if (documentVisible !== true) {
+          return { ok:false, code:"FACTORY_EYE_OBSERVATION_NOT_VISIBLE" };
+        }
+        if (!page?.url || !sameOrigin(tab.url, page.url)) {
+          return { ok:false, code:"FACTORY_EYE_OBSERVATION_ORIGIN_MISMATCH" };
+        }
+      }
+
       const unknowns = Array.isArray(input.unknowns)
         ? input.unknowns.map(value => clean(value, 220)).filter(Boolean).slice(0, 40)
         : [];
@@ -329,6 +417,10 @@ export function createFactoryEyeSessionService({
         receivedAt:new Date(current).toISOString(),
         tab,
         page,
+        contentScriptVersion,
+        evidenceReason:clean(input.evidenceReason, 120) || null,
+        documentVisible,
+        documentFocused,
         status,
         screenshotRef:screenshot.screenshotRef,
         unknowns:[...new Set(unknowns)],
@@ -379,13 +471,16 @@ export function createFactoryEyeSessionService({
       const session = await loadSession();
       if (!session) return { ok:false, code:"FACTORY_EYE_SESSION_INACTIVE" };
       const nowMs = Number(now());
+      const latest = clone(await storage.get("latest") || null);
+      const freshness = observationFreshness(session, latest, nowMs);
       return {
         ok:true,
         source:"FACTORY_EYE",
-        state:sessionState(session, nowMs),
+        state:freshness.state,
+        freshness,
         session:publicSession(session),
         tabs:normalizeTabs(await storage.get("tabs")),
-        latest:clone(await storage.get("latest") || null),
+        latest,
         latestReceipt:clone(await storage.get("latest-receipt") || null),
         createsAuthority:false,
       };
@@ -464,7 +559,7 @@ export class FactoryEyeSessionRegistry {
       const result = await run(input);
       const status = result?.ok === false
         ? (result.code === "FACTORY_EYE_SESSION_EXPIRED" ? 410 :
-           result.code === "FACTORY_EYE_OBSERVATION_STALE" ? 409 :
+           ["FACTORY_EYE_OBSERVATION_STALE","FACTORY_EYE_SCRIPT_VERSION_STALE","FACTORY_EYE_OBSERVATION_NOT_ACTIVE","FACTORY_EYE_OBSERVATION_NOT_VISIBLE","FACTORY_EYE_OBSERVATION_ORIGIN_MISMATCH"].includes(result.code) ? 409 :
            result.code === "FACTORY_EYE_UNAVAILABLE" ? 503 : 400)
         : 200;
       return new Response(JSON.stringify(result), {
@@ -486,5 +581,6 @@ export class FactoryEyeSessionRegistry {
 export {
   DEFAULT_TTL_MS,
   LIVE_AFTER_MS,
+  FRESH_OBSERVATION_VERSION,
   MAX_SCREENSHOT_DATA_URL_CHARS,
 };
