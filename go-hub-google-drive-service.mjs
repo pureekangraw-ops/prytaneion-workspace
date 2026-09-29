@@ -34,6 +34,7 @@ function normalizeFile(file) {
 
 function errorCategory(payload, status) {
   const candidates = [
+    typeof payload?.error === "string" ? payload.error : null,
     payload?.error?.errors?.[0]?.reason,
     payload?.error?.details?.[0]?.reason,
     payload?.error?.status,
