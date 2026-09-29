@@ -545,7 +545,6 @@ test("LIGHT repository reads bypass HERMES Card while GO still follows the Card 
   });
 
   const go = await call(await tokenFor("GO", "go-hub"));
-  assert.equal(go.error, undefined);
-  assert.equal(go.result.isError, true);
-  assert.match(JSON.stringify(go.result), /CURRENT_HERMES_CARD_REQUIRED/);
+  assert.equal(go.error?.code, -32602);
+  assert.equal(go.error?.message, "CURRENT_HERMES_CARD_REQUIRED");
 });
