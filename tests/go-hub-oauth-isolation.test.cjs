@@ -77,6 +77,34 @@ test("GO and LIGHT clients receive distinct actor/resource-bound access tokens",
     ),
     /invalid access token/,
   );
+
+  const lightCode = await createTestAuthorizationCode({
+    ...oauth,
+    clientId: "go-hub-light",
+    subject: "LIGHT",
+    scope: "go-hub-light",
+    redirectUri: oauth.clients[1].redirectUris[0],
+    codeChallenge: await challengeFor(verifier),
+    resource: issuer + "/mcp/light",
+  });
+  const lightResponse = await handler(new Request(issuer + "/oauth/token", {
+    method: "POST",
+    headers: { authorization: basic("go-hub-light", "light-secret"), "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code: lightCode, redirect_uri: oauth.clients[1].redirectUris[0], code_verifier: verifier, resource: issuer + "/mcp/light" }),
+  }));
+  assert.equal(lightResponse.status, 200);
+  const light = await lightResponse.json();
+  assert.deepEqual(await verifyAccessToken(
+    new Request(issuer + "/mcp/light", { headers: { authorization: "Bearer " + light.access_token } }),
+    { issuer, signingKey, resource: issuer + "/mcp/light", clientId: "go-hub-light", requireClientId: true, acceptedIdentities: [{ subject: "LIGHT", scope: "go-hub-light" }], now: oauth.now },
+  ), { subject: "LIGHT", scope: "go-hub-light" });
+  await assert.rejects(
+    verifyAccessToken(
+      new Request(issuer + "/mcp", { headers: { authorization: "Bearer " + light.access_token } }),
+      { issuer, signingKey, resource: issuer + "/mcp", clientId: "go-hub-go", requireClientId: true, acceptedIdentities: [{ subject: "GO", scope: "go-hub" }], now: oauth.now },
+    ),
+    /invalid access token/,
+  );
 });
 
 test("refresh tokens are bound to the original client and exact resource", async () => {
