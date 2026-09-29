@@ -663,7 +663,17 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         clientId,
         resource,
         requireClientId: true,
-        acceptedIdentities: [{ subject: expectedActor, scope: lightMcp ? "go-hub-light" : "go-hub" }],
+        allowLegacyClientId: true,
+        acceptedIdentities: lightMcp
+          ? [
+              { subject: "LIGHT", scope: "go-hub-light" },
+              { subject: "light", scope: "go-hub-light" },
+              { subject: "notion", scope: "go-hub" },
+            ]
+          : [
+              { subject: "GO", scope: "go-hub" },
+              { subject: "big", scope: "go-hub" },
+            ],
         subject: expectedActor,
         scope: lightMcp ? "go-hub-light" : "go-hub",
       };
@@ -1060,7 +1070,12 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         issuer: url.origin,
         authenticate: async current => {
           const identity = await verifyAccessToken(current, accessConfig);
-          authenticatedActor = String(identity.subject || "");
+          const subject = String(identity.subject || "");
+          authenticatedActor = ["LIGHT", "light", "notion"].includes(subject)
+            ? "LIGHT"
+            : ["GO", "go", "big"].includes(subject)
+              ? "GO"
+              : subject;
           return identity;
         },
         allowedOrigins: lightMcp
