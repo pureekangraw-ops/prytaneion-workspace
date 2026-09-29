@@ -365,7 +365,7 @@ function inboxEnvelope(input = {}) {
     from:fromActor,
     to:toActor,
     request:required(input.request, "Request"),
-    requestedResult:required(input.requestedResult, "Requested result"),
+    requestedResult:mode === "HANDOFF" ? required(input.requestedResult, "Requested result") : (input.requestedResult == null ? null : required(input.requestedResult, "Requested result")),
     authority:input.authority == null ? null : required(input.authority, "Authority"),
     target:input.target == null ? null : required(input.target, "Target"),
     projectRef:input.projectRef == null ? null : required(input.projectRef, "Project reference"),
