@@ -366,6 +366,13 @@ function v4MissionAction(state, action, input = {}) {
     return { state:saveMission(state, mission, "V4_MISSION_CONTEXT"), mission };
   }
 
+  if (action === "v4_mission_recommended_tools") {
+    let mission = activeMissionSession(state);
+    mission.memory.recommendedTools = missionUnique(input.recommendedTools);
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_TOOL_DISCOVERY"), mission };
+  }
+
   if (action === "v4_mission_note") {
     let mission = activeMissionSession(state);
     const note = required(input.note, "HERMES Note");
