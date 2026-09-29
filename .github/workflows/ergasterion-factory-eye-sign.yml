@@ -2,6 +2,11 @@ name: ERGASTERION Factory Eye Sign
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ergasterion-factory-eye-sign.yml'
 
 permissions:
   contents: read
