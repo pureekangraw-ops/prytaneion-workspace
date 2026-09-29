@@ -175,6 +175,13 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(first.status, "OPENED");
   assert.equal(first.card.sourceStatus, "ON PROCESS");
   assert.equal(first.mission.memory.openedSpaces["destination://factory"].openedBy, "heimdall");
+  assert.equal(first.readout.kind, "HERMES_MISSION_READOUT");
+  assert.equal(first.readout.mode, "READ_ONLY");
+  assert.equal(first.readout.work.ownerSource, "CENTRE_DURABLE_STORE");
+  assert.deepEqual(first.readout.currentRoute, ["destination://factory"]);
+  assert.equal(first.readout.warpDoors[0].destination, "destination://factory");
+  assert.equal(first.readout.warpDoors[0].active, true);
+  assert.equal(first.readout.warpDoors[0].returnAddress, workContext.checkpointId);
 
   const routeDraft = await body(await service.action({
     action:"prepare_route_change",
@@ -200,6 +207,19 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(routeChanged.card.checkpointId, workContext.checkpointId);
   assert.deepEqual(routeChanged.card.destinations, ["destination://factory","destination://notion"]);
   assert.equal(routeChanged.audit.event, "CARD_REPLACED");
+  assert.deepEqual(routeChanged.readout.currentRoute, ["destination://factory","destination://notion"]);
+  assert.equal(routeChanged.readout.warpDoors.length, 2);
+  assert.equal(routeChanged.readout.warpDoors.find(item => item.destination === "destination://notion").active, false);
+
+  const notionOpened = await body(await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://notion",
+    workspace:"notion",
+  }));
+  assert.equal(notionOpened.status, "OPENED");
+  assert.equal(notionOpened.readout.warpDoors.find(item => item.destination === "destination://notion").active, true);
+  assert.equal(notionOpened.readout.currentRoute.includes("destination://notion"), true);
 
   const touched = await body(await service.action({
     action:"touch",
@@ -229,10 +249,10 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(returned.mission.session.status, "RETURNED");
   assert.equal(returned.mission.memory.latestReality.missionStatus, "ON PROCESS");
 
-  const updatePrompt = returned.prompt;
-  assert.match(updatePrompt, /อัปเดตการ์ด/);
-  const updated = await body(await service.action({ action:"update_card", workContext }));
-  assert.equal(updated.updated, true);
+  assert.equal(returned.cardUpdateRequired, false);
+  assert.match(returned.prompt, /พร้อมออกจาก Mission/);
+  assert.equal(returned.readout.resume.mode, "RETURNED_OPEN");
+  assert.equal(returned.readout.resume.resumable, true);
   const exited = await body(await service.action({ action:"exit", workContext }));
   assert.equal(exited.exited, true);
   assert.equal(exited.mission.session.status, "EXITED");
@@ -243,6 +263,9 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     mission:"กลับมาซ่อมโรงงานต่อ",
   }));
   assert.equal(reentered.noGate, true);
+  assert.equal(reentered.readout.kind, "HERMES_MISSION_READOUT");
+  assert.equal(reentered.readout.resume.mode, "RETURNED_OPEN");
+  assert.equal(reentered.readout.resume.resumable, true);
   const secondOpen = await body(await service.action({
     action:"first_open",
     workContext,
@@ -372,7 +395,7 @@ test("HERMES first-open never widens the Work route behind GO's back", async () 
   assert.equal(actions.includes("v4_open_pass"), false);
 });
 
-test("Centre sidecar refuses fake first-open, fake return, and exit without owner return readback", async () => {
+test("Centre sidecar refuses fake first-open but lets verified returned Work exit without an extra card-update ritual", async () => {
   const { GoHubCentreState } = await import(centreUrl + "?guards=" + Date.now());
   const instance = new GoHubCentreState({ storage:new MemoryStorage() }, {});
   async function call(input) {
@@ -407,14 +430,10 @@ test("Centre sidecar refuses fake first-open, fake return, and exit without owne
   });
   assert.equal(fakeReturn.status, 200, "OPEN Work is already owner-returned / not active, so memory may record a return");
 
-  const blockedCardExit = await call({ action:"v4_mission_exit", workId, checkpointId });
-  assert.equal(blockedCardExit.status, 409);
-  assert.equal(blockedCardExit.body.code, "HERMES_CARD_UPDATE_REQUIRED_BEFORE_EXIT");
-  const updatedCard = await call({ action:"v4_mission_card_update", workId, checkpointId });
-  assert.equal(updatedCard.status, 200);
   const exited = await call({ action:"v4_mission_exit", workId, checkpointId });
   assert.equal(exited.status, 200);
   assert.equal(exited.body.mission.session.status, "EXITED");
+  assert.equal(Date.parse(exited.body.mission.memory.cardMachine.lastCardUpdateAt) >= Date.parse(exited.body.mission.session.returnedAt), true);
 });
 
 test("active owner Work cannot be marked returned in HERMES until Centre return really happens", async () => {
@@ -447,8 +466,80 @@ test("active owner Work cannot be marked returned in HERMES until Centre return 
   const recorded = await call({ action:"v4_mission_return", workId, checkpointId, missionStatus:"WAIT", nextAction:"resume later" });
   assert.equal(recorded.status, 200);
   assert.equal(recorded.body.mission.session.status, "RETURNED");
+  const exited = await call({ action:"v4_mission_exit", workId, checkpointId });
+  assert.equal(exited.status, 200);
+  assert.equal(exited.body.mission.session.status, "EXITED");
 });
 
+
+test("HERMES reopens COMPLETE Work on the same identity without minting a new Work", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?reopen=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?reopen=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+    createId:prefix => prefix + "-REOPEN",
+  });
+
+  const created = await body(await service.action({
+    action:"create",
+    mission:"แก้งานเดิมหลังปิดงาน",
+    requestedResult:"แก้ไขโดยใช้ Work เดิม",
+    workKey:"REOPEN-SAME-WORK",
+    createDecision:"CREATE_NEW",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+  }));
+  const workContext = created.workContext;
+  const originalWorkId = workContext.workId;
+  const originalCheckpointId = workContext.checkpointId;
+
+  const issued = await body(await service.action({ action:"issue_card", workContext }));
+  assert.equal(issued.issued, true);
+  await body(await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://factory",
+    workspace:"factory",
+  }));
+  const completed = await body(await service.action({
+    action:"return",
+    workContext,
+    status:"COMPLETE",
+    result:{ summary:"first completion" },
+    evidence:[{ ref:"commit://first-completion" }],
+    lastLocation:"destination://factory",
+  }));
+  assert.equal(completed.card.sourceStatus, "COMPLETE");
+  await body(await service.action({ action:"exit", workContext }));
+
+  const reopened = await body(await service.action({
+    action:"reopen",
+    workContext,
+    mission:"แก้ไขงานเดิมต่อ",
+  }));
+  assert.equal(reopened.reopened, true);
+  assert.equal(reopened.sameWork, true);
+  assert.equal(reopened.workContext.workId, originalWorkId);
+  assert.equal(reopened.workContext.checkpointId, originalCheckpointId);
+  assert.equal(reopened.card.sourceStatus, "ON PROCESS");
+  assert.equal(reopened.card.holder, "GO");
+  assert.equal(reopened.readout.resume.mode, "GO_ACTIVE");
+  assert.equal(reopened.readout.work.workId, originalWorkId);
+
+  const reopenedSpace = await body(await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://factory",
+    workspace:"factory",
+  }));
+  assert.equal(reopenedSpace.status, "ALREADY_OPEN");
+  assert.equal(reopenedSpace.runtimePassOpened, true);
+  assert.equal(reopenedSpace.card.sourceStatus, "ON PROCESS");
+});
 
 test("HERMES Factory card stops on uncertainty and requires GO final confirmation before issue", async () => {
   const { createAgentMissionService } = await import(agentUrl + "?factory-card=" + Date.now());

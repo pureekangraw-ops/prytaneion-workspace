@@ -1,6 +1,7 @@
 export const AGENT_MISSION_ACTIONS = Object.freeze([
   "find",
   "enter",
+  "reopen",
   "create",
   "issue_card",
   "prepare_route_change",
@@ -170,6 +171,52 @@ export function correlateControlRoomTruth(input = {}, options = {}) {
   });
 }
 
+export function createRealitySurface(correlated = {}) {
+  const sourceStatus = correlated?.sourceStatus && typeof correlated.sourceStatus === "object"
+    ? correlated.sourceStatus
+    : {};
+  const toolReality = correlated?.toolReality && typeof correlated.toolReality === "object"
+    ? correlated.toolReality
+    : {};
+  const sources = Object.entries(sourceStatus).map(([source, status]) => Object.freeze({ source, status:upper(status) || "UNKNOWN" }));
+  const tools = Object.entries(toolReality).map(([tool, value]) => Object.freeze({
+    tool,
+    status:upper(value?.status) || "UNKNOWN",
+    response:clone(value?.response || null),
+    evidenceRef:evidenceRef(value?.evidenceRef),
+  }));
+  const truthSignals = [
+    ["CENTRE_PROJECT", correlated?.centreProject],
+    ["BOARD", correlated?.board],
+    ["DEPLOYMENT_PROVENANCE", correlated?.deploymentProvenance],
+  ].map(([signal, value]) => Object.freeze({
+    signal,
+    status:upper(value?.status) || "UNKNOWN",
+    reason:text(value?.reason) || null,
+  }));
+  const unknowns = [
+    ...truthSignals.filter(item => item.status === "UNKNOWN").map(item => item.signal),
+    ...sources.filter(item => item.status === "UNKNOWN").map(item => item.source),
+    ...tools.filter(item => item.status === "UNKNOWN").map(item => item.tool),
+  ];
+  const attention = [
+    ...truthSignals.filter(item => !["PASS","LIVE","VERIFIED"].includes(item.status)),
+    ...tools.filter(item => !["LIVE"].includes(item.status)),
+  ];
+  return Object.freeze({
+    kind:"GO_HUB_REALITY_SURFACE",
+    mode:"READ_ONLY",
+    overall:upper(correlated?.overall) || "UNKNOWN",
+    sources:Object.freeze(sources),
+    truthSignals:Object.freeze(truthSignals),
+    tools:Object.freeze(tools),
+    unknowns:Object.freeze([...new Set(unknowns)]),
+    attention:Object.freeze(attention),
+    incidents:Object.freeze(clone(Array.isArray(correlated?.incidents) ? correlated.incidents : [])),
+    controls:Object.freeze(clone(Array.isArray(correlated?.availableControls) ? correlated.availableControls : [])),
+  });
+}
+
 export function assertGoControlRoomEntry({ work, actor, authority = "GO" } = {}) {
   if (!work || !text(work.workId)) throw new Error("GO_CONTROL_ROOM_WORK_REQUIRED");
   // GO-only is an existing authority boundary, not a new holder or Pass gate.
@@ -191,8 +238,37 @@ export function createGoControlRoom({ work, actor, authority = "GO", observation
     checkpointId: text(work.checkpointId) || null,
     sections: Object.freeze(["CENTRE", "GITHUB", "FACTORY", "CLOUDFLARE", "BOARD", "INCIDENTS", "TIMELINE"]),
     observations: correlated,
+    realitySurface: createRealitySurface(correlated),
     controls: correlated.availableControls,
     refresh: Object.freeze({ mode: "AUTO_REFRESH_LIVE_OBSERVATIONS", mutates: false }),
+  });
+}
+
+export function createCurrentExposureSurface(tools = []) {
+  const list = Array.isArray(tools) ? tools : [];
+  const rows = list
+    .filter(tool => tool && typeof tool === "object" && text(tool.name))
+    .map(tool => Object.freeze({
+      name:text(tool.name),
+      readOnly:tool?.annotations?.readOnlyHint === true,
+      destructive:tool?.annotations?.destructiveHint === true,
+    }));
+  const currentMission = list.find(isCurrentAgentMissionTool) || null;
+  return Object.freeze({
+    kind:"GO_HUB_CURRENT_EXPOSURE_SURFACE",
+    mode:"READ_ONLY",
+    status:currentMission ? "CURRENT" : "UNKNOWN",
+    counts:Object.freeze({
+      total:rows.length,
+      readOnly:rows.filter(item => item.readOnly).length,
+      mutable:rows.filter(item => !item.readOnly).length,
+      destructive:rows.filter(item => item.destructive).length,
+    }),
+    agentMission:currentMission ? Object.freeze({
+      name:"go_hub_agent_mission",
+      status:"CURRENT",
+      actions:Object.freeze(clone(currentMission?.inputSchema?.properties?.action?.enum || [])),
+    }) : Object.freeze({ name:"go_hub_agent_mission", status:"UNKNOWN", actions:Object.freeze([]) }),
   });
 }
 
@@ -209,10 +285,12 @@ export function readCurrentAgentMissionExposure({ listTools, now = () => new Dat
     return Object.freeze({
       status:"UNKNOWN", source:"GO_CONTROL_ROOM_CURRENT_MCP_LIST",
       reason:"CURRENT_AGENT_MISSION_CONTRACT_UNVERIFIED", observedAt, tools:[],
+      surface:createCurrentExposureSurface([]),
     });
   }
   return Object.freeze({
     status:"CURRENT", source:"GO_CONTROL_ROOM_CURRENT_MCP_LIST",
     observedAt, tools:clone(tools),
+    surface:createCurrentExposureSurface(tools),
   });
 }

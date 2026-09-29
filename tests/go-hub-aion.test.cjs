@@ -8,7 +8,7 @@ function missionTool(version) {
   return {
     name:"go_hub_agent_mission",
     description:"Agent Mission " + version,
-    inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["find","enter","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"] }, version:{ const:version } }, required:["action"] },
+    inputSchema:{ type:"object", properties:{ action:{ type:"string", enum:["find","enter","reopen","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"] }, version:{ const:version } }, required:["action"] },
     annotations:{ readOnlyHint:false, destructiveHint:false },
   };
 }

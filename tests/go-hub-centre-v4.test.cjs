@@ -51,3 +51,37 @@ test("Board is a read model of Work reality", async () => {
   assert.equal(board[0].status,"OPEN");
   assert.equal(board[0].holder,null);
 });
+
+
+test("GO explicitly reopens COMPLETE Work on the same Work ID and Checkpoint", async () => {
+  const { createWorkRecord, claimWork, openWorkPass, returnWork, reopenWork } = await mod();
+  let work = createWorkRecord({
+    workId:"W-REOPEN",
+    checkpointId:"CP-W-REOPEN",
+    name:"Reopen same work",
+    command:"finish then correct",
+    expectedResult:"same work continues",
+    requestedDestinations:["github://owner/repo"],
+  });
+  work = claimWork(work, { actor:"GO", at:"2026-09-30T00:00:00Z" });
+  work = openWorkPass(work, { kind:"WORK", actor:"GO", at:"2026-09-30T00:01:00Z" });
+  work = returnWork(work, {
+    actor:"GO",
+    status:"COMPLETE",
+    result:{ summary:"first completion" },
+    evidence:[{ ref:"commit://first" }],
+    at:"2026-09-30T00:02:00Z",
+  });
+  assert.equal(work.status, "COMPLETE");
+  assert.equal(work.holder, null);
+  assert.throws(() => reopenWork({ ...work, status:"CANCEL" }, { actor:"GO" }), /Only COMPLETE Work/);
+
+  const reopened = reopenWork(work, { actor:"GO", at:"2026-09-30T00:03:00Z" });
+  assert.equal(reopened.workId, work.workId);
+  assert.equal(reopened.checkpointId, work.checkpointId);
+  assert.equal(reopened.status, "ON PROCESS");
+  assert.equal(reopened.holder, "GO");
+  assert.equal(reopened.attention, "REOPENED");
+  assert.equal(reopened.readback, null);
+  assert.equal(reopened.pass.state, "CLOSED");
+});
