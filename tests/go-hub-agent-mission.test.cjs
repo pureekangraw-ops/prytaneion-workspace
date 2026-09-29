@@ -149,23 +149,12 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(light.candidates.length >= 1, true);
   assert.deepEqual(light.mission.memory.contextRefs, ["github://factory"], "LIGHT must not silently mutate selected context");
 
-  const cardDraft = await body(await service.action({
-    action:"prepare_card",
-    workContext,
-    accessScope:"WORK",
-    toolAccess:["go_hub_factory_v4","go_hub_read_file"],
-    destinations:["destination://factory"],
-  }));
-  assert.equal(cardDraft.issued, false);
-  assert.equal(cardDraft.cardDraft.state, "DRAFT");
-
-  const cardRejected = await service.action({ action:"confirm_card", workContext });
-  assert.equal(cardRejected.status, 409);
-
+  const foundForCard = await body(await service.action({ action:"find", mission:"มาซ่อมโรงงาน HERMES", limit:5 }));
+  assert.equal(Array.isArray(foundForCard.recommendedTools), true);
   const cardIssued = await body(await service.action({
-    action:"confirm_card",
+    action:"issue_card",
     workContext,
-    confirmation:"GO_CONFIRMED",
+    destinations:["destination://factory"],
   }));
   assert.equal(cardIssued.issued, true);
   assert.equal(cardIssued.card.state, "CURRENT");
