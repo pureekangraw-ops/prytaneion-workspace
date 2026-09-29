@@ -245,6 +245,7 @@ test("registry preserves domain failures and rejects unknown tools", async () =>
 test("Maintenance card scope authorizes maintenance without inheriting tool_access", async () => {
   const { createMcpRegistry } = await import(registryUrl + "?maintenance-card=" + Date.now());
   const registry = createMcpRegistry({
+    enforceCardAccess:true,
     lifecycle:{
       agentMission:async input => new Response(JSON.stringify({
         ok:true,
