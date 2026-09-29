@@ -42,58 +42,6 @@ function firstEnv(env, names) {
   return "";
 }
 
-const LIGHT_MUTATION_TOOL_NAMES = new Set([
-  "go_hub_create_branch",
-  "go_hub_put_file",
-  "go_hub_open_pull_request",
-  "go_hub_light_centre_v4_action",
-  "go_hub_light_factory_v4_action",
-  "go_hub_counter_create",
-  "go_hub_counter_seen",
-  "go_hub_counter_pickup",
-  "go_hub_counter_answer",
-  "go_hub_counter_readback",
-  "go_hub_gmail_send_message",
-  "go_hub_calendar_create_event",
-  "go_hub_drive_create_folder",
-  "go_hub_drive_upload_file",
-  "go_hub_drive_move_item",
-  "go_hub_drive_rename_item",
-]);
-
-const LIGHT_DENIED_TOOL_NAMES = new Set(["go_hub_aion_open", "go_hub_pixie_command", "go_hub_pixie_go_works_action", "go_hub_pixie_debug_factory_action", "go_hub_pixie_result"]);
-
-const LIGHT_DIRECT_TOOL_NAMES = new Set([
-  "go_hub_gmail_send_message",
-  "go_hub_calendar_create_event",
-  "go_hub_drive_create_folder",
-  "go_hub_drive_upload_file",
-  "go_hub_drive_move_item",
-  "go_hub_drive_rename_item",
-]);
-
-function lightAllowedTools(registry) {
-  const allowed = new Set(LIGHT_MUTATION_TOOL_NAMES);
-  for (const tool of registry.listTools()) {
-    if (tool?.annotations?.readOnlyHint === true && !LIGHT_DENIED_TOOL_NAMES.has(tool.name)) allowed.add(tool.name);
-  }
-  return allowed;
-}
-
-function restrictRegistry(registry, allowedTools) {
-  return Object.freeze({
-    listTools() {
-      return registry.listTools()
-        .filter(tool => allowedTools.has(tool.name))
-        .map(({ securitySchemes, ...tool }) => tool);
-    },
-    callTool(name, args = {}) {
-      if (!allowedTools.has(name)) throw new Error("LIGHT_TOOL_NOT_ALLOWED");
-      return registry.callTool(name, args);
-    },
-  });
-}
-
 function workText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -771,8 +719,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const runMutation = (env?.GO_HUB_CENTRE_STATE && env?.GO_HUB_GLOBAL_AUDIT)
         ? createGovernedMutationRunner({ centreLive, globalAudit })
         : async (_operation, _input, execute) => execute();
-      const runOperationalMutation = async (operation, input, execute) =>
-        authenticatedActor === "LIGHT" ? execute() : runMutation(operation, input, execute);
+      const runOperationalMutation = runMutation;
 
       const pixieGoWorksAction = async input => {
         const workId = workText(input?.workContext?.workId);
@@ -840,9 +787,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const registryLifecycle = Object.freeze({
           ...lifecycle,
           broadcastRead: () => broadcast.current(),
-          broadcastActivate: input => authenticatedActor === "LIGHT"
-            ? json({ code:"LIGHT_BROADCAST_ACTIVATE_FORBIDDEN" }, 403)
-            : broadcast.activate(input),
+          broadcastActivate: input => broadcast.activate(input),
           createBranch: input => runMutation("github.create_branch", input, () => lifecycle.createBranch(input)),
           putFile: input => runMutation("github.put_file", input, () => lifecycle.putFile(input)),
           deleteFile: input => runMutation("github.delete_file", input, () => lifecycle.deleteFile(input)),
@@ -990,7 +935,6 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
             const fromActor = authenticatedActor;
             const toActor = authenticatedActor === "LIGHT" ? "GO" : "LIGHT";
             const mode = String(input?.mode || "SEARCH").trim().toUpperCase();
-            if (authenticatedActor === "LIGHT" && mode !== "HANDOFF") return json({ code:"LIGHT_COUNTER_CREATE_HANDOFF_ONLY" }, 400);
             const routed = { ...input, fromActor, toActor };
             return runMutation("counter.create." + fromActor.toLowerCase(), routed, () => counterDispatch.create(routed));
           },
@@ -1057,28 +1001,11 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const speaker = env?.GO_HUB_BROADCAST_STATE
         ? ({ area, observed }) => broadcast.speaker({ area, observed })
         : null;
-      const goRegistry = createMcpRegistry({
+      registry = createMcpRegistry({
         enforceCardAccess: String(env?.GO_HUB_CARD_ACCESS_V2 || "").trim() === "1",
         workContextOptionalTools: ["go_hub_cloudflare_health"],
         lifecycle: registryLifecycle,
         speaker,
-      });
-      const lightBaseRegistry = createMcpRegistry({
-        enforceCardAccess: false,
-        workContextOptionalTools: [...LIGHT_DIRECT_TOOL_NAMES],
-        lifecycle: registryLifecycle,
-        speaker,
-      });
-      const lightRegistry = restrictRegistry(lightBaseRegistry, lightAllowedTools(lightBaseRegistry));
-      registry = Object.freeze({
-        listTools() {
-          return authenticatedActor === "LIGHT" ? lightRegistry.listTools() : goRegistry.listTools();
-        },
-        callTool(name, args = {}) {
-          return authenticatedActor === "LIGHT"
-            ? lightRegistry.callTool(name, args)
-            : goRegistry.callTool(name, args);
-        },
       });
 
       return createMcpHandler({
