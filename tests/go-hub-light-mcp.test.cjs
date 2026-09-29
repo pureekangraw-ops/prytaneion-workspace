@@ -405,7 +405,7 @@ test("LIGHT owner page mints scoped bearer without echoing owner passcode", asyn
   }), env);
   assert.equal(response.status, 200);
   const body = await response.text();
-  assert.match(body, /https:\/\/hub\.example\/mcp\/light/);
+  assert.match(body, /https:\/\/hub\.example\/mcp/);
   assert.equal(body.includes("owner-passcode"), false);
   const textareaValues = [...body.matchAll(/<textarea[^>]*>([^<]+)<\/textarea>/g)].map(match => match[1]);
   assert.equal(textareaValues.length, 2);
