@@ -13,18 +13,18 @@ test("LIGHT scoped bearer token authenticates only its resource/scope/subject", 
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"light",
     scope:"go-hub-light",
     ttlSeconds:3600,
   });
-  const request = new Request("https://hub.example/mcp/light", {
+  const request = new Request("https://hub.example/mcp", {
     headers:{ authorization:"Bearer " + token },
   });
   const verified = await verifyAccessToken(request, {
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"light",
     scope:"go-hub-light",
   });
@@ -44,7 +44,7 @@ test("LIGHT MCP exposes bounded code tools and hides delete/merge", async () => 
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"light",
     scope:"go-hub-light",
     ttlSeconds:3600,
@@ -57,7 +57,7 @@ test("LIGHT MCP exposes bounded code tools and hides delete/merge", async () => 
     GOHUB_MASTER_KEY:"master-secret",
     GOHUB_OWNER_PASSCODE:"owner-passcode",
   };
-  const response = await worker.fetch(new Request("https://hub.example/mcp/light", {
+  const response = await worker.fetch(new Request("https://hub.example/mcp", {
     method:"POST",
     headers:{
       authorization:"Bearer " + token,
@@ -157,7 +157,7 @@ test("LIGHT Drive upload bypasses Work/Centre gates and keeps tool-level SHA val
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"light",
     scope:"go-hub-light",
     ttlSeconds:3600,
@@ -166,7 +166,7 @@ test("LIGHT Drive upload bypasses Work/Centre gates and keeps tool-level SHA val
   const worker = createFactoryMcpWorker({
     fetchImpl: async () => { calls += 1; throw new Error("bad SHA must fail before upstream"); },
   });
-  const response = await worker.fetch(new Request("https://hub.example/mcp/light", {
+  const response = await worker.fetch(new Request("https://hub.example/mcp", {
     method:"POST",
     headers:{ authorization:"Bearer " + token, "content-type":"application/json", origin:"https://www.notion.so" },
     body:JSON.stringify({
@@ -210,7 +210,7 @@ test("LIGHT Centre read tools perform bounded read-only calls", async () => {
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"light",
     scope:"go-hub-light",
     ttlSeconds:3600,
@@ -273,7 +273,7 @@ test("LIGHT Centre read tools perform bounded read-only calls", async () => {
     GO_HUB_GLOBAL_AUDIT:auditNamespace,
   };
   async function call(id, name, args) {
-    const response = await worker.fetch(new Request("https://hub.example/mcp/light", {
+    const response = await worker.fetch(new Request("https://hub.example/mcp", {
       method:"POST",
       headers:{ authorization:"Bearer " + token, "content-type":"application/json", origin:"https://www.notion.so" },
       body:JSON.stringify({ jsonrpc:"2.0", id, method:"tools/call", params:{ name, arguments:args } }),
@@ -303,7 +303,7 @@ test("LIGHT Centre read tools perform bounded read-only calls", async () => {
 test("LIGHT V4 tool rejects Return and waiting on another holder's Work", async () => {
   const { createAccessToken } = await import(oauthUrl + "?light-v4-guard=" + Date.now());
   const { createFactoryMcpWorker } = await import(factoryUrl + "?light-v4-guard=" + Date.now());
-  const token = await createAccessToken({ issuer:"https://hub.example", signingKey:"master-secret", resource:"https://hub.example/mcp/light", subject:"light", scope:"go-hub-light", ttlSeconds:3600 });
+  const token = await createAccessToken({ issuer:"https://hub.example", signingKey:"master-secret", resource:"https://hub.example/mcp", subject:"light", scope:"go-hub-light", ttlSeconds:3600 });
   const workId = "WORK-LIGHT-V4-GUARD";
   const checkpointId = "CP-LIGHT-V4-GUARD";
   const calls = [];
@@ -315,7 +315,7 @@ test("LIGHT V4 tool rejects Return and waiting on another holder's Work", async 
     } }) },
   };
   async function call(id, action) {
-    const response = await worker.fetch(new Request("https://hub.example/mcp/light", { method:"POST", headers:{ authorization:"Bearer " + token, "content-type":"application/json", origin:"https://www.notion.so" }, body:JSON.stringify({ jsonrpc:"2.0", id, method:"tools/call", params:{ name:"go_hub_light_centre_v4_action", arguments:{ action, workId, checkpointId, reason:"pause" } } }) }), env);
+    const response = await worker.fetch(new Request("https://hub.example/mcp", { method:"POST", headers:{ authorization:"Bearer " + token, "content-type":"application/json", origin:"https://www.notion.so" }, body:JSON.stringify({ jsonrpc:"2.0", id, method:"tools/call", params:{ name:"go_hub_light_centre_v4_action", arguments:{ action, workId, checkpointId, reason:"pause" } } }) }), env);
     return response.json();
   }
   await call(1, "v4_return");
@@ -331,7 +331,7 @@ test("LIGHT MCP board.read returns bounded authoritative Board truth without mut
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"light",
     scope:"go-hub-light",
     ttlSeconds:3600,
@@ -357,7 +357,7 @@ test("LIGHT MCP board.read returns bounded authoritative Board truth without mut
     },
   };
   const worker = createFactoryMcpWorker({ fetchImpl: async () => { throw new Error("network should not be used"); } });
-  const response = await worker.fetch(new Request("https://hub.example/mcp/light", {
+  const response = await worker.fetch(new Request("https://hub.example/mcp", {
     method:"POST",
     headers:{ authorization:"Bearer " + token, "content-type":"application/json", origin:"https://www.notion.so" },
     body:JSON.stringify({
@@ -410,12 +410,12 @@ test("LIGHT owner page mints scoped bearer without echoing owner passcode", asyn
   const textareaValues = [...body.matchAll(/<textarea[^>]*>([^<]+)<\/textarea>/g)].map(match => match[1]);
   assert.equal(textareaValues.length, 2);
   const token = textareaValues[1];
-  const verified = await verifyAccessToken(new Request("https://hub.example/mcp/light", {
+  const verified = await verifyAccessToken(new Request("https://hub.example/mcp", {
     headers:{ authorization:"Bearer " + token },
   }), {
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     clientId:"go-hub-light",
     requireClientId:true,
     subject:"LIGHT",
@@ -431,7 +431,7 @@ test("LIGHT Cloudflare mirror is read-only and never exposes runtime secrets", a
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"light",
     scope:"go-hub-light",
     ttlSeconds:3600,
@@ -469,7 +469,7 @@ test("LIGHT Cloudflare mirror is read-only and never exposes runtime secrets", a
     CLOUDFLARE_ACCOUNT_ID:"account-a",
   };
   async function call(id, name, args = {}) {
-    const response = await worker.fetch(new Request("https://hub.example/mcp/light", {
+    const response = await worker.fetch(new Request("https://hub.example/mcp", {
       method:"POST",
       headers:{
         authorization:"Bearer " + token,
@@ -512,7 +512,7 @@ test("LIGHT MCP advertises its own OAuth metadata and accepts Notion OAuth ident
     GOHUB_NOTION_CLIENT_SECRET:"notion-client-secret",
   };
 
-  const unauthorized = await worker.fetch(new Request("https://hub.example/mcp/light", {
+  const unauthorized = await worker.fetch(new Request("https://hub.example/mcp", {
     method:"POST",
     headers:{ "content-type":"application/json", origin:"https://www.notion.so" },
     body:JSON.stringify({ jsonrpc:"2.0", id:40, method:"tools/list", params:{} }),
@@ -520,18 +520,18 @@ test("LIGHT MCP advertises its own OAuth metadata and accepts Notion OAuth ident
   assert.equal(unauthorized.status, 401);
   assert.equal(
     unauthorized.headers.get("www-authenticate"),
-    'Bearer resource_metadata="https://hub.example/.well-known/oauth-protected-resource/mcp/light"',
+    'Bearer resource_metadata="https://hub.example/.well-known/oauth-protected-resource"',
   );
 
   const token = await createAccessToken({
     issuer:"https://hub.example",
     signingKey:"master-secret",
-    resource:"https://hub.example/mcp/light",
+    resource:"https://hub.example/mcp",
     subject:"notion",
     scope:"go-hub",
     ttlSeconds:3600,
   });
-  const response = await worker.fetch(new Request("https://hub.example/mcp/light", {
+  const response = await worker.fetch(new Request("https://hub.example/mcp", {
     method:"POST",
     headers:{
       authorization:"Bearer " + token,
