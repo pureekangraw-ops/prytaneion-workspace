@@ -501,9 +501,13 @@ function v4MissionAction(state, action, input = {}) {
 
   if (action === "v4_mission_card_update") {
     let mission = missionSidecar(state);
-    if (!mission.session || mission.session.status !== "RETURNED") throw Object.assign(new Error("HERMES_RETURN_REQUIRED_BEFORE_CARD_UPDATE"), { status:409 });
+    const sessionStatus = String(mission.session?.status || "").toUpperCase();
+    const emergencyExited = sessionStatus === "EXITED" && mission.session?.emergency === true;
+    if (!mission.session || (sessionStatus !== "RETURNED" && !emergencyExited)) {
+      throw Object.assign(new Error("HERMES_RETURN_REQUIRED_BEFORE_CARD_UPDATE"), { status:409 });
+    }
     const currentUpdatedAt = Date.parse(String(mission.memory?.cardMachine?.lastCardUpdateAt || ""));
-    const returnedAt = Date.parse(String(mission.session.returnedAt || ""));
+    const returnedAt = Date.parse(String(emergencyExited ? mission.session.exitedAt : mission.session.returnedAt || ""));
     if (Number.isFinite(currentUpdatedAt) && Number.isFinite(returnedAt) && currentUpdatedAt >= returnedAt) {
       return { state, mission, idempotent:true };
     }
