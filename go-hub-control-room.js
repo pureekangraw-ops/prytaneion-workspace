@@ -1,6 +1,7 @@
 export const AGENT_MISSION_ACTIONS = Object.freeze([
   "find",
   "enter",
+  "reopen",
   "create",
   "issue_card",
   "prepare_route_change",
