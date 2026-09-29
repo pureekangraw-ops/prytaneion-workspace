@@ -416,10 +416,12 @@ test("LIGHT owner page mints scoped bearer without echoing owner passcode", asyn
     issuer:"https://hub.example",
     signingKey:"master-secret",
     resource:"https://hub.example/mcp/light",
-    subject:"light",
+    clientId:"go-hub-light",
+    requireClientId:true,
+    subject:"LIGHT",
     scope:"go-hub-light",
   });
-  assert.equal(verified.subject, "light");
+  assert.equal(verified.subject, "LIGHT");
 });
 
 
