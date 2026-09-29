@@ -524,3 +524,25 @@ test("Drive public upload validates base64, size, and SHA-256 before mutation", 
   assert.match(mismatchPayload.actualSha256, /^[a-f0-9]{64}$/);
   assert.equal(calls, 0);
 });
+
+
+test("Drive refresh-token failures expose only the sanitized OAuth error code", async () => {
+  const { createGoogleDriveService } = await load("oauth-error-category");
+  const service = createGoogleDriveService({
+    refreshToken:"refresh-secret",
+    clientId:"client-a",
+    clientSecret:"client-secret",
+    fetchImpl:async url => {
+      assert.equal(String(url), "https://oauth2.googleapis.com/token");
+      return new Response(JSON.stringify({
+        error:"invalid_grant",
+        error_description:"Token has been expired or revoked.",
+      }), { status:400, headers:{ "content-type":"application/json" } });
+    },
+  });
+  const response = await service.health();
+  assert.equal(response.status, 502);
+  const payload = await response.json();
+  assert.deepEqual(payload, { code:"DRIVE_AUTH_UPSTREAM_ERROR", category:"invalid_grant" });
+  assert.doesNotMatch(JSON.stringify(payload), /refresh-secret|client-secret|expired or revoked/i);
+});
