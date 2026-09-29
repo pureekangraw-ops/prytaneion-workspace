@@ -55,9 +55,26 @@ function candidateText(pin = {}) {
     pin.detail,
     pin.workId,
     pin.jobCode,
+    pin.repository,
+    pin.projectRefs?.repository,
     card.title,
     card.detail,
+    card.repository,
+    card.projectRefs?.repository,
   ].filter(Boolean).join(" ");
+}
+
+function exactMissionReference(mission) {
+  const workId = text(mission).match(/\bWORK-[A-Z0-9]+(?:-[A-Z0-9]+)+\b/i)?.[0];
+  if (workId) return { type:"WORK_ID", value:workId.toUpperCase() };
+  const repository = text(mission).match(/\b(?:https?:\/\/github\.com\/)?([A-Z0-9_.-]+\/[A-Z0-9_.-]+)(?:\.git)?\b/i)?.[1];
+  if (!repository || /\.(?:mjs|cjs|js|json|md|ts|tsx|jsx)$/i.test(repository)) return null;
+  return { type:"REPOSITORY", value:repository.toLowerCase().replace(/\.git$/, "") };
+}
+
+function namedSubject(mission) {
+  const first = text(mission).match(/^[A-Z][A-Z0-9_-]{3,}\b/)?.[0];
+  return first && !["HERMES","FACTORY","WORK","REVIEW","INSPECT","UPDATE","CREATE"].includes(first) ? first.toLowerCase() : null;
 }
 
 function statusBoost(pin = {}) {
@@ -72,18 +89,24 @@ function statusBoost(pin = {}) {
 
 export function missionSimilarity(mission, pin) {
   const source = candidateText(pin);
-  const score =
+  const lexical =
     jaccard(tokens(mission), tokens(source)) * 0.30 +
     jaccard(grams(mission, 2), grams(source, 2)) * 0.40 +
-    jaccard(grams(mission, 3), grams(source, 3)) * 0.30 +
-    statusBoost(pin);
-  return Math.max(0, Math.min(1, score));
+    jaccard(grams(mission, 3), grams(source, 3)) * 0.30;
+  if (!lexical) return 0;
+  return Math.max(0, Math.min(1, lexical + statusBoost(pin)));
 }
 
 export function rankMissionCandidates(mission, pins = [], { limit = 6, threshold = 0.20 } = {}) {
+  const exact = exactMissionReference(mission);
+  const subject = exact ? null : namedSubject(mission);
   return (Array.isArray(pins) ? pins : [])
-    .map(pin => ({ pin, score:missionSimilarity(mission, pin) }))
-    .filter(item => item.score >= threshold)
+    .filter(pin => exact ? (exact.type === "WORK_ID"
+      ? text(pin.workId).toUpperCase() === exact.value
+      : candidateText(pin).toLowerCase().includes(exact.value))
+      : !subject || tokens(candidateText(pin)).includes(subject))
+    .map(pin => ({ pin, score:exact ? 1 : missionSimilarity(mission, pin) }))
+    .filter(item => exact || item.score >= Math.max(0.24, Number(threshold) || 0))
     .sort((a,b) => b.score - a.score || String(b.pin.updatedAt || "").localeCompare(String(a.pin.updatedAt || "")))
     .slice(0, Math.max(1, Math.min(Number(limit) || 6, 20)))
     .map(({ pin, score }) => Object.freeze({
@@ -97,7 +120,7 @@ export function rankMissionCandidates(mission, pins = [], { limit = 6, threshold
       snapshotKey:text(pin.card?.snapshot_key || pin.snapshotKey) || null,
       toolAccess:unique(pin.card?.tool_access || pin.toolAccess),
       score:Number(score.toFixed(4)),
-      source:"HEIMDALL_PROJECT_INDEX",
+      source:exact?.type || "HEIMDALL_PROJECT_INDEX",
     }));
 }
 
@@ -271,7 +294,8 @@ export function createAgentMissionService({
       mission,
       candidates,
       recommendedTools:unique(candidates.flatMap(item => item.toolAccess || [])),
-      source:exactSnapshot.length ? "SNAPSHOT_KEY" : "HEIMDALL_PROJECT_INDEX",
+      source:exactSnapshot.length ? "SNAPSHOT_KEY" : exactMissionReference(mission)?.type || "HEIMDALL_PROJECT_INDEX",
+      noMatch:candidates.length === 0,
       boardExposed:false,
     });
   }
