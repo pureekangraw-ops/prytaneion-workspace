@@ -395,8 +395,9 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         const token = await createAccessToken({
           issuer:url.origin,
           signingKey:env.GOHUB_MASTER_KEY,
+          clientId:"go-hub-light",
           resource:url.origin + "/mcp/light",
-          subject:"light",
+          subject:"LIGHT",
           scope:"go-hub-light",
           ttlSeconds:LIGHT_MCP_TOKEN_TTL_SECONDS,
         });
