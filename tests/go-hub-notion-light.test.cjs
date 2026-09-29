@@ -354,3 +354,84 @@ test("Notion LIGHT does not silently fall back when AI Search is unavailable", a
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("Notion LIGHT exposes the complete live MCP tool catalog and can call any advertised tool", async () => {
+  const originalFetch = globalThis.fetch;
+  const storage = memoryStorage({
+    client:{ clientId:"client-1", clientSecret:null, redirectUri:"https://hub.example/callback" },
+    auth:{ accessToken:"access-1", refreshToken:"refresh-1", expiresAt:Date.now()+3600000, tokenEndpoint:"https://auth.notion.example/token" },
+  });
+  const seenCalls = [];
+  let listPage = 0;
+  globalThis.fetch = async (_url, init = {}) => {
+    const body = JSON.parse(init.body);
+    if (body.method === "initialize") {
+      return jsonResponse({ jsonrpc:"2.0", id:1, result:{ protocolVersion:"2025-11-25", capabilities:{}, serverInfo:{ name:"notion", version:"1" } } }, 200, { "mcp-session-id":"session-full" });
+    }
+    if (body.method === "notifications/initialized") return new Response("", { status:202 });
+    if (body.method === "tools/list") {
+      listPage += 1;
+      if (listPage === 1) {
+        assert.deepEqual(body.params, {});
+        return jsonResponse({
+          jsonrpc:"2.0",
+          id:body.id,
+          result:{
+            tools:[
+              { name:"notion-fetch", description:"Fetch a page", inputSchema:{ type:"object", properties:{ id:{ type:"string" } }, required:["id"] } },
+              { name:"notion-create-pages", description:"Create pages", inputSchema:{ type:"object", properties:{ parent:{ type:"object" }, pages:{ type:"array" } }, required:["parent","pages"] } },
+            ],
+            nextCursor:"cursor-2",
+          },
+        });
+      }
+      assert.equal(body.params.cursor, "cursor-2");
+      return jsonResponse({
+        jsonrpc:"2.0",
+        id:body.id,
+        result:{
+          tools:[
+            { name:"notion-update-page", description:"Update a page", inputSchema:{ type:"object", properties:{ page_id:{ type:"string" }, properties:{ type:"object" } }, required:["page_id"] } },
+            { name:"notion-create-comment", description:"Create a comment", inputSchema:{ type:"object", properties:{ page_id:{ type:"string" }, markdown:{ type:"string" } }, required:["page_id","markdown"] } },
+          ],
+        },
+      });
+    }
+    if (body.method === "tools/call") {
+      seenCalls.push(body.params);
+      assert.equal(body.params.name, "notion-update-page");
+      assert.deepEqual(body.params.arguments, { page_id:"page-1", properties:{ Status:"Done" } });
+      return jsonResponse({
+        jsonrpc:"2.0",
+        id:body.id,
+        result:{ content:[{ type:"text", text:JSON.stringify({ result:{ status:"success", id:"page-1" } }) }] },
+      });
+    }
+    throw new Error("unexpected MCP request " + init.body);
+  };
+  try {
+    const { GoHubNotionLightState } = await import(moduleUrl + "?full-tools=" + Date.now());
+    const light = new GoHubNotionLightState({ storage }, {});
+    const listed = await light.tools();
+    assert.equal(listed.ok, true);
+    assert.equal(listed.count, 4);
+    assert.deepEqual(listed.tools.map(tool => tool.name), [
+      "notion-fetch",
+      "notion-create-pages",
+      "notion-update-page",
+      "notion-create-comment",
+    ]);
+
+    const called = await light.callTool({
+      toolName:"notion-update-page",
+      arguments:{ page_id:"page-1", properties:{ Status:"Done" } },
+      workContext:{ workId:"WORK-IGNORED-UPSTREAM", checkpointId:"CP-IGNORED-UPSTREAM" },
+    });
+    assert.equal(called.ok, true);
+    assert.equal(called.tool, "notion-update-page");
+    assert.equal(seenCalls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
