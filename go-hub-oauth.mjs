@@ -221,7 +221,9 @@ export async function verifyAccessToken(request, config = {}) {
   const expectedClientId = String(config.clientId || "").trim();
   if (payload.type !== "access" || payload.iss !== config.issuer || payload.aud !== expectedResource ||
       !acceptedIdentities.includes(String(payload.sub) + "\u0000" + String(payload.scope)) ||
-      (config.requireClientId === true && (!expectedClientId || payload.client_id !== expectedClientId))) {
+      (config.requireClientId === true && (!expectedClientId ||
+        (payload.client_id == null && config.allowLegacyClientId !== true) ||
+        (payload.client_id != null && payload.client_id !== expectedClientId)))) {
     throw new Error("invalid access token");
   }
   if (!Number.isFinite(payload.exp) || payload.exp <= nowSeconds(config)) throw new Error("expired access token");
