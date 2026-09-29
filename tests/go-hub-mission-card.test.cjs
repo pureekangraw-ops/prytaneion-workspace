@@ -89,7 +89,7 @@ test("Re-brief exposes only changed observations as SINCE LAST BRIEF", async () 
 });
 
 
-test("standard HERMES ticket machine requires GO confirmation and preserves identity on replacement", async () => {
+test("standard HERMES ticket issues directly and preserves BIG confirmation on replacement", async () => {
   const mod = await import("../go-hub-mission-card.mjs");
   const work = {
     workId:"WORK-HERMES-TEST-20260928-001",
@@ -99,9 +99,7 @@ test("standard HERMES ticket machine requires GO confirmation and preserves iden
   };
   const draft = mod.prepareStandardMissionTicket({ work, destinations:["hermes"], accessScope:"WORK", toolAccess:["go_hub_agent_mission"] }, { now:() => Date.parse("2026-09-28T12:00:00Z") });
   assert.equal(draft.state, "DRAFT");
-  assert.throws(() => mod.issueStandardMissionTicket(draft, { confirmation:"" }), /HERMES_GO_FINAL_CONFIRMATION_REQUIRED/);
-
-  const current = mod.issueStandardMissionTicket(draft, { confirmation:"GO_CONFIRMED", now:() => Date.parse("2026-09-28T12:01:00Z") });
+  const current = mod.issueStandardMissionTicket(draft, { now:() => Date.parse("2026-09-28T12:01:00Z") });
   assert.equal(current.state, "CURRENT");
   assert.equal(current.workId, work.workId);
   assert.equal(current.checkpointId, work.checkpointId);
