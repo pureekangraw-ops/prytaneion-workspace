@@ -326,6 +326,7 @@ export function createAgentMissionService({
       mission,
       requestedResult,
     });
+    entered.mission.memory.recommendedTools = unique(input.recommendedTools);
     return json({
       ok:true,
       action:"create",
