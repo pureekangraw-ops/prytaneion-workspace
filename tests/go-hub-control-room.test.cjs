@@ -56,6 +56,8 @@ test("Control Room distinguishes exposed, configured, authenticated and live too
   assert.equal(reality.notion.status,"AUTH_REQUIRED");
   assert.equal(reality.pixie.status,"NOT_CONFIGURED");
   assert.equal(reality.browser.status,"STALE");
+  assert.deepEqual(reality.notion.response,{ owner:"GO", action:"AUTHORIZE" });
+  assert.deepEqual(reality.browser.response,{ owner:"SOURCE_OWNER", action:"REFRESH" });
   const room=correlateControlRoomTruth({ toolReality:{ pixie:{exposed:true,configured:false} } });
   assert.equal(room.toolReality.pixie.status,"NOT_CONFIGURED");
 });
