@@ -459,3 +459,28 @@ test("HERMES issues a maintenance card from Maintenance pass context, not stale 
   assert.equal(prepared[0].accessScope, "MAINTENANCE");
   assert.deepEqual(prepared[0].toolAccess, []);
 });
+
+test("HERMES exact Work and repository lookup does not suggest unrelated Work", async () => {
+  const { rankMissionCandidates, createAgentMissionService } = await import(agentUrl + "?exact-search=" + Date.now());
+  const pins = [
+    { workId:"WORK-PIXIE-20260929-001", title:"PIXIE LAB", detail:"visual workbench", status:"DOING", card:{ tool_access:["PIXIE_VISUAL_WORKBENCH"] } },
+    { workId:"WORK-OLYMPUS-20260929-001", title:"OLYMPUS release", repository:"pureekangraw-ops/Olympus", status:"OPEN" },
+  ];
+  assert.deepEqual(rankMissionCandidates("WORK-MISSING-20260929-001", pins), []);
+  assert.deepEqual(rankMissionCandidates("pureekangraw-ops/Other", pins), []);
+  assert.equal(rankMissionCandidates("WORK-OLYMPUS-20260929-001", pins)[0].source, "WORK_ID");
+  assert.equal(rankMissionCandidates("https://github.com/pureekangraw-ops/Olympus", pins)[0].workId, "WORK-OLYMPUS-20260929-001");
+
+  const service = createAgentMissionService({
+    centreLive:{ async action(){ throw new Error("no candidate should be inspected"); } },
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[pins[0]] }), { headers:{ "content-type":"application/json" } }),
+  });
+  const missing = await body(await service.action({ action:"find", mission:"WORK-MISSING-20260929-001", threshold:0 }));
+  assert.equal(missing.noMatch, true);
+  assert.deepEqual(missing.candidates, []);
+  assert.deepEqual(missing.recommendedTools, []);
+  const unrelated = await body(await service.action({ action:"find", mission:"OLYMPUS version registry release governance LIGHT app update", threshold:0 }));
+  assert.deepEqual(unrelated.candidates, []);
+  assert.deepEqual(unrelated.recommendedTools, []);
+});
