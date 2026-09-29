@@ -11,11 +11,11 @@ async function load() {
   return import(`${moduleUrl}?workbench=${Date.now()}-${Math.random()}`);
 }
 
-test("projects the six mounted workbench truths from one task snapshot", async () => {
+test("projects Logic Workspace truth directly from one work snapshot", async () => {
   const { createWorkbenchView } = await load();
   const view = createWorkbenchView({
     mission: { summary: "Build Engine 1", outcome: "Resume safely" },
-    blueprint: { title: "Factory Blueprint", ref: "spec.md", status: "approved" },
+    blueprint: { title: "Logic Blueprint", ref: "spec.md", status: "approved" },
     currentPiece: { id: "engine-1", title: "Truth & Workbench", purpose: "Show one truth set" },
     state: "EDITING",
     nextAction: "review-diff",
@@ -42,14 +42,17 @@ test("returns safe empty truth instead of inventing missing workbench state", as
   assert.equal(view.next, "inspect");
 });
 
-test("factory stage is authoritative for both status and next action", async () => {
+test("factory-specific fields do not override Logic Workspace status or next action", async () => {
   const { createWorkbenchView } = await load();
   const view = createWorkbenchView({
-    state: "EDITING", factoryStage: "READY_GATE", nextAction: "review-diff",
-    workPackage: { id: "wp-1" }, piece: { id: "piece-1", headSha: "head-1" },
+    state: "EDITING",
+    nextAction: "review-diff",
+    factoryStage: "READY_GATE",
+    workPackage: { id: "wp-1" },
+    piece: { id: "piece-1", headSha: "head-1" },
     pieceQc: { status: "pass", evidenceIds: ["ev-1"] },
     gateHandoff: { status: "READY_FOR_ASSEMBLY", headSha: "head-1" },
   });
-  assert.equal(view.status, "READY_GATE");
-  assert.equal(view.next, "assemble");
+  assert.equal(view.status, "EDITING");
+  assert.equal(view.next, "review-diff");
 });
