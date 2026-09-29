@@ -650,35 +650,30 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
-      const lightMcp = url.pathname === "/mcp/light";
-      if (url.pathname !== "/mcp" && !lightMcp) return json({ code: "NOT_FOUND" }, 404);
+      const legacyLightAlias = url.pathname === "/mcp/light";
+      if (url.pathname !== "/mcp" && !legacyLightAlias) return json({ code: "NOT_FOUND" }, 404);
       if (!env?.GITHUB_TOKEN) return json({ code: "GITHUB_NOT_CONFIGURED" }, 503);
 
-      const expectedActor = lightMcp ? "LIGHT" : "GO";
-      const clientId = lightMcp ? "go-hub-light" : "go-hub-go";
-      const resource = url.origin + (lightMcp ? "/mcp/light" : "/mcp");
+      // GO's existing /mcp is the single canonical entry/resource.
+      // /mcp/light is transport-only legacy compatibility and never defines actor identity.
+      const resource = url.origin + "/mcp";
       const accessConfig = {
         issuer: url.origin,
         signingKey: env?.GOHUB_MASTER_KEY,
-        clientId,
-        acceptedClientIds: lightMcp
-          ? ["go-hub-light", "go-hub-notion"]
-          : ["go-hub-go", "go-hub-chatgpt"],
+        clientId: "go-hub-go",
+        acceptedClientIds: ["go-hub-go", "go-hub-light", "go-hub-chatgpt", "go-hub-notion"],
         resource,
         requireClientId: true,
         allowLegacyClientId: true,
-        acceptedIdentities: lightMcp
-          ? [
-              { subject: "LIGHT", scope: "go-hub-light" },
-              { subject: "light", scope: "go-hub-light" },
-              { subject: "notion", scope: "go-hub" },
-            ]
-          : [
-              { subject: "GO", scope: "go-hub" },
-              { subject: "big", scope: "go-hub" },
-            ],
-        subject: expectedActor,
-        scope: lightMcp ? "go-hub-light" : "go-hub",
+        acceptedIdentities: [
+          { subject: "GO", scope: "go-hub" },
+          { subject: "big", scope: "go-hub" },
+          { subject: "LIGHT", scope: "go-hub-light" },
+          { subject: "light", scope: "go-hub-light" },
+          { subject: "notion", scope: "go-hub" },
+        ],
+        subject: "GO",
+        scope: "go-hub",
       };
       let authenticatedActor = null;
       const github = createGithubLifecycleService({ fetchImpl, token: env.GITHUB_TOKEN });
@@ -776,9 +771,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const runMutation = (env?.GO_HUB_CENTRE_STATE && env?.GO_HUB_GLOBAL_AUDIT)
         ? createGovernedMutationRunner({ centreLive, globalAudit })
         : async (_operation, _input, execute) => execute();
-      const runOperationalMutation = lightMcp
-        ? async (_operation, _input, execute) => execute()
-        : runMutation;
+      const runOperationalMutation = async (operation, input, execute) =>
+        authenticatedActor === "LIGHT" ? execute() : runMutation(operation, input, execute);
 
       const pixieGoWorksAction = async input => {
         const workId = workText(input?.workContext?.workId);
@@ -843,13 +837,10 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           return factoryV4(effectiveInput);
         });
       };
-      registry = createMcpRegistry({
-        enforceCardAccess: !lightMcp && String(env?.GO_HUB_CARD_ACCESS_V2 || "").trim() === "1",
-        workContextOptionalTools: lightMcp ? LIGHT_DIRECT_TOOL_NAMES : ["go_hub_cloudflare_health"],
-        lifecycle: Object.freeze({
+      const registryLifecycle = Object.freeze({
           ...lifecycle,
           broadcastRead: () => broadcast.current(),
-          broadcastActivate: input => lightMcp
+          broadcastActivate: input => authenticatedActor === "LIGHT"
             ? json({ code:"LIGHT_BROADCAST_ACTIVATE_FORBIDDEN" }, 403)
             : broadcast.activate(input),
           createBranch: input => runMutation("github.create_branch", input, () => lifecycle.createBranch(input)),
@@ -902,7 +893,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           agentPersonaRoom: input => createAgentPersonaRoom().action(input),
           agentMission: input => agentMission.action(input),
           lightCentreV4Action: async input => {
-            if (!lightMcp || !["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"].includes(input?.action)) {
+            if (authenticatedActor !== "LIGHT" || !["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"].includes(input?.action)) {
               return json({ code:"LIGHT_CENTRE_ACTION_NOT_ALLOWED" }, 403);
             }
             const routed = {
@@ -932,7 +923,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
             return centreLive.action(routed);
           },
           lightFactoryV4Action: async input => {
-            if (!lightMcp) return json({ code:"LIGHT_FACTORY_ACTION_NOT_ALLOWED" }, 403);
+            if (authenticatedActor !== "LIGHT") return json({ code:"LIGHT_FACTORY_ACTION_NOT_ALLOWED" }, 403);
             const action = String(input?.action || "").trim().toLowerCase();
             if (!["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"].includes(action)) {
               return json({ code:"LIGHT_FACTORY_ACTION_NOT_ALLOWED" }, 403);
@@ -999,7 +990,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
             const fromActor = authenticatedActor;
             const toActor = authenticatedActor === "LIGHT" ? "GO" : "LIGHT";
             const mode = String(input?.mode || "SEARCH").trim().toUpperCase();
-            if (lightMcp && mode !== "HANDOFF") return json({ code:"LIGHT_COUNTER_CREATE_HANDOFF_ONLY" }, 400);
+            if (authenticatedActor === "LIGHT" && mode !== "HANDOFF") return json({ code:"LIGHT_COUNTER_CREATE_HANDOFF_ONLY" }, 400);
             const routed = { ...input, fromActor, toActor };
             return runMutation("counter.create." + fromActor.toLowerCase(), routed, () => counterDispatch.create(routed));
           },
@@ -1062,14 +1053,36 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           driveRenameItem: input => runOperationalMutation("drive.rename_item", input, () => drive.renameItem(input)),
           listWorkflowArtifacts: input => artifactDelivery.listArtifacts(input),
           archiveWorkflowArtifact: input => runMutation("artifact.archive_workflow", input, () => artifactDelivery.archiveArtifact(input)),
-        }),
-        speaker: env?.GO_HUB_BROADCAST_STATE
-          ? ({ area, observed }) => broadcast.speaker({ area, observed })
-          : null,
+        });
+      const speaker = env?.GO_HUB_BROADCAST_STATE
+        ? ({ area, observed }) => broadcast.speaker({ area, observed })
+        : null;
+      const goRegistry = createMcpRegistry({
+        enforceCardAccess: String(env?.GO_HUB_CARD_ACCESS_V2 || "").trim() === "1",
+        workContextOptionalTools: ["go_hub_cloudflare_health"],
+        lifecycle: registryLifecycle,
+        speaker,
+      });
+      const lightBaseRegistry = createMcpRegistry({
+        enforceCardAccess: false,
+        workContextOptionalTools: [...LIGHT_DIRECT_TOOL_NAMES],
+        lifecycle: registryLifecycle,
+        speaker,
+      });
+      const lightRegistry = restrictRegistry(lightBaseRegistry, lightAllowedTools(lightBaseRegistry));
+      registry = Object.freeze({
+        listTools() {
+          return authenticatedActor === "LIGHT" ? lightRegistry.listTools() : goRegistry.listTools();
+        },
+        callTool(name, args = {}) {
+          return authenticatedActor === "LIGHT"
+            ? lightRegistry.callTool(name, args)
+            : goRegistry.callTool(name, args);
+        },
       });
 
       return createMcpHandler({
-        registry: lightMcp ? restrictRegistry(registry, lightAllowedTools(registry)) : registry,
+        registry,
         issuer: url.origin,
         authenticate: async current => {
           const identity = await verifyAccessToken(current, accessConfig);
@@ -1081,12 +1094,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
               : subject;
           return identity;
         },
-        allowedOrigins: lightMcp
-          ? ["https://www.notion.so", "https://notion.so", "https://app.notion.com"]
-          : [],
-        resourceMetadataUrl: lightMcp
-          ? url.origin + "/.well-known/oauth-protected-resource/mcp/light"
-          : null,
+        allowedOrigins: ["https://www.notion.so", "https://notion.so", "https://app.notion.com"],
+        resourceMetadataUrl: null,
       })(request);
     },
   });
