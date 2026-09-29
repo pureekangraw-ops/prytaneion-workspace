@@ -233,12 +233,12 @@ test("Notion LIGHT OAuth client keeps a sliding refresh chain across worker recr
 });
 
 
-test("Notion OAuth can authorize and rotate refresh tokens for the restricted LIGHT resource", async () => {
+test("Notion OAuth can authorize and rotate refresh tokens on the shared MCP resource", async () => {
   now = 1_789_391_000;
   const { createOAuthHandler, verifyAccessToken } =
     await import(oauthUrl + "?light-resource-oauth=" + Date.now());
   const notionRedirect = "https://app.notion.com/workflows/mcp/oauth/callback";
-  const lightResource = issuer + "/mcp/light";
+  const lightResource = issuer + "/mcp";
   const lightConfig = {
     issuer,
     signingKey:config.signingKey,
@@ -255,7 +255,7 @@ test("Notion OAuth can authorize and rotate refresh tokens for the restricted LI
         clientId:"go-hub-notion",
         clientSecret:"notion-secret",
         redirectUris:[notionRedirect],
-        resources:[issuer + "/mcp", lightResource],
+        resources:[lightResource],
         subject:"notion",
         scope:"go-hub",
       },
