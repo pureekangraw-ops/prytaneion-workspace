@@ -472,6 +472,75 @@ test("active owner Work cannot be marked returned in HERMES until Centre return 
 });
 
 
+test("HERMES reopens COMPLETE Work on the same identity without minting a new Work", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?reopen=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?reopen=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+    createId:prefix => prefix + "-REOPEN",
+  });
+
+  const created = await body(await service.action({
+    action:"create",
+    mission:"แก้งานเดิมหลังปิดงาน",
+    requestedResult:"แก้ไขโดยใช้ Work เดิม",
+    workKey:"REOPEN-SAME-WORK",
+    createDecision:"CREATE_NEW",
+    destinations:["destination://factory"],
+    scope:["destination://factory"],
+  }));
+  const workContext = created.workContext;
+  const originalWorkId = workContext.workId;
+  const originalCheckpointId = workContext.checkpointId;
+
+  const issued = await body(await service.action({ action:"issue_card", workContext }));
+  assert.equal(issued.issued, true);
+  await body(await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://factory",
+    workspace:"factory",
+  }));
+  const completed = await body(await service.action({
+    action:"return",
+    workContext,
+    status:"COMPLETE",
+    result:{ summary:"first completion" },
+    evidence:[{ ref:"commit://first-completion" }],
+    lastLocation:"destination://factory",
+  }));
+  assert.equal(completed.card.sourceStatus, "COMPLETE");
+  await body(await service.action({ action:"exit", workContext }));
+
+  const reopened = await body(await service.action({
+    action:"reopen",
+    workContext,
+    mission:"แก้ไขงานเดิมต่อ",
+  }));
+  assert.equal(reopened.reopened, true);
+  assert.equal(reopened.sameWork, true);
+  assert.equal(reopened.workContext.workId, originalWorkId);
+  assert.equal(reopened.workContext.checkpointId, originalCheckpointId);
+  assert.equal(reopened.card.sourceStatus, "ON PROCESS");
+  assert.equal(reopened.card.holder, "GO");
+  assert.equal(reopened.readout.resume.mode, "GO_ACTIVE");
+  assert.equal(reopened.readout.work.workId, originalWorkId);
+
+  const reopenedSpace = await body(await service.action({
+    action:"first_open",
+    workContext,
+    destination:"destination://factory",
+    workspace:"factory",
+  }));
+  assert.equal(reopenedSpace.status, "ALREADY_OPEN");
+  assert.equal(reopenedSpace.runtimePassOpened, true);
+  assert.equal(reopenedSpace.card.sourceStatus, "ON PROCESS");
+});
+
 test("HERMES Factory card stops on uncertainty and requires GO final confirmation before issue", async () => {
   const { createAgentMissionService } = await import(agentUrl + "?factory-card=" + Date.now());
   const work = {
