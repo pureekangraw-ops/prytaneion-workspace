@@ -210,7 +210,7 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
       if (!definition) throw new Error("unknown MCP tool: " + name);
       assertArgs(definition, args);
       if (!optionalWorkContext.has(name)) assertLifecycle(name, args);
-      if (enforceCardAccess) await assertCardAccess(lifecycle, name, args);
+      if (enforceCardAccess && !optionalWorkContext.has(name)) await assertCardAccess(lifecycle, name, args);
       let broadcastReadback = null;
       if (typeof speaker === "function" && name !== "go_hub_broadcast_activate") {
         const heard = await speaker({ area: definition.operation, observed: args.broadcast || null });
