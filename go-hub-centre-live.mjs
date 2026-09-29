@@ -455,6 +455,10 @@ function v4MissionAction(state, action, input = {}) {
     rejectSecretFields(reality, "missionReality");
     mission.memory.latestReality = reality;
     mission.memory.returnHistory = [...mission.memory.returnHistory, reality].slice(-50);
+    mission.memory.cardMachine = {
+      ...(mission.memory.cardMachine || { draft:null, current:null, audit:[] }),
+      lastCardUpdateAt:at,
+    };
     mission.session.status = "RETURNED";
     mission.session.returnedAt = at;
     bumpMission(mission, at);
@@ -464,6 +468,11 @@ function v4MissionAction(state, action, input = {}) {
   if (action === "v4_mission_card_update") {
     let mission = missionSidecar(state);
     if (!mission.session || mission.session.status !== "RETURNED") throw Object.assign(new Error("HERMES_RETURN_REQUIRED_BEFORE_CARD_UPDATE"), { status:409 });
+    const currentUpdatedAt = Date.parse(String(mission.memory?.cardMachine?.lastCardUpdateAt || ""));
+    const returnedAt = Date.parse(String(mission.session.returnedAt || ""));
+    if (Number.isFinite(currentUpdatedAt) && Number.isFinite(returnedAt) && currentUpdatedAt >= returnedAt) {
+      return { state, mission, idempotent:true };
+    }
     mission.memory.cardMachine = { ...(mission.memory.cardMachine || { draft:null,current:null,audit:[] }), lastCardUpdateAt:at };
     bumpMission(mission, at);
     return { state:saveMission(state, mission, "V4_MISSION_CARD_UPDATED"), mission };
