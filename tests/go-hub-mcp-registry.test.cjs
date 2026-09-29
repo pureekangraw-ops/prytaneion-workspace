@@ -34,7 +34,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
     "go_hub_observer_latest", "go_hub_observer_screenshot", "go_hub_linear_list_projects", "go_hub_linear_get_issue",
     "go_hub_linear_create_issue", "go_hub_linear_update_issue",
     "go_hub_cloudflare_capabilities", "go_hub_cloudflare_health", "go_hub_cloudflare_list_workers", "go_hub_cloudflare_inspect_worker",
-    "go_hub_notion_status", "go_hub_notion_connect", "go_hub_notion_search",
+    "go_hub_notion_status", "go_hub_notion_connect", "go_hub_notion_search", "go_hub_notion_tools", "go_hub_notion_call",
     "go_hub_gmail_capabilities", "go_hub_gmail_diagnostics", "go_hub_gmail_profile", "go_hub_gmail_search", "go_hub_gmail_get_message", "go_hub_gmail_send_message",
     "go_hub_calendar_capabilities", "go_hub_calendar_diagnostics", "go_hub_calendar_list", "go_hub_calendar_events", "go_hub_calendar_create_event",
     "go_hub_drive_capabilities", "go_hub_drive_health", "go_hub_drive_diagnostics", "go_hub_drive_root", "go_hub_drive_get_item", "go_hub_drive_list_children", "go_hub_drive_read_document", "go_hub_drive_download_file",
@@ -92,6 +92,9 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_notion_status").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_notion_connect").annotations.readOnlyHint, false);
   assert.equal(tools.find(tool => tool.name === "go_hub_notion_search").annotations.readOnlyHint, true);
+  assert.equal(tools.find(tool => tool.name === "go_hub_notion_tools").annotations.readOnlyHint, true);
+  assert.equal(tools.find(tool => tool.name === "go_hub_notion_call").annotations.readOnlyHint, false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_notion_call").annotations.destructiveHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_capabilities").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_health").annotations.readOnlyHint, true);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_diagnostics").annotations.readOnlyHint, true);
@@ -156,6 +159,14 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(calls.at(-1).name, "centreReadOnlyFastLane");
   await registry.callTool("go_hub_drive_download_file", { fileId:"zip-a", maxBytes:1024 });
   assert.equal(calls.at(-1).name, "driveDownloadFile");
+  await registry.callTool("go_hub_notion_tools", {});
+  assert.equal(calls.at(-1).name, "notionTools");
+  await registry.callTool("go_hub_notion_call", {
+    toolName:"notion-create-pages",
+    arguments:{ parent:{ type:"page_id", page_id:"page-1" }, pages:[{ properties:{ title:"Test" } }] },
+    workContext:factoryWorkContext,
+  });
+  assert.equal(calls.at(-1).name, "notionCall");
   await registry.callTool("go_hub_lighthouse_control_port_state", { targetId: "lighthouse" });
   assert.equal(calls.at(-1).name, "lighthouseControlPortState");
   await registry.callTool("go_hub_lighthouse_control_port_command", { targetId: "lighthouse", requestId: "hub-1", capabilityId: "system.appState", payload: {} });
