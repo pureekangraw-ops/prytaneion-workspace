@@ -85,3 +85,40 @@ test("GO explicitly reopens COMPLETE Work on the same Work ID and Checkpoint", a
   assert.equal(reopened.readback, null);
   assert.equal(reopened.pass.state, "CLOSED");
 });
+
+
+test("emergency owner controls bypass lifecycle deadlocks without minting a new Work", async () => {
+  const { createWorkRecord, claimWork, openWorkPass, emergencyEnterWork, emergencyExitWork } = await mod();
+  let work = createWorkRecord({
+    workId:"W-EMERGENCY",
+    checkpointId:"CP-W-EMERGENCY",
+    name:"Emergency escape",
+    command:"escape stuck lifecycle",
+    expectedResult:"same Work survives",
+    requestedDestinations:["github://owner/repo"],
+  });
+  work = claimWork(work, { actor:"LIGHT", at:"2026-09-30T02:00:00Z" });
+  work = openWorkPass(work, {
+    kind:"WORK",
+    actor:"LIGHT",
+    destinations:["github://owner/repo"],
+    at:"2026-09-30T02:01:00Z",
+  });
+
+  const escaped = emergencyExitWork(work, { at:"2026-09-30T02:02:00Z" });
+  assert.equal(escaped.workId, work.workId);
+  assert.equal(escaped.checkpointId, work.checkpointId);
+  assert.equal(escaped.status, "OPEN");
+  assert.equal(escaped.holder, null);
+  assert.equal(escaped.pass.state, "CLOSED");
+  assert.equal(escaped.attention, "EMERGENCY_EXIT");
+  assert.equal(escaped.readback.actor, "BIG");
+
+  const entered = emergencyEnterWork(escaped, { at:"2026-09-30T02:03:00Z" });
+  assert.equal(entered.workId, work.workId);
+  assert.equal(entered.checkpointId, work.checkpointId);
+  assert.equal(entered.status, "ON PROCESS");
+  assert.equal(entered.holder, "GO");
+  assert.equal(entered.pass.state, "CLOSED");
+  assert.equal(entered.attention, "EMERGENCY_ENTER");
+});
