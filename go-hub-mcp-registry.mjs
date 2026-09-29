@@ -62,6 +62,7 @@ const definitions = [
   def("go_hub_list_workflow_artifacts", "List GitHub Actions artifacts for one workflow run, or inventory recent repository artifacts when runId is omitted.", "listWorkflowArtifacts", schema({ repository: str, runId: int }, ["repository"]), ann(true)),
   def("go_hub_archive_workflow_artifact", "Download one GitHub Actions artifact server-side, optionally extract one entry, and archive it to governed Google Drive with hash metadata and readback.", "archiveWorkflowArtifact", schema({ repository: str, runId: int, artifactId: int, parentId: str, entrySuffix: str, destinationName: str, mimeType: str, workContext }, ["repository", "runId", "artifactId", "workContext"]), ann(false)),
   def("go_hub_audit_history", "Read immutable global GO Hub audit events, optionally filtered by Work ID.", "auditHistory", schema({ workId: str, afterSequence: revision, limit: { type: "integer", minimum: 1, maximum: 200 } }), ann(true)),
+  def("go_hub_control_room_core", "GO operational core: inspect the current tool/card surface or dispatch one existing owner tool without copying its authority.", "controlRoomCore", schema({ action:{ type:"string", enum:["inspect","execute"] }, targetTool:str, targetArgs:obj, workContext }, ["action"]), ann(false)),
   def("go_hub_centre_inspect", "Read one Centre Work truth record without allowing Centre mutation.", "centreInspect", schema({ workId: str, checkpointId: str }, ["workId", "checkpointId"]), ann(true)),
   def("go_hub_centre_audit_history", "Read Centre-only immutable audit events from the global GO Hub audit log.", "centreAuditHistory", schema({ workId: str, afterSequence: revision, limit: { type: "integer", minimum: 1, maximum: 200 } }), ann(true)),
   def("go_hub_centre_live_action", "Execute or inspect durable City/Centre live work through GO Hub.", "centreLiveAction", schema({ action: { type: "string", enum: ["start", "inspect", "claim", "renew", "release", "record_effect", "save_checkpoint", "resume_checkpoint", "review", "fit", "leave", "validate", "return", "record_reality", "cancel", "resume", "v4_create", "v4_inspect", "v4_board", "v4_claim", "v4_open_pass", "v4_update_destinations", "v4_wait", "v4_resume", "v4_return"] }, workId: str, checkpointId: str, returnAddress: str, work: obj, actor: str, status: str, kind: { type: "string", enum: ["WORK", "READ", "MAINTENANCE", "EMERGENCY"] }, destinations: { type: "array", items: str }, reason: str, result: obj, task: str, requestedResult: str, authority: str, targetId: str, personaId: str, personaReference: str, workingView: str, destination: str, payload: obj, evidence: { anyOf: [obj, { type: "array", items: obj }] }, reuseFit: { type: "boolean" }, ownerId: str, leaseId: str, expectedOwnershipRevision: revision, leaseSeconds: int, expectedEffectRevision: revision, effectId: str, effectTool: str, effectReceiptRef: str, effectStatus: str, expectedExecutionCheckpointRevision: revision, executionCheckpointId: str, resumeFrom: str, safePoint: { type: "boolean" }, snapshot: obj, reconciliationEvidence: obj }, ["action", "workId"]), ann(false)),
@@ -146,7 +147,7 @@ function assertWork(value) {
   for (const key of Object.keys(value)) if (!Object.hasOwn(workContext.properties, key)) throw new Error("unknown workContext field: " + key);
 }
 
-const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission"]);
+const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission","go_hub_control_room_core"]);
 function cardToolAllowed(card, toolName) {
   return Array.isArray(card?.tool_access) && card.tool_access.includes(toolName);
 }
@@ -213,6 +214,31 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
         const heard = await speaker({ area: definition.operation, observed: args.broadcast || null });
         if (!heard?.ok) return toolResult(speakerError(heard));
         broadcastReadback = heard.current || null;
+      }
+      if (name === "go_hub_control_room_core") {
+        if (args.action === "inspect") {
+          const cardResponse = args.workContext && typeof lifecycle.agentMission === "function"
+            ? await lifecycle.agentMission({ action:"inspect", workContext:args.workContext })
+            : null;
+          const cardBody = cardResponse ? await cardResponse.json().catch(() => ({})) : {};
+          const currentCard = cardBody?.card || null;
+          const allowed = publishedDefinitions
+            .filter(item => CARD_BOOTSTRAP_TOOLS.has(item.name) || cardToolAllowed(currentCard, item.name))
+            .map(item => ({ name:item.name, description:item.description, operation:item.operation }));
+          return toolResult(new Response(JSON.stringify({ ok:true, room:"GO_CONTROL_ROOM", currentCard, availableTools:allowed }), { headers:{ "content-type":"application/json" } }), broadcastReadback);
+        }
+        const targetName = String(args.targetTool || "").trim();
+        if (!targetName || targetName === "go_hub_control_room_core") throw new Error("CONTROL_ROOM_TARGET_TOOL_REQUIRED");
+        const target = byName.get(targetName);
+        if (!target) throw new Error("CONTROL_ROOM_TARGET_TOOL_UNKNOWN");
+        const targetArgs = args.targetArgs && typeof args.targetArgs === "object" && !Array.isArray(args.targetArgs) ? { ...args.targetArgs } : {};
+        if (args.workContext && !targetArgs.workContext && target.inputSchema.properties.workContext) targetArgs.workContext = args.workContext;
+        assertArgs(target, targetArgs);
+        if (!optionalWorkContext.has(targetName)) assertLifecycle(targetName, targetArgs);
+        await assertCardAccess(lifecycle, targetName, targetArgs);
+        const targetOperation = lifecycle[target.operation];
+        if (typeof targetOperation !== "function") throw new Error("lifecycle operation unavailable: " + target.operation);
+        return toolResult(await targetOperation(targetArgs), broadcastReadback);
       }
       if (name === "go_hub_aion_open") {
         const gate = createAionGate({
