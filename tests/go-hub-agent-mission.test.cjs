@@ -93,6 +93,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     requestedResult:"Factory works and card returns with current reality",
     destinations:["destination://factory"],
     scope:["destination://factory"],
+    recommendedTools:["go_hub_factory_v4","go_hub_read_file"],
   });
   assert.equal(reviewRequired.status, 409);
   const review = await body(reviewRequired);
@@ -109,6 +110,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     createDecision:"CREATE_NEW",
     destinations:["destination://factory"],
     scope:["destination://factory"],
+    recommendedTools:["go_hub_factory_v4","go_hub_read_file"],
   });
   assert.equal(callerOverride.status, 400);
   assert.equal((await body(callerOverride)).code, "HERMES_WORK_ID_CALLER_OVERRIDE_FORBIDDEN");
