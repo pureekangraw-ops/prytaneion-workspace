@@ -728,7 +728,9 @@ export function createAgentMissionService({
     const accessScope = workType === "MAINTENANCE" || passKind === "MAINTENANCE" || persistedScope === "MAINTENANCE" || maintenanceDestination
       ? "MAINTENANCE"
       : "WORK";
-    let recommendedTools = unique(current.mission?.memory?.recommendedTools);
+    let recommendedTools = accessScope === "MAINTENANCE"
+      ? unique(destinations.flatMap(destinationTools))
+      : unique(current.mission?.memory?.recommendedTools);
     // Card issuance must not search Work history. Tool suggestions come from mission memory or declared destinations.
     if (!recommendedTools.length) {
       recommendedTools = unique(destinations.flatMap(destinationTools));
