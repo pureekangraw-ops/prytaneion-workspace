@@ -654,26 +654,20 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       if (url.pathname !== "/mcp" && !lightMcp) return json({ code: "NOT_FOUND" }, 404);
       if (!env?.GITHUB_TOKEN) return json({ code: "GITHUB_NOT_CONFIGURED" }, 503);
 
-      const oauthConfig = {
+      const expectedActor = lightMcp ? "LIGHT" : "GO";
+      const clientId = lightMcp ? "go-hub-light" : "go-hub-go";
+      const resource = url.origin + (lightMcp ? "/mcp/light" : "/mcp");
+      const accessConfig = {
         issuer: url.origin,
         signingKey: env?.GOHUB_MASTER_KEY,
-        ownerPasscode: env?.GOHUB_OWNER_PASSCODE,
-        clientId: "go-hub-chatgpt",
-        clientSecret: env?.GOHUB_OWNER_PASSCODE,
-        redirectUri: "https://chatgpt.com/connector_platform_oauth_redirect",
+        clientId,
+        resource,
+        requireClientId: true,
+        acceptedIdentities: [{ subject: expectedActor, scope: lightMcp ? "go-hub-light" : "go-hub" }],
+        subject: expectedActor,
+        scope: lightMcp ? "go-hub-light" : "go-hub",
       };
-      const accessConfig = lightMcp
-        ? {
-            ...oauthConfig,
-            resource:url.origin + "/mcp/light",
-            acceptedIdentities:[
-              { subject:"light", scope:"go-hub-light" },
-              ...(env?.GOHUB_NOTION_CLIENT_SECRET ? [{ subject:"notion", scope:"go-hub" }] : []),
-            ],
-            subject:"light",
-            scope:"go-hub-light",
-          }
-        : oauthConfig;
+      let authenticatedActor = null;
       const github = createGithubLifecycleService({ fetchImpl, token: env.GITHUB_TOKEN });
       const lifecycle = github;
       const factoryV4 = env?.GO_HUB_FACTORY_STATE
@@ -886,8 +880,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
               workId:input?.workContext?.workId,
               checkpointId:input?.workContext?.checkpointId,
               returnAddress:input?.workContext?.checkpointId,
-              actor:lightMcp ? "LIGHT" : "GO",
-              holder:lightMcp ? "LIGHT" : "GO",
+              actor:authenticatedActor,
+              holder:authenticatedActor,
             };
             return runMutation("heimdall.pass." + String(input.action || "unknown"), routed, () => heimdallPass(routed));
           },
@@ -903,7 +897,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
               workId:input.workId,
               checkpointId:input.checkpointId,
               returnAddress:input.checkpointId,
-              actor:"LIGHT",
+              actor:authenticatedActor,
               ...(input.reason ? { reason:input.reason } : {}),
               ...(input.resumeFrom ? { resumeFrom:input.resumeFrom } : {}),
             };
@@ -989,32 +983,32 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           pixieDebugFactoryAction: input => pixieGoWorksAction(input),
           pixieResult,
           counterCreate: input => {
-            const fromActor = lightMcp ? "LIGHT" : "GO";
-            const toActor = lightMcp ? "GO" : "LIGHT";
+            const fromActor = authenticatedActor;
+            const toActor = authenticatedActor === "LIGHT" ? "GO" : "LIGHT";
             const mode = String(input?.mode || "SEARCH").trim().toUpperCase();
             if (lightMcp && mode !== "HANDOFF") return json({ code:"LIGHT_COUNTER_CREATE_HANDOFF_ONLY" }, 400);
             const routed = { ...input, fromActor, toActor };
             return runMutation("counter.create." + fromActor.toLowerCase(), routed, () => counterDispatch.create(routed));
           },
-          counterInbox: input => counter.inbox({ ...input, actor:lightMcp ? "LIGHT" : "GO" }),
+          counterInbox: input => counter.inbox({ ...input, actor:authenticatedActor }),
           counterGet: input => counterDispatch.get(input),
           counterSeen: input => {
-            const actor = lightMcp ? "LIGHT" : "GO";
+            const actor = authenticatedActor;
             const routed = { ...input, actor };
             return runMutation("counter.seen." + actor.toLowerCase(), routed, () => counter.seen(routed));
           },
           counterPickup: input => {
-            const actor = lightMcp ? "LIGHT" : "GO";
+            const actor = authenticatedActor;
             const routed = { ...input, actor };
             return runMutation("counter.pickup." + actor.toLowerCase(), routed, () => counter.seen(routed));
           },
           counterAnswer: input => {
-            const actor = lightMcp ? "LIGHT" : "GO";
+            const actor = authenticatedActor;
             const routed = { ...input, actor };
             return runMutation("counter.answer." + actor.toLowerCase(), routed, () => counterDispatch.answer(routed));
           },
           counterReadback: input => {
-            const actor = lightMcp ? "LIGHT" : "GO";
+            const actor = authenticatedActor;
             const routed = { ...input, actor };
             return runMutation("counter.readback." + actor.toLowerCase(), routed, () => counter.readback(routed));
           },
@@ -1064,7 +1058,11 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       return createMcpHandler({
         registry: lightMcp ? restrictRegistry(registry, lightAllowedTools(registry)) : registry,
         issuer: url.origin,
-        authenticate: current => verifyAccessToken(current, accessConfig),
+        authenticate: async current => {
+          const identity = await verifyAccessToken(current, accessConfig);
+          authenticatedActor = String(identity.subject || "");
+          return identity;
+        },
         allowedOrigins: lightMcp
           ? ["https://www.notion.so", "https://notion.so", "https://app.notion.com"]
           : [],
