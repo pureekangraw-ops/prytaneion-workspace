@@ -838,7 +838,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       };
       registry = createMcpRegistry({
         enforceCardAccess: !lightMcp && String(env?.GO_HUB_CARD_ACCESS_V2 || "").trim() === "1",
-        workContextOptionalTools: lightMcp ? LIGHT_DIRECT_TOOL_NAMES : [],
+        workContextOptionalTools: lightMcp ? LIGHT_DIRECT_TOOL_NAMES : ["go_hub_cloudflare_health"],
         lifecycle: Object.freeze({
           ...lifecycle,
           broadcastRead: () => broadcast.current(),
