@@ -343,7 +343,12 @@ export function createAgentMissionService({
     const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
     const workType = text(work.workType).toUpperCase();
     const accessScope = workType === "MAINTENANCE" ? "MAINTENANCE" : "WORK";
-    const recommendedTools = unique(current.mission?.memory?.recommendedTools);
+    let recommendedTools = unique(current.mission?.memory?.recommendedTools);
+    if (accessScope === "WORK" && !recommendedTools.length) {
+      const found = await find({ mission:current.mission?.memory?.mission || work.command || work.name, limit:5 });
+      const foundBody = await payload(found);
+      recommendedTools = unique(foundBody?.recommendedTools);
+    }
     if (accessScope === "WORK" && !recommendedTools.length) return json({
       code:"HERMES_TOOL_RECOMMENDATION_REQUIRED",
       prompt:"ข้อมูลเครื่องมือยังไม่พอ HERMES ต้องค้นหา/วิเคราะห์เครื่องมือที่เหมาะกับ Mission ก่อนออก Standard Card",
