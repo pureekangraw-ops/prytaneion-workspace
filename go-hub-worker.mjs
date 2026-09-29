@@ -688,6 +688,52 @@ async function counterAnswerWithDispatch(counter, dispatch, input) {
   }, response.status);
 }
 
+const LIGHT_WORKER_MUTATION_TOOL_NAMES = new Set([
+  "go_hub_create_branch",
+  "go_hub_put_file",
+  "go_hub_open_pull_request",
+  "go_hub_light_centre_v4_action",
+  "go_hub_light_factory_v4_action",
+  "go_hub_counter_create",
+  "go_hub_counter_seen",
+  "go_hub_counter_pickup",
+  "go_hub_counter_answer",
+  "go_hub_counter_readback",
+  "go_hub_gmail_send_message",
+  "go_hub_calendar_create_event",
+  "go_hub_drive_create_folder",
+  "go_hub_drive_upload_file",
+  "go_hub_drive_move_item",
+  "go_hub_drive_rename_item",
+]);
+const LIGHT_WORKER_DENIED_TOOL_NAMES = new Set([
+  "go_hub_aion_open",
+  "go_hub_pixie_command",
+  "go_hub_pixie_go_works_action",
+  "go_hub_pixie_debug_factory_action",
+  "go_hub_pixie_result",
+]);
+
+function actorAwareWorkerRegistry(registry, getActor) {
+  const lightAllowed = new Set(LIGHT_WORKER_MUTATION_TOOL_NAMES);
+  for (const tool of registry.listTools()) {
+    if (tool?.annotations?.readOnlyHint === true && !LIGHT_WORKER_DENIED_TOOL_NAMES.has(tool.name)) {
+      lightAllowed.add(tool.name);
+    }
+  }
+  return Object.freeze({
+    listTools() {
+      return getActor() === "LIGHT"
+        ? registry.listTools().filter(tool => lightAllowed.has(tool.name))
+        : registry.listTools();
+    },
+    callTool(name, args = {}) {
+      if (getActor() === "LIGHT" && !lightAllowed.has(name)) throw new Error("LIGHT_TOOL_NOT_ALLOWED");
+      return registry.callTool(name, args);
+    },
+  });
+}
+
 export function createWorkerHandler({ fetchImpl = fetch } = {}) {
   return {
     async fetch(request, env) {
@@ -716,7 +762,7 @@ export function createWorkerHandler({ fetchImpl = fetch } = {}) {
             clientId: "go-hub-light",
             clientSecret: env?.GOHUB_LIGHT_CLIENT_SECRET,
             redirectUris: [env?.GOHUB_LIGHT_REDIRECT_URI || "https://app.notion.com/workflows/mcp/oauth/callback"],
-            resources: [url.origin + "/mcp/light"],
+            resources: [url.origin + "/mcp"],
             subject: "LIGHT",
             scope: "go-hub-light",
           },
@@ -732,7 +778,7 @@ export function createWorkerHandler({ fetchImpl = fetch } = {}) {
             clientId: "go-hub-notion",
             clientSecret: env.GOHUB_NOTION_CLIENT_SECRET,
             redirectUris: ["https://app.notion.com/workflows/mcp/oauth/callback"],
-            resources: [url.origin + "/mcp/light"],
+            resources: [url.origin + "/mcp"],
             subject: "notion",
             scope: "go-hub",
           }] : []),
@@ -753,7 +799,7 @@ export function createWorkerHandler({ fetchImpl = fetch } = {}) {
         });
         const projectStatus = createProjectStatusReadService({ lifecycle, factoryBinding:env?.GO_HUB_FACTORY_STATE });
         const boardPinRoute = createBoardPinRouteReadService();
-        const registry = createMcpRegistry({
+        const baseRegistry = createMcpRegistry({
           lifecycle: Object.freeze({
             ...lifecycle,
             searchCatalog: input => catalog.searchCatalog(input),
@@ -766,10 +812,22 @@ export function createWorkerHandler({ fetchImpl = fetch } = {}) {
             boardPinRoute: input => json(boardPinRoute.read(input)),
           }),
         });
+        let authenticatedActor = null;
+        const registry = actorAwareWorkerRegistry(baseRegistry, () => authenticatedActor);
         return createMcpHandler({
           registry,
           issuer: url.origin,
-          authenticate: current => verifyAccessToken(current, oauthConfig),
+          authenticate: async current => {
+            const identity = await verifyAccessToken(current, oauthConfig);
+            const subject = String(identity.subject || "");
+            authenticatedActor = ["LIGHT", "light", "notion"].includes(subject)
+              ? "LIGHT"
+              : ["GO", "go", "big"].includes(subject)
+                ? "GO"
+                : subject;
+            return identity;
+          },
+          allowedOrigins:["https://www.notion.so", "https://notion.so", "https://app.notion.com"],
         })(request);
       }
       if (!url.pathname.startsWith(API_ROOT)) {
