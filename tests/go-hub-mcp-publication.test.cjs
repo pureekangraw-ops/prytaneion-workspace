@@ -26,6 +26,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
   assert.deepEqual(wrangler.durable_objects?.bindings, [
     { name: "HEPHAESTUS", class_name: "HephaestusForeman" },
     { name: "GO_HUB_FACTORY_STATE", class_name: "GoHubFactoryState" },
+    { name: "GO_HUB_PIXIE_MONITOR_STATE", class_name: "GoHubPixieMonitorState" },
     { name: "GO_HUB_CENTRE_STATE", class_name: "GoHubCentreState" },
     { name: "LIGHTHOUSE_CONTROL_PORT_SESSIONS", class_name: "LighthouseControlPortSessionRegistry" },
     { name: "OBSERVER_SESSIONS", class_name: "ObserverSessionRegistry" },
@@ -41,6 +42,8 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("HephaestusForeman")));
   assert.ok(wrangler.migrations?.some(item =>
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("GoHubFactoryState")));
+  assert.ok(wrangler.migrations?.some(item =>
+    Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("GoHubPixieMonitorState")));
   assert.ok(wrangler.migrations?.some(item =>
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("ObserverSessionRegistry")));
   assert.ok(wrangler.migrations?.some(item =>
@@ -73,6 +76,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     "go-hub-factory-service.mjs",
     "go-hub-factory-state-core.mjs",
     "go-hub-factory-state.mjs",
+    "go-hub-pixie-monitor.mjs",
     "go-hub-centre-live.mjs",
     "go-hub-global-audit.mjs",
     "go-hub-counter.mjs",

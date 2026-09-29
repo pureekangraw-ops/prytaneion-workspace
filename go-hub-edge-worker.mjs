@@ -23,6 +23,7 @@ import {
 export { HephaestusForeman } from "./go-hub-factory-controller.mjs";
 export { createGoHubV4, CUTOVER_CONTRACT };
 export { GoHubFactoryState } from "./go-hub-factory-state.mjs";
+export { GoHubPixieMonitorState } from "./go-hub-pixie-monitor.mjs";
 export { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
 export { GoHubCentreState } from "./go-hub-centre-live.mjs";
 export { GoHubGlobalAuditLog } from "./go-hub-global-audit.mjs";
@@ -336,6 +337,8 @@ async function controlRoomRead({ request, env, fetchImpl }) {
   const controls = [
     { id:"refresh-observations", label:"Refresh observations", mode:"READ", available:true },
   ];
+  const googleConfigured = Boolean(env?.GOOGLE_WORKSPACE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_WORKSPACE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN || env?.GOOGLE_OAUTH_REFRESH_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN);
+  const driveConfigured = Boolean(env?.GOOGLE_DRIVE_ACCESS_TOKEN || env?.DRIVE_ACCESS_TOKEN || env?.GDRIVE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GDRIVE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN || env?.DRIVE_REFRESH_TOKEN || env?.GDRIVE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN);
   const toolReality = {
     centre:{ exposed:true, configured:Boolean(env?.GO_HUB_CENTRE_STATE), authenticated:true, status:centre?.work ? "LIVE" : "UNKNOWN" },
     github:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:github.status, evidenceRef:github.evidenceRef },
@@ -346,6 +349,8 @@ async function controlRoomRead({ request, env, fetchImpl }) {
     observer:{ exposed:true, configured:Boolean(env?.OBSERVER_SESSIONS), authenticated:false, status:"UNKNOWN", reason:"SESSION_STATE_REQUIRES_LIVE_READ" },
     pixie:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:"UNKNOWN", reason:"REQUEST_BOUND_RUNTIME" },
     counter:{ exposed:true, configured:Boolean(env?.GO_HUB_COUNTER_STATE && env?.GO_HUB_COUNTER_DISPATCH_STATE), authenticated:true, status:"UNKNOWN", reason:"TICKET_BOUND_RUNTIME" },
+    googleWorkspace:{ exposed:true, configured:googleConfigured, authenticated:googleConfigured, status:googleConfigured ? "LIVE" : "NOT_CONFIGURED", reason:googleConfigured ? "AUTH_CONFIGURATION_PRESENT" : "GOOGLE_WORKSPACE_NOT_CONFIGURED" },
+    drive:{ exposed:true, configured:driveConfigured, authenticated:driveConfigured, status:driveConfigured ? "LIVE" : "NOT_CONFIGURED", reason:driveConfigured ? "AUTH_CONFIGURATION_PRESENT" : "DRIVE_NOT_CONFIGURED" },
   };
   const observations = correlateControlRoomTruth({
     centre:{ status:centre.work.status, workStatus:centre.work.status },

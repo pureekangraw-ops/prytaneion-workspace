@@ -18,6 +18,10 @@
         "class_name": "GoHubFactoryState"
       },
       {
+        "name": "GO_HUB_PIXIE_MONITOR_STATE",
+        "class_name": "GoHubPixieMonitorState"
+      },
+      {
         "name": "GO_HUB_CENTRE_STATE",
         "class_name": "GoHubCentreState"
       },
@@ -124,6 +128,12 @@
       "tag": "v11-go-hub-maintenance-state",
       "new_sqlite_classes": [
         "GoHubMaintenanceState"
+      ]
+    },
+    {
+      "tag": "v13-go-hub-pixie-monitor",
+      "new_sqlite_classes": [
+        "GoHubPixieMonitorState"
       ]
     },
     {

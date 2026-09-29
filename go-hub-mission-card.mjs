@@ -328,16 +328,15 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
   });
 }
 
-export function issueStandardMissionTicket(draft, { confirmation, now = () => Date.now() } = {}) {
+export function issueStandardMissionTicket(draft, { now = () => Date.now() } = {}) {
   if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") {
     throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
   }
-  if (text(confirmation).toUpperCase() !== "GO_CONFIRMED") throw new Error("HERMES_GO_FINAL_CONFIRMATION_REQUIRED");
   return freeze({
     ...clone(draft),
     state:"CURRENT",
     issuedAt:iso(now),
-    acceptedBy:"GO",
+    acceptedBy:"HERMES",
   });
 }
 

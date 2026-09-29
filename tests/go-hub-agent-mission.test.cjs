@@ -93,6 +93,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     requestedResult:"Factory works and card returns with current reality",
     destinations:["destination://factory"],
     scope:["destination://factory"],
+    recommendedTools:["go_hub_factory_v4","go_hub_read_file"],
   });
   assert.equal(reviewRequired.status, 409);
   const review = await body(reviewRequired);
@@ -109,6 +110,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     createDecision:"CREATE_NEW",
     destinations:["destination://factory"],
     scope:["destination://factory"],
+    recommendedTools:["go_hub_factory_v4","go_hub_read_file"],
   });
   assert.equal(callerOverride.status, 400);
   assert.equal((await body(callerOverride)).code, "HERMES_WORK_ID_CALLER_OVERRIDE_FORBIDDEN");
@@ -121,6 +123,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
     createDecision:"CREATE_NEW",
     destinations:["destination://factory"],
     scope:["destination://factory"],
+    recommendedTools:["go_hub_factory_v4","go_hub_read_file"],
   });
   assert.equal(createdResponse.status, 201);
   const created = await body(createdResponse);
@@ -149,24 +152,15 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   assert.equal(light.candidates.length >= 1, true);
   assert.deepEqual(light.mission.memory.contextRefs, ["github://factory"], "LIGHT must not silently mutate selected context");
 
-  const cardDraft = await body(await service.action({
-    action:"prepare_card",
+  const foundForCard = await body(await service.action({ action:"find", mission:"มาซ่อมโรงงาน HERMES", limit:5 }));
+  assert.equal(Array.isArray(foundForCard.recommendedTools), true);
+  const cardResponse = await service.action({
+    action:"issue_card",
     workContext,
-    accessScope:"WORK",
-    toolAccess:["go_hub_factory_v4","go_hub_read_file"],
     destinations:["destination://factory"],
-  }));
-  assert.equal(cardDraft.issued, false);
-  assert.equal(cardDraft.cardDraft.state, "DRAFT");
-
-  const cardRejected = await service.action({ action:"confirm_card", workContext });
-  assert.equal(cardRejected.status, 409);
-
-  const cardIssued = await body(await service.action({
-    action:"confirm_card",
-    workContext,
-    confirmation:"GO_CONFIRMED",
-  }));
+  });
+  assert.equal(cardResponse.status, 200);
+  const cardIssued = await body(cardResponse);
   assert.equal(cardIssued.issued, true);
   assert.equal(cardIssued.card.state, "CURRENT");
   assert.equal(cardIssued.card.workId, workContext.workId);

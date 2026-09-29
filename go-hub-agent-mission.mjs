@@ -174,6 +174,12 @@ function workDestinationAllowed(work, destination) {
     allowed.includes("ALL_GO_HUB_OWNED_AREAS");
 }
 
+function destinationTool(destination) {
+  const value = text(destination).replace(/^destination:\/\//, "").toLowerCase();
+  const map = { factory:"go_hub_factory_v4", notion:"go_hub_notion_light", drive:"go_hub_drive_capabilities", github:"go_hub_inspect_repository", counter:"go_hub_counter_create", lighthouse:"go_hub_lighthouse_control_port_state", maintenance:"go_hub_maintenance" };
+  return map[value] || null;
+}
+
 function lightCandidates(lightResult = {}) {
   const candidates = [];
   let n = 0;
@@ -289,6 +295,7 @@ export function createAgentMissionService({
         action:"create",
         mission,
         candidates:similar,
+        recommendedTools:unique(similar.flatMap(item => item.toolAccess || [])),
         decisionRequired:"CREATE_NEW_OR_REUSE",
         hint:"Review candidates first. Enter an existing Work to reuse it, or call create again with createDecision=CREATE_NEW.",
         boardExposed:false,
@@ -303,6 +310,7 @@ export function createAgentMissionService({
       pins:board.pins,
       at:now(),
     });
+    const recommendedTools = unique(input.recommendedTools?.length ? input.recommendedTools : similar.flatMap(item => item.toolAccess || []));
     const created = await centre({
       action:"v4_create",
       workId,
@@ -326,6 +334,11 @@ export function createAgentMissionService({
       mission,
       requestedResult,
     });
+    const discoveredTools = recommendedTools;
+    if (discoveredTools.length) {
+      const remembered = await centre({ action:"v4_mission_recommended_tools", ...workContext, recommendedTools:discoveredTools });
+      entered.mission = remembered.mission;
+    }
     return json({
       ok:true,
       action:"create",
@@ -336,51 +349,43 @@ export function createAgentMissionService({
     }, 201);
   }
 
-  async function prepareCard(input = {}) {
+  async function issueCard(input = {}) {
     const workContext = requireWorkContext(input);
     const current = await readMission(workContext);
     const work = current.work || await inspectWork(workContext);
     const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
     const workType = text(work.workType).toUpperCase();
     const accessScope = workType === "MAINTENANCE" ? "MAINTENANCE" : "WORK";
-    const recommendedTools = unique(input.toolAccess?.length ? input.toolAccess : current.mission?.memory?.recommendedTools);
-    const toolAccess = accessScope === "MAINTENANCE" ? [] : recommendedTools;
-    if (accessScope === "WORK" && !toolAccess.length) return json({
+    let recommendedTools = unique(current.mission?.memory?.recommendedTools);
+    if (accessScope === "WORK" && !recommendedTools.length) {
+      const found = await find({ mission:current.mission?.memory?.mission || work.command || work.name, limit:5 });
+      const foundBody = await payload(found);
+      recommendedTools = unique(foundBody?.recommendedTools);
+    }
+    if (accessScope === "WORK" && !recommendedTools.length) {
+      recommendedTools = unique(destinations.map(destination => destinationTool(destination)).filter(Boolean));
+    }
+    if (accessScope === "WORK" && !recommendedTools.length) return json({
       code:"HERMES_TOOL_RECOMMENDATION_REQUIRED",
-      prompt:"ยังไม่มีหลักฐานพอจะระบุเครื่องมือสำหรับงานนี้ HERMES ต้องค้นหา/เสนอเครื่องมือก่อนออกบัตร ห้ามเดาสิทธิ์",
+      prompt:"ข้อมูลเครื่องมือยังไม่พอ HERMES ต้องค้นหา/วิเคราะห์เครื่องมือที่เหมาะกับ Mission ก่อนออก Standard Card",
     }, 409);
-    const response = await centre({
+    await centre({
       action:"v4_mission_card_prepare",
       ...workContext,
       destinations,
       accessScope,
-      toolAccess,
+      toolAccess:accessScope === "MAINTENANCE" ? [] : recommendedTools,
       reason:text(input.reason) || "MISSION_ENTRY",
       context:clone(current.mission?.memory?.selectedContext || []),
     });
+    const response = await centre({ action:"v4_mission_card_issue", ...workContext });
     return json({
       ok:true,
-      action:"prepare_card",
-      workContext,
-      cardDraft:response.mission?.memory?.cardMachine?.draft || null,
-      issued:false,
-      prompt:"เตรียมบัตรจาก Work truth และเครื่องมือที่ HERMES พบแล้วครับ",
-    });
-  }
-
-  async function confirmCard(input = {}) {
-    const workContext = requireWorkContext(input);
-    if (text(input.confirmation).toUpperCase() !== "GO_CONFIRMED") {
-      return json({ code:"HERMES_GO_FINAL_CONFIRMATION_REQUIRED", issued:false }, 409);
-    }
-    const response = await centre({ action:"v4_mission_card_issue", ...workContext, confirmation:"GO_CONFIRMED" });
-    return json({
-      ok:true,
-      action:"confirm_card",
+      action:"issue_card",
       workContext,
       card:response.mission?.memory?.cardMachine?.current || null,
       issued:true,
-      prompt:"รับทราบครับ บัตรของคุณพร้อมใช้งานแล้วครับ",
+      prompt:"Standard Card พร้อมใช้งานครับ",
     });
   }
 
@@ -793,8 +798,7 @@ export function createAgentMissionService({
           case "find": return await find(input);
           case "enter": return await enter(input);
           case "create": return await create(input);
-          case "prepare_card": return await prepareCard(input);
-          case "confirm_card": return await confirmCard(input);
+          case "issue_card": return await issueCard(input);
           case "prepare_route_change": return await prepareRouteChange(input);
           case "confirm_route_change": return await confirmRouteChange(input);
           case "select_context": return await selectContext(input);

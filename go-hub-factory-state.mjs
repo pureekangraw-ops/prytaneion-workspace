@@ -2,7 +2,7 @@ import { createFactoryStatePort } from "./go-hub-factory-state-core.mjs";
 import { createFactoryController } from "./go-hub-factory-task-controller.mjs";
 import { createGithubLifecycleService } from "./go-hub-worker.mjs";
 
-const FACTORY_CI_MONITOR_MS = 15_000;
+const FACTORY_MONITOR_MS = 15_000;
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -31,24 +31,25 @@ export class GoHubFactoryState {
 
   async scheduleMonitor(task) {
     if (!this.storage || typeof this.storage.setAlarm !== "function") return;
-    const waitingForCi = task?.state === "CI_RUNNING" || task?.nextAction === "check-ci";
-    if (waitingForCi) await this.storage.setAlarm(Date.now() + FACTORY_CI_MONITOR_MS);
+    const waiting = task?.state === "CI_RUNNING" || task?.nextAction === "check-ci" || task?.state === "DEPLOYING" || task?.nextAction === "track-deploy";
+    if (waiting) await this.storage.setAlarm(Date.now() + FACTORY_MONITOR_MS);
   }
 
   async alarm() {
     const stored = await this.port.load();
     const task = stored?.task;
-    if (!task || !(task.state === "CI_RUNNING" || task.nextAction === "check-ci")) return;
+    if (!task) return;
+    const action = (task.state === "CI_RUNNING" || task.nextAction === "check-ci") ? "check_ci" : ((task.state === "DEPLOYING" || task.nextAction === "track-deploy") ? "track_deploy" : null);
+    if (!action) return;
     if (!this.env?.GITHUB_TOKEN) {
-      await this.storage.setAlarm(Date.now() + FACTORY_CI_MONITOR_MS);
+      await this.storage.setAlarm(Date.now() + FACTORY_MONITOR_MS);
       return;
     }
     const lifecycle = createGithubLifecycleService({ fetchImpl:fetch, token:this.env.GITHUB_TOKEN });
     const controller = createFactoryController({ lifecycle, state:{ load:()=>this.port.load(), save:input=>this.port.save(input) } });
-    const result = await controller.execute({ taskId:task.id, action:"check_ci", expectedRevision:stored.revision });
-    if (result?.task?.state === "CI_RUNNING" || result?.task?.nextAction === "check-ci") {
-      await this.storage.setAlarm(Date.now() + FACTORY_CI_MONITOR_MS);
-    }
+    const result = await controller.execute({ taskId:task.id, action, expectedRevision:stored.revision });
+    const stillWaiting = result?.task?.state === "CI_RUNNING" || result?.task?.nextAction === "check-ci" || result?.task?.state === "DEPLOYING" || result?.task?.nextAction === "track-deploy";
+    if (stillWaiting) await this.storage.setAlarm(Date.now() + FACTORY_MONITOR_MS);
   }
 
   async fetch(request) {

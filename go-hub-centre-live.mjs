@@ -23,6 +23,8 @@ function clone(value) {
 }
 
 const DEFAULT_LEASE_SECONDS = 15 * 60;
+const CENTRE_STALE_SCAN_MS = 60_000;
+const CENTRE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const MAX_LEASE_SECONDS = 24 * 60 * 60;
 
 function leaseSeconds(value) {
@@ -343,7 +345,7 @@ function v4MissionAction(state, action, input = {}) {
     let mission = activeMissionSession(state);
     const machine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
     if (!machine.draft) throw Object.assign(new Error("HERMES_CARD_DRAFT_REQUIRED"), { status:409 });
-    const issued = issueStandardMissionTicket(machine.draft, { confirmation:input.confirmation });
+    const issued = issueStandardMissionTicket(machine.draft);
     state.work = { ...state.work, accessScope:issued.access_scope, toolAccess:clone(issued.tool_access || []), snapshotKey:issued.snapshot_key || null };
     mission.memory.cardMachine = { draft:null, current:clone(issued), audit:Array.isArray(machine.audit) ? machine.audit : [], lastCardUpdateAt:at };
     bumpMission(mission, at);
@@ -362,6 +364,13 @@ function v4MissionAction(state, action, input = {}) {
     mission.memory.contextRefs = missionUnique(selected.flatMap(item => [item.ref, ...(item.refs || [])]));
     bumpMission(mission, at);
     return { state:saveMission(state, mission, "V4_MISSION_CONTEXT"), mission };
+  }
+
+  if (action === "v4_mission_recommended_tools") {
+    let mission = activeMissionSession(state);
+    mission.memory.recommendedTools = missionUnique(input.recommendedTools);
+    bumpMission(mission, at);
+    return { state:saveMission(state, mission, "V4_MISSION_TOOL_DISCOVERY"), mission };
   }
 
   if (action === "v4_mission_note") {
@@ -551,6 +560,9 @@ export class GoHubCentreState {
     const next = clone(state);
     if (this.audit.configured()) next.auditPendingEvent = this.auditEvent(next);
     await this.ctx.storage.put("state", clone(next));
+    if (this.ctx.storage?.setAlarm && next?.v4 === true && ["OPEN","ON PROCESS","WAIT CONFIRM"].includes(String(next.work?.status || ""))) {
+      await this.ctx.storage.setAlarm(Date.now() + CENTRE_STALE_SCAN_MS);
+    }
     if (!this.audit.configured()) return next;
     const response = await this.audit.append(next.auditPendingEvent);
     const payload = await response.json().catch(() => ({}));
@@ -563,6 +575,25 @@ export class GoHubCentreState {
     state.auditPendingEvent = null;
     await this.ctx.storage.put("state", clone(next));
     return next;
+  }
+
+  async alarm() {
+    const state = await this.load();
+    if (!state?.v4 || !state.work?.workId) return;
+    const heimdall = this.v4Heimdall(state.work);
+    const scan = await heimdall.scan({ staleAfterMs:CENTRE_STALE_AFTER_MS });
+    const stale = scan.cautions?.find(item => item.kind === "STALE" && item.workId === state.work.workId);
+    if (stale) {
+      const next = clone(state);
+      next.work.attention = "STALE";
+      next.work.readback = { type:"STALE", owner:"SOURCE_OWNER", action:"REFRESH", detectedAt:new Date().toISOString(), lastUpdated:stale.lastUpdated || null };
+      this.currentAction = "v4_stale_scan";
+      await this.save(next);
+      return;
+    }
+    if (["OPEN","ON PROCESS","WAIT CONFIRM"].includes(String(state.work.status || "")) && this.ctx.storage?.setAlarm) {
+      await this.ctx.storage.setAlarm(Date.now() + CENTRE_STALE_SCAN_MS);
+    }
   }
 
   async act(input = {}) {
