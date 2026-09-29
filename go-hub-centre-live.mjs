@@ -1,7 +1,7 @@
 import { CENTRE_STATES, createCentrePassage } from "./go-hub-centre.js";
 import { routeInterruptionReturn } from "./go-hub-city-route.js";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
-import { createWorkRecord as createV4WorkRecord, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
+import { createWorkRecord as createV4WorkRecord, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, reopenWork as reopenV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
 import { createHeimdallV4 } from "./go-hub-heimdall-v4.js";
 import { prepareStandardMissionTicket, issueStandardMissionTicket, replaceStandardMissionTicket, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 
@@ -721,6 +721,7 @@ export class GoHubCentreState {
       else if (action === "v4_update_destinations") state.work = updateV4WorkDestinations(state.work, { destinations: input.destinations });
       else if (action === "v4_wait") state.work = waitV4Work(state.work, { reason: input.reason });
       else if (action === "v4_resume") state.work = resumeV4Work(state.work, { actor: input.actor });
+      else if (action === "v4_reopen") state.work = reopenV4Work(state.work, { actor: input.actor });
       else if (action === "v4_return") state.work = await this.v4Heimdall(state.work).closePass(state.work.workId, { actor: input.actor, holder: input.actor, status: input.status, result: input.result, evidence: input.evidence });
       else throw Object.assign(new Error("unsupported Centre V4 action"), { status: 400 });
       await createCentreBackedWorkIndex({ storage: this.ctx.storage }).replace(state.work);
