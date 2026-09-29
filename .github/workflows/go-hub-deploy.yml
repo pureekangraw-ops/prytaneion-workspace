@@ -618,8 +618,57 @@ jobs:
             throw new Error("V4_MCP_SURFACE_MISMATCH missing=" + missing.join(",") + " legacy=" + legacyExposed.join(","));
           }
 
+          const workCardTools = [
+            "go_hub_centre_live_action",
+            "go_hub_heimdall_pass",
+            "go_hub_v4_project_board",
+            "go_hub_factory_v4",
+            "go_hub_counter_create",
+            "go_hub_counter_pickup",
+            "go_hub_counter_answer",
+            "go_hub_counter_readback",
+            "go_hub_board_read",
+          ];
+          await centre({
+            action:"v4_mission_enter",
+            workId,
+            checkpointId,
+            sessionId:"HERMES-SMOKE-" + process.env.GITHUB_RUN_ID + "-" + process.env.GITHUB_RUN_ATTEMPT,
+            agentId:"GO",
+            mission:"Verify deployed GO Hub V4 close-loop",
+            requestedResult:"Production runtime passes governed MCP close-loop with current HERMES card contract",
+          });
+          await centre({
+            action:"v4_mission_recommended_tools",
+            workId,
+            checkpointId,
+            recommendedTools:workCardTools,
+          });
+          const setMissionCard = async ({ accessScope, destinations, toolAccess }) => {
+            await centre({
+              action:"v4_mission_card_prepare",
+              workId,
+              checkpointId,
+              destinations,
+              accessScope,
+              toolAccess,
+              reason:"GO_HUB_RUNTIME_SMOKE",
+            });
+            const issued = await centre({ action:"v4_mission_card_issue", workId, checkpointId });
+            const card = issued?.mission?.memory?.cardMachine?.current;
+            if (card?.state !== "CURRENT" || card?.access_scope !== accessScope) {
+              throw new Error("V4_SMOKE_HERMES_CARD_ISSUE_FAILED");
+            }
+            return card;
+          };
+          await setMissionCard({
+            accessScope:"WORK",
+            destinations:["destination://factory","destination://counter"],
+            toolAccess:workCardTools,
+          });
+
           let inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId,
+            action:"v4_inspect", workId, checkpointId, workContext:context(),
           });
           if (inspected.proof?.work?.status !== "OPEN" || inspected.proof?.work?.workId !== workId) {
             throw new Error("V4_INSPECT_LIVE_WORK_FAILED");
@@ -632,7 +681,7 @@ jobs:
             destinations:["factory"], workContext:context(),
           });
           inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId,
+            action:"v4_inspect", workId, checkpointId, workContext:context(),
           });
           if (inspected.proof?.work?.pass?.kind !== "WORK" || inspected.proof?.work?.pass?.state !== "ACTIVE") {
             throw new Error("WORK_PASS_RUNTIME_FAILED");
@@ -716,18 +765,18 @@ jobs:
             result:{ pass:"READ", counterLight:"PASS" }, workContext:context(),
           });
 
-          // READ Pass + safe production maintenance route probe.
-          // Full-system verification requires live Control Room truth; a route-only smoke must not mint repair authority.
+          // MAINTENANCE pass + card for the maintenance-only tool boundary.
+          // Full-system verification requires live Control Room truth; this remains a route-only safe probe.
           await centre({ action:"v4_claim", workId, actor });
-          await mcp("/mcp", ownerToken, "go_hub_heimdall_pass", {
-            action:"open", kind:"READ",
-            destinations:["maintenance"], workContext:context(),
+          await centre({ action:"v4_open_pass", workId, actor, kind:"MAINTENANCE", destinations:["maintenance"] });
+          await setMissionCard({
+            accessScope:"MAINTENANCE",
+            destinations:["destination://maintenance"],
+            toolAccess:[],
           });
-          inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId,
-          });
-          if (inspected.proof?.work?.pass?.kind !== "READ" || inspected.proof?.work?.pass?.state !== "ACTIVE") {
-            throw new Error("MAINTENANCE_READ_PASS_RUNTIME_FAILED");
+          const maintenanceState = await centre({ action:"v4_inspect", workId, checkpointId });
+          if (maintenanceState?.work?.pass?.kind !== "MAINTENANCE" || maintenanceState?.work?.pass?.state !== "ACTIVE") {
+            throw new Error("MAINTENANCE_PASS_RUNTIME_FAILED");
           }
           const maintenance = await mcp("/mcp", ownerToken, "go_hub_maintenance", {
             action:"probe_route",
@@ -756,9 +805,14 @@ jobs:
               maintenance.proof.routes.some(route => route?.status !== "PASS")) {
             throw new Error("MAINTENANCE_V4_PRODUCTION_ROUTE_CHECK_FAILED:" + JSON.stringify(maintenance.proof));
           }
-          await mcp("/mcp", ownerToken, "go_hub_heimdall_pass", {
-            action:"close", status:"OPEN",
-            result:{ pass:"READ", maintenanceRoute:"PASS" }, workContext:context(),
+          await centre({
+            action:"v4_return", workId, actor, status:"OPEN",
+            result:{ pass:"MAINTENANCE", maintenanceRoute:"PASS" },
+          });
+          await setMissionCard({
+            accessScope:"WORK",
+            destinations:["destination://factory","destination://counter"],
+            toolAccess:workCardTools,
           });
 
           // EMERGENCY Pass age: expired must fail, bounded future pass must work.
@@ -779,7 +833,7 @@ jobs:
             workContext:context(),
           });
           inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId,
+            action:"v4_inspect", workId, checkpointId, workContext:context(),
           });
           if (inspected.proof?.work?.pass?.kind !== "EMERGENCY" ||
               Date.parse(inspected.proof?.work?.pass?.expiresAt || "") <= Date.now()) {
