@@ -43,8 +43,8 @@ test("returns safe empty truth instead of inventing missing workbench state", as
 });
 
 test("factory-specific fields do not override Logic Workspace status or next action", async () => {
-  const { createWorkbenchView } = await load();
-  const view = createWorkbenchView({
+  const { createLogicWorkbenchView } = await load();
+  const view = createLogicWorkbenchView({
     state: "EDITING",
     nextAction: "review-diff",
     factoryStage: "READY_GATE",
