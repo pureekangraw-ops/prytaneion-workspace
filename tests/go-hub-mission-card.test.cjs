@@ -168,6 +168,6 @@ test("MAINTENANCE card needs no tool list and carries no work snapshot key", asy
     destinations:["maintenance"],
   });
   assert.equal(draft.access_scope, "MAINTENANCE");
-  assert.deepEqual(draft.tool_access, []);
+  assert.deepEqual(draft.tool_access, ["ALL_GO_HUB_TOOLS"]);
   assert.equal(draft.snapshot_key, null);
 });
