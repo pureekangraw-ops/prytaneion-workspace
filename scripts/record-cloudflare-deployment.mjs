@@ -4,6 +4,12 @@ import { pathToFileURL } from "node:url";
 
 const WORKER = "go-hub";
 
+export function normalizeRepository(value) {
+  const repository = String(value || "").trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error("REPOSITORY_INVALID");
+  return repository;
+}
+
 export function makeDeploymentReceipt({ before, after, repository, worker, sourceSha, workflowRunId }) {
   if (!/^[a-f0-9]{40}$/i.test(String(sourceSha || ""))) throw new Error("SOURCE_SHA_INVALID");
   if (!repository || !worker || !Number.isSafeInteger(Number(workflowRunId)) || Number(workflowRunId) <= 0) {
@@ -23,7 +29,7 @@ export function makeDeploymentReceipt({ before, after, repository, worker, sourc
     .filter(item => item.versionId && Number.isFinite(item.percentage));
   if (!versions.length) throw new Error("DEPLOYMENT_VERSION_UNAVAILABLE");
   return {
-    repository, worker, sourceSha:sourceSha.toLowerCase(),
+    repository:normalizeRepository(repository), worker, sourceSha:sourceSha.toLowerCase(),
     workflowRunId:Number(workflowRunId), deploymentId:added[0].id, versions,
   };
 }
@@ -68,11 +74,11 @@ async function main() {
   if (!receiptFile) throw new Error("RECEIPT_PATH_REQUIRED");
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding:"utf8" }).trim();
   if (sha !== process.env.GITHUB_SHA) throw new Error("CHECKOUT_SHA_MISMATCH");
-  if (process.env.GITHUB_REPOSITORY !== "pureekangraw-ops/standard-") throw new Error("REPOSITORY_MISMATCH");
+  const repository = normalizeRepository(process.env.GITHUB_REPOSITORY);
   const before = JSON.parse(await readFile(file, "utf8"));
   const receipt = makeDeploymentReceipt({
     before, after:await deployments(),
-    repository:process.env.GITHUB_REPOSITORY, worker:WORKER,
+    repository, worker:WORKER,
     sourceSha:sha, workflowRunId:process.env.GITHUB_RUN_ID,
   });
   await writeFile(receiptFile, JSON.stringify(receipt, null, 2) + "\n", { flag:"wx", mode:0o600 });
