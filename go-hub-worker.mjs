@@ -720,6 +720,22 @@ export function createWorkerHandler({ fetchImpl = fetch } = {}) {
             subject: "LIGHT",
             scope: "go-hub-light",
           },
+          ...(env?.GOHUB_OWNER_PASSCODE && !env?.GOHUB_GO_CLIENT_SECRET ? [{
+            clientId: "go-hub-chatgpt",
+            clientSecret: env.GOHUB_OWNER_PASSCODE,
+            redirectUris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+            resources: [url.origin + "/mcp"],
+            subject: "big",
+            scope: "go-hub",
+          }] : []),
+          ...(env?.GOHUB_NOTION_CLIENT_SECRET && !env?.GOHUB_LIGHT_CLIENT_SECRET ? [{
+            clientId: "go-hub-notion",
+            clientSecret: env.GOHUB_NOTION_CLIENT_SECRET,
+            redirectUris: ["https://app.notion.com/workflows/mcp/oauth/callback"],
+            resources: [url.origin + "/mcp/light"],
+            subject: "notion",
+            scope: "go-hub",
+          }] : []),
         ],
       };
       if (oauthPaths.has(url.pathname)) {
