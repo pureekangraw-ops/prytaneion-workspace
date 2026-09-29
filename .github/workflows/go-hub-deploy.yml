@@ -428,12 +428,12 @@ jobs:
           const token = await createAccessToken({
             issuer: origin,
             signingKey,
-            resource: origin + "/mcp/light",
+            resource: origin + "/mcp",
             subject: "light",
             scope: "go-hub-light",
             ttlSeconds: 600,
           });
-          const toolsResponse = await fetch(origin + "/mcp/light", {
+          const toolsResponse = await fetch(origin + "/mcp", {
             method: "POST",
             headers: {
               authorization: "Bearer " + token,
@@ -449,20 +449,46 @@ jobs:
             }),
           });
           const toolsPayload = await toolsResponse.json().catch(() => null);
-          const names = (toolsPayload?.result?.tools || []).map(tool => tool?.name).filter(Boolean);
+          const lightNames = (toolsPayload?.result?.tools || []).map(tool => tool?.name).filter(Boolean).sort();
+          const goToken = await createAccessToken({
+            issuer: origin,
+            signingKey,
+            resource: origin + "/mcp",
+            subject: "GO",
+            scope: "go-hub",
+            ttlSeconds: 600,
+          });
+          const goToolsResponse = await fetch(origin + "/mcp", {
+            method: "POST",
+            headers: {
+              authorization: "Bearer " + goToken,
+              "content-type": "application/json",
+              accept: "application/json, text/event-stream",
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 2,
+              method: "tools/list",
+              params: {},
+            }),
+          });
+          const goToolsPayload = await goToolsResponse.json().catch(() => null);
+          const goNames = (goToolsPayload?.result?.tools || []).map(tool => tool?.name).filter(Boolean).sort();
           const required = [
-            "go_hub_read_file", "go_hub_create_branch", "go_hub_put_file", "go_hub_compare_refs", "go_hub_open_pull_request",
-            "go_hub_drive_read_document", "go_hub_drive_download_file", "go_hub_get_workflow_runs", "go_hub_list_workflow_artifacts",
-            "go_hub_audit_history", "go_hub_lighthouse_control_port_state", "go_hub_project_status",
-            "go_hub_observer_latest", "go_hub_linear_list_projects", "go_hub_linear_get_issue",
+            "go_hub_delete_file",
+            "go_hub_merge_pull_request",
+            "go_hub_centre_live_action",
+            "go_hub_maintenance",
+            "go_hub_factory_v4",
+            "go_hub_aion_open",
+            "go_hub_pixie_command",
           ];
-          const forbidden = ["go_hub_delete_file", "go_hub_merge_pull_request", "go_hub_centre_live_action"];
-          const missing = required.filter(name => !names.includes(name));
-          const exposed = forbidden.filter(name => names.includes(name));
-          if (!toolsResponse.ok || toolsPayload?.error || missing.length || exposed.length) {
-            console.error("::error::LIGHT MCP live tool surface mismatch.");
-            if (missing.length) console.error("::error::Missing: " + missing.join(", "));
-            if (exposed.length) console.error("::error::Forbidden exposed: " + exposed.join(", "));
+          const missing = required.filter(name => !lightNames.includes(name));
+          const sameSurface = JSON.stringify(lightNames) === JSON.stringify(goNames);
+          if (!toolsResponse.ok || toolsPayload?.error || !goToolsResponse.ok || goToolsPayload?.error || missing.length || !sameSurface) {
+            console.error("::error::GO/LIGHT unified MCP live tool surface mismatch.");
+            if (missing.length) console.error("::error::LIGHT missing shared tools: " + missing.join(", "));
+            if (!sameSurface) console.error("::error::GO and LIGHT tool lists differ.");
             process.exit(1);
           }
 
@@ -508,7 +534,7 @@ jobs:
             issuer:origin, signingKey, resource:origin + "/mcp", subject:"big", scope:"go-hub", ttlSeconds:600,
           });
           const lightToken = await createAccessToken({
-            issuer:origin, signingKey, resource:origin + "/mcp/light", subject:"light", scope:"go-hub-light", ttlSeconds:600,
+            issuer:origin, signingKey, resource:origin + "/mcp", subject:"light", scope:"go-hub-light", ttlSeconds:600,
           });
           const context = () => ({ workId, checkpointId });
           let rpcId = 10;
@@ -672,10 +698,10 @@ jobs:
             context:{ source:"GO_HUB_V4_RUNTIME_SMOKE" },
             workContext:context(),
           });
-          await mcp("/mcp/light", lightToken, "go_hub_counter_pickup", {
+          await mcp("/mcp", lightToken, "go_hub_counter_pickup", {
             counterId, workContext:context(),
           }, { notionOrigin:true });
-          await mcp("/mcp/light", lightToken, "go_hub_counter_answer", {
+          await mcp("/mcp", lightToken, "go_hub_counter_answer", {
             counterId, status:"ANSWERED", answer:"Counter/LIGHT production close-loop passed.",
             sources:["production://go-hub/counter"], evidence:[{ ref:"github-actions:" + process.env.GITHUB_RUN_ID + ":counter-light" }],
             confidence:"HIGH", nextRoute:"GO", workContext:context(),
