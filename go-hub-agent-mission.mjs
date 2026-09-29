@@ -289,6 +289,7 @@ export function createAgentMissionService({
         action:"create",
         mission,
         candidates:similar,
+        recommendedTools:unique(similar.flatMap(item => item.toolAccess || [])),
         decisionRequired:"CREATE_NEW_OR_REUSE",
         hint:"Review candidates first. Enter an existing Work to reuse it, or call create again with createDecision=CREATE_NEW.",
         boardExposed:false,
@@ -303,6 +304,7 @@ export function createAgentMissionService({
       pins:board.pins,
       at:now(),
     });
+    const recommendedTools = unique(input.recommendedTools?.length ? input.recommendedTools : similar.flatMap(item => item.toolAccess || []));
     const created = await centre({
       action:"v4_create",
       workId,
@@ -326,7 +328,7 @@ export function createAgentMissionService({
       mission,
       requestedResult,
     });
-    const discoveredTools = unique(input.recommendedTools);
+    const discoveredTools = recommendedTools;
     if (discoveredTools.length) {
       const remembered = await centre({ action:"v4_mission_recommended_tools", ...workContext, recommendedTools:discoveredTools });
       entered.mission = remembered.mission;
