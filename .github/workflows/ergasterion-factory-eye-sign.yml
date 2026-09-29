@@ -1,0 +1,148 @@
+name: ERGASTERION Factory Eye Sign
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ergasterion-factory-eye-sign.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ergasterion-factory-eye-sign
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out GO Hub
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Require existing Hub AMO signing secrets
+        env:
+          AMO_SIGN_KEY: ${{ secrets.AMO_SIGN_KEY }}
+          AMO_SIGN_SECRET: ${{ secrets.AMO_SIGN_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$AMO_SIGN_KEY" && test -n "$AMO_SIGN_SECRET" || {
+            echo "::error::AMO_SIGNING_NOT_CONFIGURED"
+            exit 1
+          }
+          echo "Hub AMO signing credentials are configured."
+
+      - name: Check out ERGASTERION Factory main
+        uses: actions/checkout@v4
+        with:
+          repository: pureekangraw-ops/Ergasterion-factory
+          ref: main
+          path: ergasterion-factory
+          fetch-depth: 1
+
+      - name: Resolve Factory Eye identity and source SHA
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git -C ergasterion-factory rev-parse HEAD)"
+          node --input-type=module <<'NODE'
+          import { readFile, appendFile } from 'node:fs/promises';
+
+          const manifest = JSON.parse(
+            await readFile('ergasterion-factory/pixie-lab-v1/browser-adapter/firefox-tab-observer/manifest.json', 'utf8')
+          );
+          const id = manifest.browser_specific_settings?.gecko?.id;
+          const version = manifest.version;
+          if (!id) throw new Error('FIREFOX_EXTENSION_ID_MISSING');
+          if (!version) throw new Error('FIREFOX_EXTENSION_VERSION_MISSING');
+
+          await appendFile(process.env.GITHUB_OUTPUT, `extension_id=${id}\nversion=${version}\n`);
+          console.log(`Factory Eye ${version} · ${id}`);
+          NODE
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Mozilla lint Factory Eye
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes web-ext@10.7.0 lint \
+            --source-dir ergasterion-factory/pixie-lab-v1/browser-adapter/firefox-tab-observer \
+            --no-config-discovery
+
+      - name: Build unsigned Factory Eye XPI
+        id: build
+        uses: kewisch/action-web-ext@84a13bb9e1b6108c43788ba091c41ca1dba6ad45
+        with:
+          cmd: build
+          source: ergasterion-factory/pixie-lab-v1/browser-adapter/firefox-tab-observer
+          filename: ergasterion-factory-eye-v${{ steps.identity.outputs.version }}-unsigned.xpi
+
+      - name: Sign Factory Eye with Mozilla AMO
+        id: sign
+        uses: kewisch/action-web-ext@84a13bb9e1b6108c43788ba091c41ca1dba6ad45
+        with:
+          cmd: sign
+          source: ${{ steps.build.outputs.target }}
+          channel: unlisted
+          apiKey: ${{ secrets.AMO_SIGN_KEY }}
+          apiSecret: ${{ secrets.AMO_SIGN_SECRET }}
+
+      - name: Create signed provenance
+        id: provenance
+        shell: bash
+        env:
+          SIGNED_XPI: ${{ steps.sign.outputs.target }}
+          EXTENSION_ID: ${{ steps.identity.outputs.extension_id }}
+          EXTENSION_VERSION: ${{ steps.identity.outputs.version }}
+          SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test -f "$SIGNED_XPI"
+          sha256="$(sha256sum "$SIGNED_XPI" | awk '{print $1}')"
+          size="$(stat -c '%s' "$SIGNED_XPI")"
+          cp "$SIGNED_XPI" "$RUNNER_TEMP/ergasterion-factory-eye-v${EXTENSION_VERSION}-signed.xpi"
+
+          SIGNED_SHA256="$sha256" SIGNED_SIZE="$size" node --input-type=module <<'NODE'
+          import { writeFile } from 'node:fs/promises';
+
+          const provenance = {
+            schema: 'ERGASTERION_FACTORY_EYE_SIGNED_PROVENANCE_V1',
+            signerOwner: 'GO_HUB_EXISTING_AMO_CREDENTIALS',
+            extensionId: process.env.EXTENSION_ID,
+            version: process.env.EXTENSION_VERSION,
+            channel: 'unlisted',
+            signingAction: 'kewisch/action-web-ext@84a13bb9e1b6108c43788ba091c41ca1dba6ad45',
+            sourceRepository: 'pureekangraw-ops/Ergasterion-factory',
+            sourceRef: 'main',
+            sourceSha: process.env.SOURCE_SHA,
+            signedXpiSha256: process.env.SIGNED_SHA256,
+            signedXpiSizeBytes: Number(process.env.SIGNED_SIZE),
+            browserPolicyUsed: false,
+            createsAuthority: false,
+          };
+          await writeFile(
+            process.env.RUNNER_TEMP + '/ergasterion-factory-eye-signed-provenance.json',
+            JSON.stringify(provenance, null, 2) + '\n',
+          );
+          console.log(JSON.stringify(provenance, null, 2));
+          NODE
+
+      - name: Upload signed Factory Eye
+        uses: actions/upload-artifact@v4
+        with:
+          name: ergasterion-factory-eye-v${{ steps.identity.outputs.version }}-signed
+          path: |
+            ${{ runner.temp }}/ergasterion-factory-eye-v${{ steps.identity.outputs.version }}-signed.xpi
+            ${{ runner.temp }}/ergasterion-factory-eye-signed-provenance.json
+          if-no-files-found: error
+          retention-days: 30
