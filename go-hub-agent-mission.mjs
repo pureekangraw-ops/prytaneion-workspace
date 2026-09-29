@@ -374,7 +374,12 @@ export function createAgentMissionService({
     const work = current.work || await inspectWork(workContext);
     const destinations = unique(input.destinations?.length ? input.destinations : work.requestedDestinations);
     const workType = text(work.workType).toUpperCase();
-    const accessScope = workType === "MAINTENANCE" ? "MAINTENANCE" : "WORK";
+    const passKind = text(work.pass?.kind).toUpperCase();
+    const persistedScope = text(work.accessScope).toUpperCase();
+    const maintenanceDestination = destinations.some(destination => text(destination).replace(/^destination:\/\//, "").toLowerCase() === "maintenance");
+    const accessScope = workType === "MAINTENANCE" || passKind === "MAINTENANCE" || persistedScope === "MAINTENANCE" || maintenanceDestination
+      ? "MAINTENANCE"
+      : "WORK";
     let recommendedTools = unique(current.mission?.memory?.recommendedTools);
     if (accessScope === "WORK" && !recommendedTools.length) {
       const found = await find({ mission:current.mission?.memory?.mission || work.command || work.name, limit:5 });
