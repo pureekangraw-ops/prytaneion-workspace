@@ -716,6 +716,23 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const projectStatus = createProjectStatusReadService({ lifecycle, factoryBinding:env?.GO_HUB_FACTORY_STATE });
       const boardPinRoute = createBoardPinRouteReadService();
       const pixie = createPixieCommandService({ fetchImpl, token:env.GITHUB_TOKEN });
+      const pixiePending = new Map();
+      const pixieCommand = async input => {
+        const response = await runMutation("pixie.command", input, () => pixie.command(input));
+        if (response.ok) {
+          const body = await response.clone().json().catch(() => null);
+          if (body?.status === "QUEUED" && body?.requestId) pixiePending.set(body.requestId, { workContext:input.workContext || null });
+        }
+        return response;
+      };
+      const pixieResult = async input => {
+        const response = await pixie.result(input);
+        if (response.ok) {
+          const body = await response.clone().json().catch(() => null);
+          if (["ANSWERED","FAILED"].includes(String(body?.status || ""))) pixiePending.delete(String(body.requestId || input.requestId || ""));
+        }
+        return response;
+      };
       const drive = createGoogleDriveService({
         fetchImpl,
         accessToken: firstEnv(env, ["GOOGLE_DRIVE_ACCESS_TOKEN", "DRIVE_ACCESS_TOKEN", "GDRIVE_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN", "GOOGLE_OAUTH_ACCESS_TOKEN", "GDRIVE_OAUTH_ACCESS_TOKEN"]),
@@ -967,12 +984,12 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           projectStatus: async input => json(await projectStatus.read(input)),
           boardRead: () => lighthouseControlPort.boardRead(),
           boardPinRoute: input => json(boardPinRoute.read(input)),
-          pixieCommand: input => runMutation("pixie.command", input, () => pixie.command(input)),
+          pixieCommand,
           pixieGoWorksAction: input => pixieGoWorksAction(input),
           // Backward-compatible alias for clients that still know the old ROOM-D tool name.
           // It now uses the same direct PIXIE LAB → GO WORKS Work-continuity path and no local Pass/room restriction.
           pixieDebugFactoryAction: input => pixieGoWorksAction(input),
-          pixieResult: input => pixie.result(input),
+          pixieResult,
           counterCreate: input => {
             const fromActor = lightMcp ? "LIGHT" : "GO";
             const toActor = lightMcp ? "GO" : "LIGHT";
