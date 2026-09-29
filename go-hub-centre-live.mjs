@@ -343,7 +343,7 @@ function v4MissionAction(state, action, input = {}) {
     let mission = activeMissionSession(state);
     const machine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
     if (!machine.draft) throw Object.assign(new Error("HERMES_CARD_DRAFT_REQUIRED"), { status:409 });
-    const issued = issueStandardMissionTicket(machine.draft, { confirmation:input.confirmation });
+    const issued = issueStandardMissionTicket(machine.draft);
     state.work = { ...state.work, accessScope:issued.access_scope, toolAccess:clone(issued.tool_access || []), snapshotKey:issued.snapshot_key || null };
     mission.memory.cardMachine = { draft:null, current:clone(issued), audit:Array.isArray(machine.audit) ? machine.audit : [], lastCardUpdateAt:at };
     bumpMission(mission, at);
