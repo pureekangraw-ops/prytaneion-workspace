@@ -42,3 +42,22 @@ test("GO Control Room is GO-only and exposes only available controls", async () 
   assert.deepEqual(room.controls.map(item => item.id), ["read-board"]);
   assert.throws(() => createGoControlRoom({ work, actor: "LIGHT" }), /GO_ONLY/);
 });
+
+
+test("Control Room distinguishes exposed, configured, authenticated and live tool reality", async () => {
+  const { normalizeToolReality, correlateControlRoomTruth } = await mod();
+  const reality = normalizeToolReality({
+    github:{ exposed:true, configured:true, authenticated:true, status:"LIVE", evidenceRef:"github://repo" },
+    notion:{ exposed:true, configured:true, authenticated:false, authRequired:true },
+    pixie:{ exposed:true, configured:false },
+    browser:{ exposed:true, configured:true, authenticated:true, status:"STALE" },
+  });
+  assert.equal(reality.github.status,"LIVE");
+  assert.equal(reality.notion.status,"AUTH_REQUIRED");
+  assert.equal(reality.pixie.status,"NOT_CONFIGURED");
+  assert.equal(reality.browser.status,"STALE");
+  assert.deepEqual(reality.notion.response,{ owner:"GO", action:"AUTHORIZE" });
+  assert.deepEqual(reality.browser.response,{ owner:"SOURCE_OWNER", action:"REFRESH" });
+  const room=correlateControlRoomTruth({ toolReality:{ pixie:{exposed:true,configured:false} } });
+  assert.equal(room.toolReality.pixie.status,"NOT_CONFIGURED");
+});

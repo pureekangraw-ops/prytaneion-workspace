@@ -5,6 +5,7 @@ const DEFAULT_RETRY_BUDGET = 2;
 const TERMINAL_ACTIONS = new Set(["complete"]);
 const OWNER_REQUIRED_ACTIONS = new Set(["resolve-blocker", "resolve-conflict"]);
 const UNSUPPORTED_AUTO_ACTIONS = new Set(["fix-piece", "fix-assembly", "fix-product", "repair-first-broken-truth"]);
+const AUTO_ACTIONS = new Set(["inspect-reality", "write", "check-ci", "diagnose-failure", "local-verify"]);
 const ACTION_ADAPTERS = Object.freeze({
   "inspect-reality": "inspect",
   "write": "write",
@@ -26,6 +27,7 @@ export function classifyFactoryAutoAction(snapshot = {}) {
   if (TERMINAL_ACTIONS.has(action)) return Object.freeze({ ...authority, mode: "COMPLETE", reason: "TERMINAL" });
   if (OWNER_REQUIRED_ACTIONS.has(action)) return Object.freeze({ ...authority, mode: "WAIT", reason: "OWNER_OR_RECONCILIATION_REQUIRED" });
   if (UNSUPPORTED_AUTO_ACTIONS.has(action)) return Object.freeze({ ...authority, mode: "WAIT", reason: "RECOVERY_EXECUTOR_REQUIRED" });
+  if (!AUTO_ACTIONS.has(action)) return Object.freeze({ ...authority, mode: "WAIT", reason: "UNKNOWN_ACTION" });
   return Object.freeze({ ...authority, mode: "AUTO", reason: "ACTIONABLE" });
 }
 

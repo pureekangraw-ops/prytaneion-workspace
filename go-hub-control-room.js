@@ -67,6 +67,41 @@ function capabilityView(capabilities = []) {
     .filter(item => item.id);
 }
 
+
+function responseForToolStatus(status) {
+  if (status === "AUTH_REQUIRED") return Object.freeze({ owner:"GO", action:"AUTHORIZE" });
+  if (status === "STALE") return Object.freeze({ owner:"SOURCE_OWNER", action:"REFRESH" });
+  if (status === "OFFLINE" || status === "DEGRADED") return Object.freeze({ owner:"MAINTENANCE", action:"DIAGNOSE_REPROBE" });
+  if (status === "UNKNOWN") return Object.freeze({ owner:"HERMES", action:"INSPECT_REALITY" });
+  if (status === "NOT_CONFIGURED" || status === "NOT_EXPOSED") return Object.freeze({ owner:"GO", action:"DECIDE_ENABLEMENT" });
+  return Object.freeze({ owner:null, action:null });
+}
+
+export function normalizeToolReality(sources = {}) {
+  const entries = Object.entries(sources && typeof sources === "object" ? sources : {});
+  return Object.freeze(Object.fromEntries(entries.map(([name, value]) => {
+    const source = value && typeof value === "object" ? value : {};
+    const exposed = source.exposed !== false;
+    const configured = source.configured === true;
+    const authenticated = source.authenticated === true;
+    const raw = upper(source.status || source.health || source.freshness);
+    let status = "UNKNOWN";
+    if (!exposed) status = "NOT_EXPOSED";
+    else if (!configured) status = "NOT_CONFIGURED";
+    else if (source.authRequired === true || raw === "AUTH_REQUIRED") status = "AUTH_REQUIRED";
+    else if (raw === "STALE") status = "STALE";
+    else if (["OFFLINE","UNAVAILABLE","HUB_UNAVAILABLE","SESSION_INACTIVE"].includes(raw)) status = "OFFLINE";
+    else if (["DEGRADED","CAUTION"].includes(raw)) status = "DEGRADED";
+    else if (authenticated && ["LIVE","PASS","VERIFIED","CURRENT",""].includes(raw)) status = "LIVE";
+    return [name, Object.freeze({
+      status, exposed, configured, authenticated,
+      reason:text(source.reason || source.code) || null,
+      evidenceRef:evidenceRef(source.evidenceRef),
+      response:responseForToolStatus(status),
+    })];
+  })));
+}
+
 export function correlateControlRoomTruth(input = {}, options = {}) {
   const centre = input.centre || input.centreTruth || {};
   const project = input.projectStatus || input.project || {};
@@ -93,6 +128,7 @@ export function correlateControlRoomTruth(input = {}, options = {}) {
     centreProject: status,
     board: boardSignal,
     deploymentProvenance: provenance,
+    toolReality: normalizeToolReality(input.toolReality || {}),
     sourceStatus: Object.freeze({
       centre: upper(centre.status || centre.workStatus) || "UNKNOWN",
       project: upper(project.status || project.projectStatus) || "UNKNOWN",

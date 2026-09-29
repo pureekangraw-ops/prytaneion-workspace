@@ -1,4 +1,4 @@
-const COUNTER_MODES = Object.freeze(["SEARCH", "HANDOFF", "MONITOR"]);
+const COUNTER_MODES = Object.freeze(["SEARCH", "HANDOFF"]);
 const COUNTER_MODE_SET = new Set(COUNTER_MODES);
 const ANSWER_STATES = Object.freeze(["ANSWERED", "WAIT", "UNKNOWN", "NEEDS_INPUT", "FAILED", "EXPIRED"]);
 const ANSWER_STATE_SET = new Set(ANSWER_STATES);

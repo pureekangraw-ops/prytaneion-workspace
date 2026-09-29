@@ -90,7 +90,7 @@ export function createCounterDispatchCore({
     const workId = required(input.workId, "Work ID");
     const checkpointId = required(input.checkpointId, "Checkpoint ID");
     const mode = String(input.mode || "SEARCH").trim().toUpperCase();
-    if (!["SEARCH", "HANDOFF", "MONITOR"].includes(mode)) throw Object.assign(new Error("DISPATCH_MODE_INVALID"), { status:400 });
+    if (!["SEARCH", "HANDOFF"].includes(mode)) throw Object.assign(new Error("DISPATCH_MODE_INVALID"), { status:400 });
     const fromActor = actor(input.fromActor, "GO");
     const toActor = actor(input.toActor, fromActor === "GO" ? "LIGHT" : "GO");
     if (fromActor === toActor) throw Object.assign(new Error("DISPATCH_ACTOR_ROUTE_INVALID"), { status:400 });
@@ -455,12 +455,6 @@ export class GoHubCounterDispatchState {
         handoff:true,
         triggerRequired:target === "LIGHT",
       });
-    }
-
-    if (target === "LIGHT" && (state.mode || "SEARCH") === "MONITOR") {
-      const result = this.core.blocked({ target, error:"MONITOR_ROUTE_NOT_ACTIVE" }, state);
-      if (!result.idempotent) await this.save(result.dispatch);
-      return publicState(result.dispatch, { monitor:false });
     }
 
     if (target === "LIGHT" && (state.mode || "SEARCH") === "SEARCH") {
