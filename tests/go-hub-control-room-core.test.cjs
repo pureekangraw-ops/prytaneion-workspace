@@ -29,3 +29,11 @@ test("Control Room exposes operational owner controls without owning room logic"
   assert.match(source, /currentCard/);
   assert.match(source, /pending/);
 });
+
+test("Control Room core dispatches owner tools through Current Card enforcement", () => {
+  const source = fs.readFileSync(path.join(root, "go-hub-mcp-registry.mjs"), "utf8");
+  assert.match(source, /go_hub_control_room_core/);
+  assert.match(source, /action:\{ type:"string", enum:\["inspect","execute"\] \}/);
+  assert.match(source, /await assertCardAccess\(lifecycle, targetName, targetArgs\)/);
+  assert.match(source, /lifecycle\[target\.operation\]/);
+});
