@@ -336,11 +336,23 @@ async function controlRoomRead({ request, env, fetchImpl }) {
   const controls = [
     { id:"refresh-observations", label:"Refresh observations", mode:"READ", available:true },
   ];
+  const toolReality = {
+    centre:{ exposed:true, configured:Boolean(env?.GO_HUB_CENTRE_STATE), authenticated:true, status:centre?.work ? "LIVE" : "UNKNOWN" },
+    github:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:github.status, evidenceRef:github.evidenceRef },
+    factory:{ exposed:true, configured:Boolean(env?.GO_HUB_FACTORY_STATE), authenticated:true, status:factory.status || "UNKNOWN" },
+    cloudflare:{ exposed:true, configured:Boolean(cfToken && cfAccount), authenticated:Boolean(cfToken && cfAccount), status:cloudflare.status, evidenceRef:cloudflare.evidenceRef },
+    board:{ exposed:true, configured:Boolean(env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS), authenticated:true, status:board.status, evidenceRef:board.evidenceRef },
+    notionLight:{ exposed:true, configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE), authenticated:false, status:"UNKNOWN", reason:"AUTH_STATE_REQUIRES_LIVE_STATUS_READ" },
+    observer:{ exposed:true, configured:Boolean(env?.OBSERVER_SESSIONS), authenticated:false, status:"UNKNOWN", reason:"SESSION_STATE_REQUIRES_LIVE_READ" },
+    pixie:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:"UNKNOWN", reason:"REQUEST_BOUND_RUNTIME" },
+    counter:{ exposed:true, configured:Boolean(env?.GO_HUB_COUNTER_STATE && env?.GO_HUB_COUNTER_DISPATCH_STATE), authenticated:true, status:"UNKNOWN", reason:"TICKET_BOUND_RUNTIME" },
+  };
   const observations = correlateControlRoomTruth({
     centre:{ status:centre.work.status, workStatus:centre.work.status },
     projectStatus,
     factory:{ status:factory.status || "UNKNOWN" },
     board, github, cloudflare,
+    toolReality,
     capabilities:controls,
     autoRefresh:true,
   });
@@ -348,6 +360,7 @@ async function controlRoomRead({ request, env, fetchImpl }) {
     ok:true, room:"GO_CONTROL_ROOM", entryAuthority:"GO", mode:"LIVE_OBSERVATION_AND_AVAILABLE_CONTROLS",
     workId, checkpointId, observedAt:new Date().toISOString(),
     centre:centre.work, projectStatus, factory, board, github, cloudflare,
+    toolReality:observations.toolReality,
     observations, controls:observations.availableControls,
   });
 }
