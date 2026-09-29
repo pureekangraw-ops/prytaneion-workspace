@@ -158,14 +158,15 @@ test("HERMES access card has only two authorization inputs and WORK gets stable 
   assert.equal(replacement.snapshot_key, draft.snapshot_key);
 });
 
-test("MAINTENANCE card needs no tool list and carries no work snapshot key", async () => {
+test("MAINTENANCE card preserves explicit destination tools and carries no work snapshot key", async () => {
   const mod = await import("../go-hub-mission-card.mjs?maintenance=" + Date.now());
   const draft = mod.prepareStandardMissionTicket({
     work:{ workId:"WORK-MAINT-1", checkpointId:"CP-WORK-MAINT-1", workType:"MAINTENANCE", requestedDestinations:["maintenance"] },
     accessScope:"MAINTENANCE",
     destinations:["maintenance"],
+    toolAccess:["go_hub_maintenance"],
   });
   assert.equal(draft.access_scope, "MAINTENANCE");
-  assert.deepEqual(draft.tool_access, []);
+  assert.deepEqual(draft.tool_access, ["go_hub_maintenance"]);
   assert.equal(draft.snapshot_key, null);
 });
