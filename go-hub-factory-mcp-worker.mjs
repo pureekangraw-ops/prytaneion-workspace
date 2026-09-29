@@ -342,8 +342,8 @@ export function createCounterDispatchLifecycle({ counter, dispatch, notionLight 
         confidence:state.confidence,
         nextRoute:state.nextRoute,
       };
-      const handoff = String(state.mode || "").trim().toUpperCase() === "HANDOFF";
-      const dispatchResponse = handoff && typeof dispatch.returnInline === "function"
+      const counterRouted = ["SEARCH", "HANDOFF"].includes(String(state.mode || "SEARCH").trim().toUpperCase());
+      const dispatchResponse = counterRouted && typeof dispatch.returnInline === "function"
         ? await dispatch.returnInline({
             ...dispatchInput,
             transport:"COUNTER_INBOX",
