@@ -300,6 +300,19 @@ export function createAgentMissionService({
     });
   }
 
+  function arrive(input = {}) {
+    return json({
+      ok:true,
+      action:"arrive",
+      agentId:text(input.agentId) || "GO",
+      mission:text(input.mission) || null,
+      workContext:null,
+      route:"UNKNOWN",
+      authorityCreated:false,
+      workCreated:false,
+    });
+  }
+
   async function enter(input = {}) {
     const workContext = requireWorkContext(input);
     const work = await inspectWork(workContext);
@@ -837,6 +850,7 @@ export function createAgentMissionService({
     async action(input = {}) {
       try {
         switch (text(input.action).toLowerCase()) {
+          case "arrive": return arrive(input);
           case "find": return await find(input);
           case "enter": return await enter(input);
           case "create": return await create(input);

@@ -1,4 +1,5 @@
 export const AGENT_MISSION_ACTIONS = Object.freeze([
+  "arrive",
   "find",
   "enter",
   "create",

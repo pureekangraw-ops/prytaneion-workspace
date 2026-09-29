@@ -31,6 +31,20 @@ async function body(response) {
   return response.json();
 }
 
+test("HERMES arrival does not require a historical index or mint a Work", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?arrival=" + Date.now());
+  const service = createAgentMissionService({
+    centreLive:{ action:async () => { throw new Error("Centre Work must not be touched at arrival"); } },
+    counterDispatch:{ create:async () => { throw new Error("Counter must not be created at arrival"); } },
+    boardRead:async () => { throw new Error("history unavailable"); },
+  });
+  const result = await body(await service.action({ action:"arrive", agentId:"GO", mission:"Prepare Factory" }));
+  assert.equal(result.ok, true);
+  assert.equal(result.route, "UNKNOWN");
+  assert.equal(result.workContext, null);
+  assert.equal(result.authorityCreated, false);
+});
+
 test("HERMES production flow uses existing Work Card, durable memory, LIGHT, first-open, mandatory return, and exit", async () => {
   const { createAgentMissionService } = await import(agentUrl + "?flow=" + Date.now());
   const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?flow=" + Date.now());

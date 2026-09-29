@@ -242,8 +242,9 @@ export function createMcpRegistry({ lifecycle, speaker = null, workContextOption
           missionInput = { action:"enter", workId, checkpointId, agentId:"GO" };
           if (mission) missionInput.mission = mission;
           if (context.requestedResult) missionInput.requestedResult = context.requestedResult;
-        } else if (!workId && !checkpointId && mission) {
-          missionInput = { action:"find", mission };
+        } else if (!workId && !checkpointId) {
+          missionInput = { action:"arrive", agentId:"GO" };
+          if (mission) missionInput.mission = mission;
         } else {
           return respond({ ...opened, ok:false, status:"UNKNOWN", reason:"MISSION_CONTEXT_REQUIRED",
             transfer:null, handoff:null }, 409);
