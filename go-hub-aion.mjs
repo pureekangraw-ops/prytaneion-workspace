@@ -1,3 +1,5 @@
+import { isCurrentAgentMissionTool } from "./go-hub-control-room.js";
+
 export const AGENT_MISSION_ACTIONS = Object.freeze([
   "find",
   "enter",
@@ -16,14 +18,6 @@ export const AGENT_MISSION_ACTIONS = Object.freeze([
   "inspect",
 ]);
 
-export function isCurrentAgentMissionTool(tool) {
-  const actions = tool?.inputSchema?.properties?.action?.enum;
-  return tool?.name === "go_hub_agent_mission" &&
-    tool?.inputSchema?.type === "object" &&
-    Array.isArray(actions) &&
-    tool.inputSchema.required?.includes("action") &&
-    AGENT_MISSION_ACTIONS.every(action => actions.includes(action));
-}
 
 const text = value => String(value ?? "").trim();
 const clone = value => value == null ? value : structuredClone(value);
