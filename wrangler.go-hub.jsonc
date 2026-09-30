@@ -187,5 +187,11 @@
       "/oauth/*",
       "/.well-known/*"
     ]
-  }
+  },
+  "services": [
+    {
+      "binding": "ERGASTERION_FACTORY",
+      "service": "ergasterion-factory"
+    }
+  ]
 }
