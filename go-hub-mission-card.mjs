@@ -296,7 +296,7 @@ function cardSearchCode(workId) {
   return "W" + hash.toString(36).toUpperCase().padStart(4, "0").slice(-4);
 }
 
-export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], intent = null, lastReturn = null, reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
+export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], data = {}, intent = null, lastReturn = null, reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
   if (!work || typeof work !== "object") throw new Error("MISSION_TICKET_WORK_REQUIRED");
   const workId = required(work.workId, "Mission Ticket Work ID");
   const cp = required(checkpointId || work.checkpointId, "Mission Ticket Checkpoint ID");
@@ -304,7 +304,7 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
   const scope = text(accessScope || work.accessScope || (String(work.workType || "").toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
   if (!["WORK","MAINTENANCE"].includes(scope)) throw new Error("MISSION_TICKET_ACCESS_SCOPE_INVALID");
   const tools = cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
-  if (scope === "WORK" && !tools.length) throw new Error("MISSION_TICKET_TOOL_ACCESS_REQUIRED");
+  const tabletData = data && typeof data === "object" && !Array.isArray(data) ? clone(data) : {};
   const snapshot = scope === "WORK" ? (text(snapshotKey || work.snapshotKey) || createSnapshotKey({ at:now(), randomId })) : null;
   const missionIntent = intent && typeof intent === "object" && !Array.isArray(intent)
     ? {
@@ -320,6 +320,7 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
     version:1,
     state:"DRAFT",
     cardId:text(work.cardId) || (text(work.jobCode) ? "CARD:" + text(work.jobCode) : null),
+    tabletId:text(work.tabletId) || (text(work.jobCode) ? "TABLET:" + text(work.jobCode) : null),
     workId,
     checkpointId:cp,
     jobCode:text(work.jobCode) || null,
@@ -328,6 +329,7 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
     tool_access:tools,
     snapshot_key:snapshot,
     intent:clone(missionIntent),
+    data:tabletData,
     context:clone(Array.isArray(context) ? context : []),
     last_return:lastReturn && typeof lastReturn === "object" && !Array.isArray(lastReturn) ? clone(lastReturn) : null,
     reason:text(reason) || "MISSION_ENTRY",
