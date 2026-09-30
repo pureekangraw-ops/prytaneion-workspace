@@ -175,8 +175,19 @@ test("SEARCH Counter stores only the two-key public work identity", async () => 
     workContext: context,
   });
   assert.equal(created.counter.currentState, "OPEN");
+  assert.equal(created.dispatch.legs.LIGHT.status, "WAITING_PICKUP");
 
-  const read = await callTool(worker, env, "/mcp", lightToken, 11, "go_hub_counter_get", {
+  const inbox = await callTool(worker, env, "/mcp", lightToken, 11, "go_hub_counter_inbox", {
+    limit: 10,
+    workContext: context,
+  });
+  assert.equal(inbox.inbox.count, 1);
+  assert.equal(inbox.inbox.tickets[0].counterId, "COUNTER-E2E-SEARCH");
+  assert.equal(inbox.inbox.tickets[0].mode, "SEARCH");
+  assert.equal(inbox.inbox.tickets[0].from, "GO");
+  assert.equal(inbox.inbox.tickets[0].to, "LIGHT");
+
+  const read = await callTool(worker, env, "/mcp", lightToken, 12, "go_hub_counter_get", {
     counterId: "COUNTER-E2E-SEARCH",
     workContext: context,
   });

@@ -352,7 +352,7 @@ function inboxStub(namespace, recipient = "LIGHT") {
 
 function inboxEnvelope(input = {}) {
   const mode = String(input.mode || "SEARCH").trim().toUpperCase();
-  if (mode !== "HANDOFF") throw Object.assign(new Error("COUNTER_INBOX_HANDOFF_ONLY"), { status:400 });
+  if (!COUNTER_MODE_SET.has(mode)) throw Object.assign(new Error("COUNTER_INBOX_MODE_INVALID"), { status:400 });
   const workContext = objectValue(input.workContext, "workContext");
   const fromActor = actor(input.fromActor, "GO");
   const toActor = actor(input.toActor, fromActor === "GO" ? "LIGHT" : "GO");
@@ -365,7 +365,7 @@ function inboxEnvelope(input = {}) {
     from:fromActor,
     to:toActor,
     request:required(input.request, "Request"),
-    requestedResult:required(input.requestedResult, "Requested result"),
+    requestedResult:mode === "HANDOFF" ? required(input.requestedResult, "Requested result") : (input.requestedResult == null ? null : required(input.requestedResult, "Requested result")),
     authority:input.authority == null ? null : required(input.authority, "Authority"),
     target:input.target == null ? null : required(input.target, "Target"),
     projectRef:input.projectRef == null ? null : required(input.projectRef, "Project reference"),
@@ -464,8 +464,6 @@ export function createCounterService({ namespace, inboxNamespace } = {}) {
 
     const payload = await response.clone().json().catch(() => ({}));
     const state = payload.counter || {};
-    if (state.mode !== "HANDOFF") return response;
-
     const workContext = state.workContext || input.workContext;
     const recipient = actor(state.to, "LIGHT");
 
@@ -474,7 +472,7 @@ export function createCounterService({ namespace, inboxNamespace } = {}) {
       const body = action === "create"
         ? {
             ...input,
-            mode:"HANDOFF",
+            mode:state.mode || "SEARCH",
             counterId:state.counterId,
             fromActor:state.from,
             toActor:state.to,
@@ -501,7 +499,7 @@ export function createCounterService({ namespace, inboxNamespace } = {}) {
       };
       const returnResponse = await inboxCall(origin, "enqueue", {
         counterId:state.counterId,
-        mode:"HANDOFF",
+        mode:state.mode || "SEARCH",
         fromActor:recipient,
         toActor:origin,
         request:required(state.answer, "Answer"),

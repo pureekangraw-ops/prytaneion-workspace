@@ -180,13 +180,14 @@ test("owner must choose a Work Target explicitly and LIGHTHOUSE is available wit
 });
 
 
-test("Counter surface is only handoff guidance, Notion AI catalog search, and Notion entry", () => {
+test("Counter surface exposes one GO-LIGHT route and keeps Notion search explicitly separate", () => {
   const source = read("go-hub-shell.js");
   for (const html of [read("index.html"), read("go-hub.html")]) {
     const start = html.indexOf('<section class="counter-panel"');
     const end = html.indexOf('<section class="go-workbench"', start);
     const counter = html.slice(start, end);
-    assert.match(counter, /SEND WORK TO LIGHT/);
+    assert.match(counter, /GO ↔ LIGHT — COUNTER ONLY/);
+    assert.match(counter, /Notion AI Search — direct capability, not LIGHT/);
     assert.match(counter, /data-counter-conversation/);
     assert.match(counter, /data-counter-ask-form/);
     assert.match(counter, /data-counter-question/);
@@ -199,6 +200,9 @@ test("Counter surface is only handoff guidance, Notion AI catalog search, and No
   const end = source.indexOf('centreForm?.addEventListener', start);
   const counter = source.slice(start, end);
   assert.match(counter, /\/hub\/api\/counter\/ask/);
+  assert.match(counter, /async function searchNotion/);
+  assert.match(counter, /appendCounterMessage\("NOTION"/);
+  assert.doesNotMatch(counter, /async function askLight/);
   assert.match(counter, /event\.key !== "Enter"/);
   assert.match(counter, /event\.shiftKey/);
   assert.doesNotMatch(counter, /\/hub\/api\/counter\/inbox|\/hub\/api\/counter\/pickup|refreshCounterInbox|counterInbox|centreWork\?\.workId/);

@@ -195,10 +195,13 @@ export function createCounterDispatchCore({
     if (targetLeg.status === "WAITING_PICKUP" && targetLeg.nextAttemptAt == null) return publicState(state, { idempotent:true });
     state.revision += 1;
     targetLeg.status = "WAITING_PICKUP";
-    targetLeg.lastError = target + "_HANDOFF_TARGET_NOT_CONFIGURED";
+    targetLeg.lastError = null;
     targetLeg.nextAttemptAt = null;
     state.updatedAt = stamp();
-    append(state, "WAITING_PICKUP", target, state.updatedAt, { mode:"HANDOFF" });
+    append(state, "WAITING_PICKUP", target, state.updatedAt, {
+      mode:state.mode || "SEARCH",
+      transport:"COUNTER_INBOX",
+    });
     return publicState(state);
   }
 
@@ -447,143 +450,17 @@ export class GoHubCounterDispatchState {
   async deliver(target, current, hubOrigin = null) {
     let state = current;
 
-    if ((state.mode || "SEARCH") === "HANDOFF" && !state.answer && target === actor(state.toActor, "LIGHT")) {
+    const destinationActor = actor(state.toActor, "LIGHT");
+    if (!state.answer && target === destinationActor) {
       const result = this.core.waitingPickup({ target }, state);
       if (!result.idempotent) await this.save(result.dispatch);
       return publicState(result.dispatch, {
         targetConfigured:true,
-        handoff:true,
+        mode:state.mode || "SEARCH",
+        transport:"COUNTER_INBOX",
+        pickupRequired:true,
         triggerRequired:target === "LIGHT",
       });
-    }
-
-    if (target === "LIGHT" && (state.mode || "SEARCH") === "SEARCH") {
-      const namespace = this.env?.GO_HUB_NOTION_LIGHT_STATE;
-      const notion = namespace && typeof namespace.getByName === "function"
-        ? namespace.getByName("notion-light-primary")
-        : null;
-      if (!notion || typeof notion.fetch !== "function") {
-        const result = this.core.waitingTarget({ target }, state);
-        if (!result.idempotent) await this.save(result.dispatch);
-        return publicState(result.dispatch, { targetConfigured:false });
-      }
-
-      const statusResponse = await notion.fetch(new Request("https://notion-light.internal/status", {
-        method:"POST",
-        headers:{ "content-type":"application/json" },
-        body:JSON.stringify({ action:"status" }),
-      }));
-      const status = await statusResponse.json().catch(() => ({}));
-
-      if (!statusResponse.ok || status.connected !== true) {
-        let authorizationUrl = null;
-        let authPrepareCode = null;
-        let authPrepareStatus = null;
-        if (hubOrigin) {
-          const prepareResponse = await notion.fetch(new Request("https://notion-light.internal/prepare", {
-            method:"POST",
-            headers:{ "content-type":"application/json" },
-            body:JSON.stringify({ action:"prepare", hubOrigin }),
-          }));
-          const prepared = await prepareResponse.json().catch(() => ({}));
-          if (prepareResponse.ok) authorizationUrl = prepared.authorizationUrl || null;
-          else {
-            authPrepareCode = String(prepared?.code || "NOTION_LIGHT_OAUTH_PREPARE_FAILED");
-            authPrepareStatus = prepareResponse.status;
-          }
-        }
-        const result = this.core.waitingAuth({ target }, state);
-        if (!result.idempotent) await this.save(result.dispatch);
-        return publicState(result.dispatch, {
-          targetConfigured:true,
-          authRequired:true,
-          authorizationUrl,
-          authPrepareCode,
-          authPrepareStatus,
-          notionStatus:{
-            connected:status.connected === true,
-            clientRegistered:status.clientRegistered === true,
-            authorizationStored:status.authorizationStored === true,
-            refreshAvailable:status.refreshAvailable === true,
-          },
-        });
-      }
-
-      const attempt = this.core.beginAttempt({ target }, state);
-      state = attempt.dispatch;
-      if (attempt.idempotent) return publicState(state);
-      await this.save(state);
-
-      try {
-        const response = await notion.fetch(new Request("https://notion-light.internal/search", {
-          method:"POST",
-          headers:{ "content-type":"application/json" },
-          body:JSON.stringify({
-            action:"search",
-            query:state.request,
-            counterId:state.counterId,
-            workId:state.workId,
-            checkpointId:state.checkpointId,
-            context:state.context,
-          }),
-        }));
-        const body = await response.json().catch(() => ({}));
-
-        if (body?.code === "NOTION_LIGHT_AUTH_REQUIRED" || body?.code === "NOTION_LIGHT_REAUTH_REQUIRED") {
-          const waiting = this.core.waitingAuth({ target }, state);
-          await this.save(waiting.dispatch);
-          return publicState(waiting.dispatch, { targetConfigured:true, authRequired:true });
-        }
-
-        if (body?.code === "NOTION_AI_SEARCH_UNAVAILABLE") {
-          const denied = this.core.blocked({
-            target,
-            error:"NOTION_AI_SEARCH_UNAVAILABLE:" + String(body.status || "unknown"),
-          }, state);
-          await this.save(denied.dispatch);
-          return publicState(denied.dispatch, {
-            targetConfigured:true,
-            capabilityBlocked:true,
-            capabilityStatus:body.status || null,
-            upgradeUrl:body.upgradeUrl || null,
-          });
-        }
-
-        if (!response.ok || body?.ok !== true) throw new Error(body?.code || "NOTION_LIGHT_SEARCH_FAILED");
-
-        const lightAnswer = {
-          status:body.status,
-          answer:body.answer,
-          sources:Array.isArray(body.sources) ? body.sources : [],
-          evidence:Array.isArray(body.evidence) ? body.evidence : [],
-          confidence:body.confidence || null,
-          nextRoute:body.nextRoute || "GO",
-        };
-        state.lightResult = clone(lightAnswer);
-        const delivered = this.core.delivered({
-          target,
-          receipt:{
-            httpStatus:response.status,
-            receiptId:"notion-ai-search",
-            workspaceId:body.workspaceId || null,
-            tool:body.tool || "notion-ai-search",
-            resultCount:Number(body.resultCount || 0),
-          },
-        }, state);
-        await this.save(delivered.dispatch);
-        return publicState(delivered.dispatch, {
-          targetConfigured:true,
-          lightAnswer:clone(lightAnswer),
-        });
-      } catch (error) {
-        const result = this.core.failed({
-          target,
-          error:error?.message || "NOTION_LIGHT_SEARCH_FAILED",
-        }, state);
-        await this.save(result.dispatch);
-        await this.schedule(result.dispatch.legs[target].nextAttemptAt);
-        return result;
-      }
     }
 
     const config = endpoint(this.env, target);
