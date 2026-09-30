@@ -20,6 +20,7 @@ const activeHubFiles = [
   "project-viewer-icon.svg",
   "go-hub-shell.css",
   "go-hub-shell.js",
+  "go-hub-ticket-hub.js",
   "go-hub-control-room.js",
   "go-hub-work-targets.js",
   "go-hub-runtime.js",
