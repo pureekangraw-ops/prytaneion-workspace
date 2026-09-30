@@ -13,19 +13,27 @@ function json(body, status = 200) {
   });
 }
 
-export function createErgasterionRuntime({ endpoint, secret, fetchImpl = fetch } = {}) {
-  const factoryEndpoint = text(endpoint);
+function serviceBindingFetch(binding) {
+  if (!binding || typeof binding.fetch !== 'function') return null;
+  return (resource, init) => binding.fetch(new Request(resource, init));
+}
+
+export function createErgasterionRuntime({ endpoint, secret, fetchImpl = fetch, binding = null } = {}) {
+  const boundFetch = serviceBindingFetch(binding);
+  const factoryEndpoint = text(endpoint) || (boundFetch ? 'https://ergasterion.internal' : '');
   const sharedSecret = text(secret);
+  const transportFetch = boundFetch || fetchImpl;
+  const transportMode = boundFetch ? 'SERVICE_BINDING' : 'PUBLIC_URL';
 
   return Object.freeze({
     async health() {
       if (!factoryEndpoint) return json({ ok:false, code:'ERGASTERION_FACTORY_ENDPOINT_NOT_CONFIGURED' }, 503);
-      const response = await fetchImpl(`${factoryEndpoint.replace(/\/$/, '')}/api/hub-factory/health`, {
+      const response = await transportFetch(`${factoryEndpoint.replace(/\/$/, '')}/api/hub-factory/health`, {
         method:'GET',
         headers:{ 'accept':'application/json' },
       });
       const payload = await response.json().catch(() => ({}));
-      return json(payload, response.status);
+      return json({ ...payload, hubTransportMode:transportMode }, response.status);
     },
 
     async handoff(input = {}) {
@@ -54,7 +62,7 @@ export function createErgasterionRuntime({ endpoint, secret, fetchImpl = fetch }
           endpoint:factoryEndpoint,
           secret:sharedSecret,
           handoff,
-          fetchImpl,
+          fetchImpl:transportFetch,
           timeoutMs:input.timeoutMs,
           retries:input.retries,
         });
@@ -65,7 +73,7 @@ export function createErgasterionRuntime({ endpoint, secret, fetchImpl = fetch }
           handoff,
           receipt,
           verified:proof,
-          transport:{ authenticated:true, endpoint:factoryEndpoint },
+          transport:{ authenticated:true, mode:transportMode, endpoint:factoryEndpoint },
         });
       } catch (error) {
         return json({
@@ -74,6 +82,7 @@ export function createErgasterionRuntime({ endpoint, secret, fetchImpl = fetch }
           handoffId:handoff.handoffId,
           workId:handoff.workId,
           checkpointId:handoff.checkpointId,
+          transportMode,
         }, 502);
       }
     },
