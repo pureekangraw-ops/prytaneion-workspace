@@ -364,11 +364,19 @@ function v4MissionAction(state, action, input = {}) {
   if (action === "v4_mission_card_prepare") {
     let mission = activeMissionSession(state);
     const currentMachine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
+    const tabletData = input.data === undefined
+      ? (currentMachine.current?.data && typeof currentMachine.current.data === "object" && !Array.isArray(currentMachine.current.data) ? clone(currentMachine.current.data) : {})
+      : input.data;
+    if (!tabletData || typeof tabletData !== "object" || Array.isArray(tabletData)) {
+      throw Object.assign(new Error("HERMES_TABLET_DATA_OBJECT_REQUIRED"), { status:400 });
+    }
+    rejectSecretFields(tabletData, "tabletData");
     const draft = prepareStandardMissionTicket({
       work:state.work,
       checkpointId:state.work?.checkpointId,
       destinations:missionUnique(input.destinations?.length ? input.destinations : state.work?.requestedDestinations),
       context:Array.isArray(input.context) ? input.context : mission.memory.selectedContext,
+      data:tabletData,
       intent:{
         mission:mission.memory.mission || state.work?.command || state.work?.name || null,
         requestedResult:mission.memory.requestedResult || state.work?.expectedResult || null,
