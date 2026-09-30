@@ -1231,6 +1231,23 @@ test("legacy CARD identifier remains usable and recommends Work Tablet migration
   assert.match(picked.prompt, /บัตรเก่ายังใช้ต่อได้และไม่บล็อกงาน/);
   assert.equal(picked.workContext.workId, created.workContext.workId);
   assert.deepEqual(picked.directToolAccess, ["go_hub_read_file"]);
+  assert.equal(picked.migrationPolicy.entry.acceptsLegacyCard, true);
+  assert.equal(picked.migrationPolicy.entry.blocksWork, false);
+  assert.equal(picked.migrationPolicy.migration.requiredNow, false);
+  assert.equal(picked.migrationPolicy.migration.recommended, true);
+
+  const emergency = await body(await service.action({
+    action:"emergency_enter",
+    cardId:legacyCardId,
+  }));
+  assert.equal(emergency.ok, true);
+  assert.equal(emergency.emergency, true);
+  assert.equal(emergency.compatibility.mode, "LEGACY_CARD_COMPAT");
+  assert.equal(emergency.migrationPolicy.emergency.migrationGate, false);
+  assert.equal(emergency.migrationPolicy.emergency.authorityExpanded, false);
+  assert.equal(emergency.migrationPolicy.emergency.destinationOpened, false);
+  assert.equal(emergency.migrationPolicy.emergency.exitAction, "return_tablet");
+  assert.match(emergency.prompt, /เข้าด่วนด้วยบัตรเก่าได้โดยไม่บล็อกงาน/);
 
   const current = await body(await service.action({
     action:"pickup_tablet",
@@ -1238,4 +1255,23 @@ test("legacy CARD identifier remains usable and recommends Work Tablet migration
   }));
   assert.equal(current.compatibility.mode, "CURRENT_TABLET");
   assert.equal(current.compatibility.migrationRecommended, false);
+
+  const returned = await body(await service.action({
+    action:"return_tablet",
+    cardId:legacyCardId,
+    status:"COMPLETE",
+    result:{ summary:"legacy card completed safely" },
+    evidence:[{ ref:"test://legacy-card/complete" }],
+    unknowns:[],
+    lastLocation:"GITHUB",
+  }));
+  assert.equal(returned.ok, true);
+  assert.equal(returned.exitMode, "RETURN");
+  assert.equal(returned.readbackVerified, true);
+  assert.equal(returned.sessionClosed, true);
+  assert.equal(returned.compatibility.mode, "LEGACY_CARD_COMPAT");
+  assert.equal(returned.migrationPolicy.exit.acceptsLegacyCard, true);
+  assert.equal(returned.migrationPolicy.exit.requiresOwnerReadback, true);
+  assert.equal(returned.migrationPolicy.exit.blocksOnMigration, false);
+  assert.match(returned.prompt, /ไม่บังคับย้ายบัตร/);
 });
