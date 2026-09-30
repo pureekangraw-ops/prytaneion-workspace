@@ -351,7 +351,15 @@ async function controlRoomRead({ request, env, fetchImpl }) {
   try {
     const response = await createFactoryV4Service({ binding:env?.GO_HUB_FACTORY_STATE })({ action:"inspect", workId });
     const payload = await response.json().catch(() => ({}));
-    factory = response.ok ? payload : { status:"UNKNOWN", reason:payload?.code || "FACTORY_V4_READ_FAILED" };
+    if (response.ok) {
+      factory = { ...payload, status:"LIVE" };
+    } else if (payload?.code === "FACTORY_V4_NOT_FOUND") {
+      // A reachable Factory with no task is a live runtime, not an unknown tool.
+      // Keep the reason so the Viewer can render NO ACTIVE TASK separately.
+      factory = { ...payload, status:"LIVE", reason:"FACTORY_V4_NOT_FOUND" };
+    } else {
+      factory = { status:"UNKNOWN", reason:payload?.code || "FACTORY_V4_READ_FAILED" };
+    }
   } catch (error) {
     factory = { status:"UNKNOWN", reason:error?.message || "FACTORY_V4_READ_FAILED" };
   }
@@ -415,16 +423,128 @@ async function controlRoomRead({ request, env, fetchImpl }) {
   ];
   const googleConfigured = Boolean(env?.GOOGLE_WORKSPACE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_WORKSPACE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN || env?.GOOGLE_OAUTH_REFRESH_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN);
   const driveConfigured = Boolean(env?.GOOGLE_DRIVE_ACCESS_TOKEN || env?.DRIVE_ACCESS_TOKEN || env?.GDRIVE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GDRIVE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN || env?.DRIVE_REFRESH_TOKEN || env?.GDRIVE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN);
+  let notionLight = {
+    status:"UNKNOWN",
+    configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
+    authenticated:false,
+    reason:"NOTION_LIGHT_RUNTIME_UNAVAILABLE",
+  };
+  try {
+    const response = await createNotionLightService({ namespace:env?.GO_HUB_NOTION_LIGHT_STATE }).status();
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok && payload?.connected === true) {
+      notionLight = {
+        status:"LIVE",
+        configured:true,
+        authenticated:true,
+        reason:"NOTION_LIGHT_CONNECTED",
+      };
+    } else if (response.ok) {
+      notionLight = {
+        status:"AUTH_REQUIRED",
+        configured:true,
+        authenticated:false,
+        authRequired:true,
+        reason:"NOTION_LIGHT_NOT_CONNECTED",
+      };
+    } else if (payload?.code === "NOTION_LIGHT_STATE_NOT_CONFIGURED") {
+      notionLight = {
+        status:"NOT_CONFIGURED",
+        configured:false,
+        authenticated:false,
+        reason:payload.code,
+      };
+    } else {
+      notionLight = {
+        status:"UNKNOWN",
+        configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
+        authenticated:false,
+        reason:payload?.code || "NOTION_LIGHT_STATUS_READ_FAILED",
+      };
+    }
+  } catch (error) {
+    notionLight = {
+      status:"UNKNOWN",
+      configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
+      authenticated:false,
+      reason:error?.message || "NOTION_LIGHT_STATUS_READ_FAILED",
+    };
+  }
+
+  let observer = {
+    status:"UNKNOWN",
+    configured:Boolean(env?.OBSERVER_SESSIONS),
+    authenticated:false,
+    reason:"OBSERVER_RUNTIME_UNAVAILABLE",
+  };
+  try {
+    const sessions = observerSessionsFor(null, env);
+    if (!sessions) {
+      observer = {
+        status:"NOT_CONFIGURED",
+        configured:false,
+        authenticated:false,
+        reason:"OBSERVER_SESSIONS_NOT_CONFIGURED",
+      };
+    } else {
+      const latest = await sessions.latest();
+      if (latest?.ok === true) {
+        observer = {
+          status:"LIVE",
+          configured:true,
+          authenticated:true,
+          reason:"ACTIVE_OBSERVER_SESSION",
+        };
+      } else if (["SESSION_INACTIVE", "SESSION_EXPIRED"].includes(String(latest?.code || ""))) {
+        observer = {
+          status:"OFFLINE",
+          configured:true,
+          authenticated:false,
+          reason:latest.code,
+        };
+      } else {
+        observer = {
+          status:"UNKNOWN",
+          configured:true,
+          authenticated:false,
+          reason:latest?.code || "OBSERVER_LATEST_READ_FAILED",
+        };
+      }
+    }
+  } catch (error) {
+    observer = {
+      status:"UNKNOWN",
+      configured:Boolean(env?.OBSERVER_SESSIONS),
+      authenticated:false,
+      reason:error?.message || "OBSERVER_LATEST_READ_FAILED",
+    };
+  }
+
+  const pixieConfigured = Boolean(env?.GITHUB_TOKEN);
+  const pixie = {
+    status:pixieConfigured ? "LIVE" : "NOT_CONFIGURED",
+    configured:pixieConfigured,
+    authenticated:pixieConfigured,
+    reason:pixieConfigured ? "REQUEST_BOUND_RUNTIME_READY" : "GITHUB_TOKEN_NOT_CONFIGURED",
+  };
+  const counterConfigured = Boolean(env?.GO_HUB_COUNTER_STATE && env?.GO_HUB_COUNTER_DISPATCH_STATE);
+  const counter = {
+    status:counterConfigured ? "LIVE" : "NOT_CONFIGURED",
+    configured:counterConfigured,
+    authenticated:counterConfigured,
+    reason:counterConfigured ? "COUNTER_RUNTIME_READY" : "COUNTER_STATE_NOT_CONFIGURED",
+  };
+
   const toolReality = {
     centre:{ exposed:true, configured:Boolean(env?.GO_HUB_CENTRE_STATE), authenticated:true, status:centre?.work ? "LIVE" : "UNKNOWN" },
     github:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:github.status, evidenceRef:github.evidenceRef },
-    factory:{ exposed:true, configured:Boolean(env?.GO_HUB_FACTORY_STATE), authenticated:true, status:factory.status || "UNKNOWN" },
+    factory:{ exposed:true, configured:Boolean(env?.GO_HUB_FACTORY_STATE), authenticated:Boolean(env?.GO_HUB_FACTORY_STATE), status:factory.status || "UNKNOWN", reason:factory.reason || null },
     cloudflare:{ exposed:true, configured:Boolean(cfToken && cfAccount), authenticated:Boolean(cfToken && cfAccount), status:cloudflare.status, evidenceRef:cloudflare.evidenceRef },
     board:{ exposed:true, configured:Boolean(env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS), authenticated:true, status:board.status, evidenceRef:board.evidenceRef },
-    notionLight:{ exposed:true, configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE), authenticated:false, status:"UNKNOWN", reason:"AUTH_STATE_REQUIRES_LIVE_STATUS_READ" },
-    observer:{ exposed:true, configured:Boolean(env?.OBSERVER_SESSIONS), authenticated:false, status:"UNKNOWN", reason:"SESSION_STATE_REQUIRES_LIVE_READ" },
-    pixie:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:"UNKNOWN", reason:"REQUEST_BOUND_RUNTIME" },
-    counter:{ exposed:true, configured:Boolean(env?.GO_HUB_COUNTER_STATE && env?.GO_HUB_COUNTER_DISPATCH_STATE), authenticated:true, status:"UNKNOWN", reason:"TICKET_BOUND_RUNTIME" },
+    notionLight:{ exposed:true, ...notionLight },
+    observer:{ exposed:true, ...observer },
+    pixie:{ exposed:true, ...pixie },
+    counter:{ exposed:true, ...counter },
     googleWorkspace:{ exposed:true, configured:googleConfigured, authenticated:googleConfigured, status:googleConfigured ? "LIVE" : "NOT_CONFIGURED", reason:googleConfigured ? "AUTH_CONFIGURATION_PRESENT" : "GOOGLE_WORKSPACE_NOT_CONFIGURED" },
     drive:{ exposed:true, configured:driveConfigured, authenticated:driveConfigured, status:driveConfigured ? "LIVE" : "NOT_CONFIGURED", reason:driveConfigured ? "AUTH_CONFIGURATION_PRESENT" : "DRIVE_NOT_CONFIGURED" },
   };
