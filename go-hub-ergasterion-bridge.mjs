@@ -69,6 +69,7 @@ export function verifyErgasterionFactoryReadback({ handoff, readback } = {}) {
     workId: handoff.workId,
     checkpointId: handoff.checkpointId,
     status: text(readback.status) || 'UNKNOWN',
+    candidateRefs: unique(readback.candidateRefs),
     artifactRefs: unique(readback.artifactRefs),
     evidenceRefs: unique(readback.evidenceRefs),
     unknowns: unique(readback.unknowns),
