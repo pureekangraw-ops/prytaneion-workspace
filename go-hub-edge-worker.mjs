@@ -296,6 +296,20 @@ function observerOwnerPage() {
   });
 }
 
+async function runtimeReadWithTimeout(task, timeoutCode, timeoutMs = 3_000) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(task),
+      new Promise(resolve => {
+        timer = setTimeout(() => resolve({ timeout:true, code:timeoutCode }), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function controlRoomRead({ request, env, fetchImpl }) {
   const url = new URL(request.url);
   const workId = String(url.searchParams.get("workId") || "").trim();
@@ -430,9 +444,19 @@ async function controlRoomRead({ request, env, fetchImpl }) {
     reason:"NOTION_LIGHT_RUNTIME_UNAVAILABLE",
   };
   try {
-    const response = await createNotionLightService({ namespace:env?.GO_HUB_NOTION_LIGHT_STATE }).status();
-    const payload = await response.json().catch(() => ({}));
-    if (response.ok && payload?.connected === true) {
+    const response = await runtimeReadWithTimeout(
+      () => createNotionLightService({ namespace:env?.GO_HUB_NOTION_LIGHT_STATE }).status(),
+      "NOTION_LIGHT_STATUS_TIMEOUT",
+    );
+    const payload = response?.timeout ? { code:response.code } : await response.json().catch(() => ({}));
+    if (response?.timeout) {
+      notionLight = {
+        status:"DEGRADED",
+        configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
+        authenticated:false,
+        reason:response.code,
+      };
+    } else if (response.ok && payload?.connected === true) {
       notionLight = {
         status:"LIVE",
         configured:true,
@@ -487,8 +511,18 @@ async function controlRoomRead({ request, env, fetchImpl }) {
         reason:"OBSERVER_SESSIONS_NOT_CONFIGURED",
       };
     } else {
-      const latest = await sessions.latest();
-      if (latest?.ok === true) {
+      const latest = await runtimeReadWithTimeout(
+        () => sessions.latest(),
+        "OBSERVER_LATEST_TIMEOUT",
+      );
+      if (latest?.timeout) {
+        observer = {
+          status:"DEGRADED",
+          configured:true,
+          authenticated:false,
+          reason:latest.code,
+        };
+      } else if (latest?.ok === true) {
         observer = {
           status:"LIVE",
           configured:true,
