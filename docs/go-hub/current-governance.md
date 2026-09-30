@@ -17,32 +17,40 @@
 9. **Change the canonical owner instead of layering a second authority.** When replacing behavior, migrate callers to the current owner, remove or quarantine obsolete competing paths after dependency proof, and preserve historical material only as explicitly non-authoritative evidence.
 10. **Current runtime/code truth wins over old prose.** If a historical plan conflicts with current runtime contracts, classify the old text as historical evidence rather than merging its rules into the current contract.
 
-## HERMES Card Helper boundary
+## HERMES Work Tablet boundary
 
-HERMES is a **card helper**, not a route executor.
+HERMES is the **entrance/exit desk for a Work Tablet**, not a route executor.
 
-Canonical flow:
+The operating model is intentionally like entering an amusement park:
 
 ```text
-Card ID
-→ HERMES pickup
-→ HERMES helps compare target/context choices
-→ GO explicitly selects
-→ selected target/context + tool_access are written to the Card
-→ GO uses authorized tools directly
-→ GO returns the Card once
+ENTRY (mandatory once)
+  ├─ create_tablet
+  ├─ pickup_tablet
+  └─ emergency_enter
+        ↓
+GO moves freely inside the Work
+  ├─ chooses targets/tools/order manually
+  ├─ writes chosen data with update_tablet
+  └─ may ask help_choose, but HERMES never selects or writes for GO
+        ↓
+EXIT (mandatory once)
+  └─ return_tablet
 ```
 
 Rules:
 
-- HERMES may rank, normalize, or explain choices, but **must not auto-select** a target, context item, destination, or tool for GO.
-- `help_choose` is read-only. Only `apply_selection` may persist a selection, and it must persist exactly the IDs chosen by GO.
-- A picked-up Card does not require HERMES `first_open`, a HERMES-opened Pass, or route mediation before card-authorized tools are used.
-- `tool_access` on the CURRENT Card remains the governed tool-entry authority.
-- `pickup_card` may claim/resume the Work so the same Card has one active holder, but it does not open a Pass or destination.
-- `return_card` performs the Work return, records owner readback, stores the latest return snapshot on the Card, and closes the HERMES session in one operation.
-- Card `intent`, selected context/target data, and `last_return` are resume context. They do not replace fresh owner-source Work truth.
-- Legacy HERMES route/pass actions may remain as compatibility code during migration, but they are not part of the canonical exposed HERMES surface.
+- The user-facing portable context is a **Work Tablet**, identified by `tabletId`.
+- The Tablet carries persistent resume data chosen by GO: intent, arbitrary `data`, destinations, `tool_access`, evidence/result pointers, and `last_return`.
+- `data` is GO-owned working data. HERMES must not inject unselected target/context information into it.
+- `help_choose` is optional and read-only. It may rank or explain candidates, but `selectedAutomatically` must remain false.
+- `update_tablet` is GO's manual write surface. It does not open a route or Pass and does not require an additional confirmation prompt.
+- `create_tablet`, `pickup_tablet`, and `emergency_enter` are the only canonical entry paths. Entry establishes the active GO-held Work but does not open a Pass.
+- After entry, Tablet `tool_access` is the direct tool gate. GO may change that list manually with `update_tablet` and then call the selected tools directly.
+- Direct tool gating reads Centre Work truth; it must not call HERMES on every tool execution.
+- `return_tablet` performs Work return, stores latest result/evidence on the Tablet, closes the HERMES session, and is the canonical exit.
+- Centre remains current Work truth. Tablet data is portable working/resume context and must never replace fresh owner-source readback.
+- Legacy Card fields/actions remain internal compatibility only during migration; they are not canonical user-facing language or flow.
 
 ## Pin identity routing
 
