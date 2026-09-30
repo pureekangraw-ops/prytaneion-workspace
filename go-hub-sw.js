@@ -1,12 +1,12 @@
 "use strict";
 
 const CACHE_PREFIX = "go-hub-app-";
-const CACHE_NAME = `${CACHE_PREFIX}v11-heimdall-authority-boundary`;
+const CACHE_NAME = `${CACHE_PREFIX}v12-project-viewer`;
 const APP_SHELL = [
   "./",
   "./index.html",
   "./go-hub.html",
-  "./go-hub.webmanifest",
+  "./go-hub.webmanifest",\n  "./project-viewer.html",\n  "./project-viewer.css",\n  "./project-viewer.js",\n  "./project-viewer.webmanifest",\n  "./app-icon.svg",
   "./go-hub-shell.css",
   "./go-hub-shell.js",
   "./go-hub-control-room.js",
@@ -50,7 +50,7 @@ const APP_SHELL = [
   "./go-hub-sw-bootstrap.js",
 ];
 
-function isHubNavigation(request) {
+function isProjectNavigation(request) {\n  if (request.mode !== "navigate") return false;\n  const pathname = new URL(request.url).pathname;\n  return pathname.endsWith("/project-viewer.html");\n}\n\nfunction isHubNavigation(request) {
   if (request.mode !== "navigate") return false;
   const pathname = new URL(request.url).pathname;
   return pathname === "/"
@@ -81,7 +81,7 @@ self.addEventListener("fetch", event => {
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
 
-  if (isHubNavigation(event.request)) {
+  if (isProjectNavigation(event.request)) {\n    event.respondWith((async () => {\n      try {\n        return await fetch(event.request);\n      } catch {\n        const cache = await caches.open(CACHE_NAME);\n        return (await cache.match("./project-viewer.html")) || Response.error();\n      }\n    })());\n    return;\n  }\n\n  if (isHubNavigation(event.request)) {
     event.respondWith((async () => {
       try {
         return await fetch(event.request);
