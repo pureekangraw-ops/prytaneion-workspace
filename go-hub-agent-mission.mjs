@@ -904,12 +904,25 @@ export function createAgentMissionService({
   }
 
   async function resolveTabletContext(input = {}) {
-    const suppliedId = text(input.tabletId || input.cardId);
+    const suppliedTabletId = text(input.tabletId);
+    const suppliedCardId = text(input.cardId);
+    const suppliedId = suppliedTabletId || suppliedCardId;
     if (!suppliedId) throw Object.assign(new Error("HERMES_TABLET_ID_REQUIRED"), { status:400 });
+    const legacyInput = !suppliedTabletId && Boolean(suppliedCardId);
     const resolved = await resolveCardContext({ ...input, cardId:legacyCardIdFromTabletId(suppliedId) });
+    const tabletId = tabletIdFromTicket(resolved.card, suppliedId);
     return {
       ...resolved,
-      tabletId:tabletIdFromTicket(resolved.card, suppliedId),
+      tabletId,
+      compatibility:legacyInput ? {
+        mode:"LEGACY_CARD_COMPAT",
+        supported:true,
+        blocksWork:false,
+        migrationRecommended:true,
+        suppliedId:suppliedCardId,
+        suggestedTabletId:tabletId,
+        recommendation:"ใช้ TABLET:* ในครั้งถัดไป; CARD:* ยังใช้ต่อได้ระหว่างช่วงเปลี่ยนผ่าน",
+      } : null,
     };
   }
 
@@ -932,6 +945,12 @@ export function createAgentMissionService({
         firstOpenRequired:false,
         passRequiredByHermes:false,
       },
+      compatibility:clone(resolved.compatibility || {
+        mode:"CURRENT_TABLET",
+        supported:true,
+        blocksWork:false,
+        migrationRecommended:false,
+      }),
     };
   }
 
@@ -1019,13 +1038,15 @@ export function createAgentMissionService({
       chooser:"GO",
       prompt:picked.terminal
         ? "อ่านแท็บเล็ตได้แล้ว งานอยู่ในสถานะปลายทาง"
-        : "รับ Work Tablet แล้ว จากนี้เดินงานและเลือกข้อมูลใส่แท็บเล็ตได้เอง",
+        : picked.compatibility?.migrationRecommended
+          ? "บัตรเก่ายังใช้ต่อได้และไม่บล็อกงาน · แนะนำเปลี่ยนมาใช้ " + picked.tabletId + " ในครั้งถัดไป"
+          : "รับ Work Tablet แล้ว จากนี้เดินงานและเลือกข้อมูลใส่แท็บเล็ตได้เอง",
     });
   }
 
   async function emergencyTabletEnter(input = {}) {
     let workContext = null;
-    if (text(input.tabletId)) {
+    if (text(input.tabletId || input.cardId)) {
       workContext = (await resolveTabletContext(input)).workContext;
     } else {
       workContext = requireWorkContext(input);
