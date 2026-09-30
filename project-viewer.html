@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f1117">
+  <title>GO Project Viewer</title>
+  <link rel="manifest" href="./project-viewer.webmanifest">
+  <link rel="stylesheet" href="./project-viewer.css">
+</head>
+<body>
+  <main class="viewer-shell">
+    <header class="viewer-header">
+      <div>
+        <p class="kicker">READ-ONLY PROJECT SURFACE</p>
+        <h1>GO Project Viewer</h1>
+        <p class="subtitle">Hub · Factory · Updates ในจอเดียว</p>
+      </div>
+      <div class="header-actions">
+        <span class="readonly-badge">READ ONLY</span>
+        <button type="button" data-install hidden>Install app</button>
+      </div>
+    </header>
+
+    <section class="overall-card" aria-labelledby="overall-title">
+      <div>
+        <p class="kicker">SYSTEM SNAPSHOT</p>
+        <h2 id="overall-title">ภาพรวม</h2>
+      </div>
+      <strong class="status-pill unknown" data-overall>UNKNOWN</strong>
+      <p class="overall-message" data-overall-message>กำลังอ่านข้อมูลสด…</p>
+      <p class="meta">Last observed: <span data-observed>—</span></p>
+      <div class="overall-actions">
+        <button type="button" data-refresh>Refresh now</button>
+        <a href="./go-hub.html">Open GO Hub ↗</a>
+      </div>
+    </section>
+
+    <section class="project-grid" aria-label="Project status">
+      <article class="project-card">
+        <div class="card-heading">
+          <div><p class="kicker">01</p><h2>HUB</h2></div>
+          <strong class="status-pill unknown" data-hub-status>UNKNOWN</strong>
+        </div>
+        <dl class="facts">
+          <div><dt>Centre</dt><dd data-centre-status>—</dd></div>
+          <div><dt>Work</dt><dd data-work-id>—</dd></div>
+          <div><dt>Checkpoint</dt><dd data-checkpoint-id>—</dd></div>
+          <div><dt>Project</dt><dd data-project-status>—</dd></div>
+        </dl>
+        <div class="mini-grid">
+          <div><span>Google Workspace</span><strong data-google-status>—</strong></div>
+          <div><span>Drive</span><strong data-drive-status>—</strong></div>
+          <div><span>Board</span><strong data-board-status>—</strong></div>
+        </div>
+      </article>
+
+      <article class="project-card">
+        <div class="card-heading">
+          <div><p class="kicker">02</p><h2>FACTORY</h2></div>
+          <strong class="status-pill unknown" data-factory-status>UNKNOWN</strong>
+        </div>
+        <dl class="facts">
+          <div><dt>State</dt><dd data-factory-state>—</dd></div>
+          <div><dt>Task</dt><dd data-factory-task>—</dd></div>
+          <div><dt>Repository</dt><dd data-factory-repo>—</dd></div>
+          <div><dt>Branch / PR</dt><dd data-factory-branch>—</dd></div>
+        </dl>
+        <details>
+          <summary>Factory raw readback</summary>
+          <pre data-factory-raw>{}</pre>
+        </details>
+      </article>
+
+      <article class="project-card">
+        <div class="card-heading">
+          <div><p class="kicker">03</p><h2>UPDATES</h2></div>
+          <strong class="status-pill unknown" data-update-status>UNKNOWN</strong>
+        </div>
+        <dl class="facts">
+          <div><dt>GitHub</dt><dd data-github-status>—</dd></div>
+          <div><dt>Head SHA</dt><dd data-head-sha>—</dd></div>
+          <div><dt>Cloudflare</dt><dd data-cloudflare-status>—</dd></div>
+          <div><dt>Provenance</dt><dd data-provenance>—</dd></div>
+        </dl>
+        <details>
+          <summary>Update raw readback</summary>
+          <pre data-update-raw>{}</pre>
+        </details>
+      </article>
+    </section>
+
+    <section class="attention-card" aria-labelledby="attention-title">
+      <div class="card-heading">
+        <div><p class="kicker">ATTENTION</p><h2 id="attention-title">สิ่งที่ต้องดู</h2></div>
+        <strong data-attention-count>0</strong>
+      </div>
+      <ul data-attention-list><li>ยังไม่มีข้อมูล</li></ul>
+    </section>
+
+    <footer>
+      อ่านจาก GO Hub Control Room เท่านั้น · ไม่ส่งคำสั่งแก้ Work, Factory, Deploy หรือสิทธิ์
+    </footer>
+  </main>
+  <script type="module" src="./project-viewer.js"></script>
+</body>
+</html>
