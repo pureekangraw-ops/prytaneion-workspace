@@ -296,7 +296,7 @@ function cardSearchCode(workId) {
   return "W" + hash.toString(36).toUpperCase().padStart(4, "0").slice(-4);
 }
 
-export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
+export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], intent = null, lastReturn = null, reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
   if (!work || typeof work !== "object") throw new Error("MISSION_TICKET_WORK_REQUIRED");
   const workId = required(work.workId, "Mission Ticket Work ID");
   const cp = required(checkpointId || work.checkpointId, "Mission Ticket Checkpoint ID");
@@ -306,6 +306,15 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
   const tools = cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
   if (scope === "WORK" && !tools.length) throw new Error("MISSION_TICKET_TOOL_ACCESS_REQUIRED");
   const snapshot = scope === "WORK" ? (text(snapshotKey || work.snapshotKey) || createSnapshotKey({ at:now(), randomId })) : null;
+  const missionIntent = intent && typeof intent === "object" && !Array.isArray(intent)
+    ? {
+        mission:text(intent.mission || work.command || work.name) || null,
+        requestedResult:text(intent.requestedResult || work.expectedResult) || null,
+      }
+    : {
+        mission:text(work.command || work.name) || null,
+        requestedResult:text(work.expectedResult) || null,
+      };
   return freeze({
     kind:"HERMES_STANDARD_TICKET",
     version:1,
@@ -318,7 +327,9 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
     access_scope:scope,
     tool_access:tools,
     snapshot_key:snapshot,
+    intent:clone(missionIntent),
     context:clone(Array.isArray(context) ? context : []),
+    last_return:lastReturn && typeof lastReturn === "object" && !Array.isArray(lastReturn) ? clone(lastReturn) : null,
     reason:text(reason) || "MISSION_ENTRY",
     preparedAt:iso(now),
     issuedAt:null,
@@ -326,7 +337,7 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
   });
 }
 
-export function issueStandardMissionTicket(draft, { now = () => Date.now() } = {}) {
+export function issueStandardMissionTicket(draft, { now = () => Date.now(), acceptedBy = "HERMES" } = {}) {
   if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") {
     throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
   }
@@ -334,7 +345,7 @@ export function issueStandardMissionTicket(draft, { now = () => Date.now() } = {
     ...clone(draft),
     state:"CURRENT",
     issuedAt:iso(now),
-    acceptedBy:"HERMES",
+    acceptedBy:text(acceptedBy) || "HERMES",
   });
 }
 
