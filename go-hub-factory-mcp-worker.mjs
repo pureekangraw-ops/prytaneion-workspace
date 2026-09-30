@@ -6,6 +6,7 @@ import { createCloudflareService } from "./go-hub-cloudflare-service.mjs";
 import { createGithubLifecycleService } from "./go-hub-worker.mjs";
 import { createFactoryControllerService } from "./go-hub-factory-controller.mjs";
 import { createFactoryActionService, createFactoryAutoService, createFactoryV4Service } from "./go-hub-factory-service.mjs";
+import { createErgasterionRuntime } from "./go-hub-ergasterion-runtime.mjs";
 import { createMaintenanceService } from "./go-hub-maintenance.js";
 import { createMaintenanceRealityReader } from "./go-hub-maintenance-reader.mjs";
 import { createMaintenanceDurableStorage } from "./go-hub-maintenance-state.mjs";
@@ -705,6 +706,11 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         token: env?.CLOUDFLARE_RUNTIME_API_TOKEN,
         accountId: env?.CLOUDFLARE_ACCOUNT_ID,
       });
+      const ergasterion = createErgasterionRuntime({
+        fetchImpl,
+        endpoint: env?.ERGASTERION_FACTORY_URL,
+        secret: env?.ERGASTERION_HUB_SHARED_SECRET,
+      });
       const observer = createObserverEvidenceService({
         namespace:env?.OBSERVER_SESSIONS,
         factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
@@ -856,6 +862,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           openPullRequest: input => runMutation("github.open_pull_request", input, () => lifecycle.openPullRequest(input)),
           rerunFailed: input => runMutation("github.rerun_failed", input, () => lifecycle.rerunFailed(input)),
           mergePullRequest: input => runMutation("github.merge_pull_request", input, () => lifecycle.mergePullRequest(input)),
+          ergasterionHealth: () => ergasterion.health(),
+          ergasterionHandoff: input => runMutation("factory.ergasterion_handoff", input, () => ergasterion.handoff(input)),
           factoryV4: async input => {
             const routed = { ...input, workId:input?.workContext?.workId };
             if (input.action === "inspect") return factoryV4(routed);
@@ -1071,7 +1079,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         : null;
       registry = createMcpRegistry({
         enforceCardAccess: String(env?.GO_HUB_CARD_ACCESS_V2 || "").trim() === "1",
-        workContextOptionalTools: ["go_hub_cloudflare_health"],
+        workContextOptionalTools: ["go_hub_cloudflare_health", "go_hub_ergasterion_health"],
         cardAccessBypass: ({ name }) =>
           authenticatedActor === "LIGHT" && LIGHT_REPOSITORY_READ_TOOLS.has(name),
         lifecycle: registryLifecycle,

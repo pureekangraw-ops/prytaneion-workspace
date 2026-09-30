@@ -155,6 +155,7 @@
   ],
   "vars": {
     "GO_HUB_CARD_ACCESS_V2": "1",
+    "ERGASTERION_FACTORY_URL": "https://ergasterion-factory.pureekangraw.workers.dev",
     "LIGHT_BELL_PAGE_ID": "88970e1da0a64ceebaa1ac1928361911",
     "COUNTER_HANDOFF_AGENT_URL": "agent://1277043d-9861-8158-a732-000347bf2bab/3e27043d-9861-8026-8e4b-009237cacaec",
     "MIRROR_REFRESH_AGENT_URL": "agent://1277043d-9861-8158-a732-000347bf2bab/3e27043d-9861-800e-9b05-00926ce24c3a",
