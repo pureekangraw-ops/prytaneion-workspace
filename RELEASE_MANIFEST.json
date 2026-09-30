@@ -19,7 +19,8 @@
     "Maintenance V4 persisted Map, safe probes, first-break readback, and closeout plan",
     "Counter → LIGHT → Work → Answer → Readback continuity",
     "GO Control Room live cross-system correlation surface",
-    "PIXIE Visual Workbench: IDEA/REFERENCE + BRIEF/PROMPT + MAIN WORKSPACE with local render-packet preparation"
+    "PIXIE Visual Workbench: IDEA/REFERENCE + BRIEF/PROMPT + MAIN WORKSPACE with local render-packet preparation",
+    "GO Project Viewer: read-only Hub + Factory + Updates live surface"
   ],
   "serviceWorker": {
     "file": "go-hub-sw.js",
@@ -180,6 +181,21 @@
     },
     {
       "path": "go-hub-visual-workbench-model.js"
+    },
+    {
+      "path": "project-viewer.html"
+    },
+    {
+      "path": "project-viewer.css"
+    },
+    {
+      "path": "project-viewer.js"
+    },
+    {
+      "path": "project-viewer.webmanifest"
+    },
+    {
+      "path": "project-viewer-icon.svg"
     }
   ],
   "serverRuntimeFiles": [

@@ -1,0 +1,20 @@
+{
+  "name": "GO Project Viewer",
+  "short_name": "GO Projects",
+  "description": "Read-only live view of GO Hub, Factory and deployment updates.",
+  "lang": "th",
+  "id": "/project-viewer.html",
+  "start_url": "/project-viewer.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0d12",
+  "theme_color": "#0f1117",
+  "icons": [
+    {
+      "src": "./project-viewer-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

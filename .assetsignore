@@ -53,3 +53,8 @@ node_modules/**
 !/pixie-visual-workbench.css
 !/pixie-visual-workbench.js
 !/go-hub-visual-workbench-model.js
+!/project-viewer.html
+!/project-viewer.css
+!/project-viewer.js
+!/project-viewer.webmanifest
+!/project-viewer-icon.svg

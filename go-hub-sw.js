@@ -7,6 +7,11 @@ const APP_SHELL = [
   "./index.html",
   "./go-hub.html",
   "./go-hub.webmanifest",
+  "./project-viewer.html",
+  "./project-viewer.css",
+  "./project-viewer.js",
+  "./project-viewer.webmanifest",
+  "./project-viewer-icon.svg",
   "./go-hub-shell.css",
   "./go-hub-shell.js",
   "./go-hub-control-room.js",
@@ -50,6 +55,12 @@ const APP_SHELL = [
   "./go-hub-sw-bootstrap.js",
 ];
 
+function isProjectNavigation(request) {
+  if (request.mode !== "navigate") return false;
+  const pathname = new URL(request.url).pathname;
+  return pathname.endsWith("/project-viewer.html");
+}
+
 function isHubNavigation(request) {
   if (request.mode !== "navigate") return false;
   const pathname = new URL(request.url).pathname;
@@ -80,6 +91,18 @@ self.addEventListener("fetch", event => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+
+  if (isProjectNavigation(event.request)) {
+    event.respondWith((async () => {
+      try {
+        return await fetch(event.request);
+      } catch {
+        const cache = await caches.open(CACHE_NAME);
+        return (await cache.match("./project-viewer.html")) || Response.error();
+      }
+    })());
+    return;
+  }
 
   if (isHubNavigation(event.request)) {
     event.respondWith((async () => {
