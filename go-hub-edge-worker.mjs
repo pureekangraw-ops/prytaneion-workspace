@@ -296,20 +296,6 @@ function observerOwnerPage() {
   });
 }
 
-async function runtimeReadWithTimeout(task, timeoutCode, timeoutMs = 3_000) {
-  let timer;
-  try {
-    return await Promise.race([
-      Promise.resolve().then(task),
-      new Promise(resolve => {
-        timer = setTimeout(() => resolve({ timeout:true, code:timeoutCode }), timeoutMs);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function controlRoomRead({ request, env, fetchImpl }) {
   const url = new URL(request.url);
   const workId = String(url.searchParams.get("workId") || "").trim();
@@ -437,123 +423,23 @@ async function controlRoomRead({ request, env, fetchImpl }) {
   ];
   const googleConfigured = Boolean(env?.GOOGLE_WORKSPACE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_WORKSPACE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN || env?.GOOGLE_OAUTH_REFRESH_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN);
   const driveConfigured = Boolean(env?.GOOGLE_DRIVE_ACCESS_TOKEN || env?.DRIVE_ACCESS_TOKEN || env?.GDRIVE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GDRIVE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN || env?.DRIVE_REFRESH_TOKEN || env?.GDRIVE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN);
-  let notionLight = {
-    status:"UNKNOWN",
-    configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
+  // Control Room stays a bounded read-only surface. Durable Object session/auth
+  // details are request-bound and must not be awaited here; report configured
+  // runtime readiness without fabricating an active session or connection.
+  const notionLightConfigured = Boolean(env?.GO_HUB_NOTION_LIGHT_STATE);
+  const notionLight = {
+    status:notionLightConfigured ? "DEGRADED" : "NOT_CONFIGURED",
+    configured:notionLightConfigured,
     authenticated:false,
-    reason:"NOTION_LIGHT_RUNTIME_UNAVAILABLE",
+    reason:notionLightConfigured ? "LIVE_STATUS_READ_DEFERRED" : "NOTION_LIGHT_STATE_NOT_CONFIGURED",
   };
-  try {
-    const response = await runtimeReadWithTimeout(
-      () => createNotionLightService({ namespace:env?.GO_HUB_NOTION_LIGHT_STATE }).status(),
-      "NOTION_LIGHT_STATUS_TIMEOUT",
-    );
-    const payload = response?.timeout ? { code:response.code } : await response.json().catch(() => ({}));
-    if (response?.timeout) {
-      notionLight = {
-        status:"DEGRADED",
-        configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
-        authenticated:false,
-        reason:response.code,
-      };
-    } else if (response.ok && payload?.connected === true) {
-      notionLight = {
-        status:"LIVE",
-        configured:true,
-        authenticated:true,
-        reason:"NOTION_LIGHT_CONNECTED",
-      };
-    } else if (response.ok) {
-      notionLight = {
-        status:"AUTH_REQUIRED",
-        configured:true,
-        authenticated:false,
-        authRequired:true,
-        reason:"NOTION_LIGHT_NOT_CONNECTED",
-      };
-    } else if (payload?.code === "NOTION_LIGHT_STATE_NOT_CONFIGURED") {
-      notionLight = {
-        status:"NOT_CONFIGURED",
-        configured:false,
-        authenticated:false,
-        reason:payload.code,
-      };
-    } else {
-      notionLight = {
-        status:"UNKNOWN",
-        configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
-        authenticated:false,
-        reason:payload?.code || "NOTION_LIGHT_STATUS_READ_FAILED",
-      };
-    }
-  } catch (error) {
-    notionLight = {
-      status:"UNKNOWN",
-      configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE),
-      authenticated:false,
-      reason:error?.message || "NOTION_LIGHT_STATUS_READ_FAILED",
-    };
-  }
-
-  let observer = {
-    status:"UNKNOWN",
-    configured:Boolean(env?.OBSERVER_SESSIONS),
+  const observerConfigured = Boolean(env?.OBSERVER_SESSIONS);
+  const observer = {
+    status:observerConfigured ? "DEGRADED" : "NOT_CONFIGURED",
+    configured:observerConfigured,
     authenticated:false,
-    reason:"OBSERVER_RUNTIME_UNAVAILABLE",
+    reason:observerConfigured ? "SESSION_STATE_READ_DEFERRED" : "OBSERVER_SESSIONS_NOT_CONFIGURED",
   };
-  try {
-    const sessions = observerSessionsFor(null, env);
-    if (!sessions) {
-      observer = {
-        status:"NOT_CONFIGURED",
-        configured:false,
-        authenticated:false,
-        reason:"OBSERVER_SESSIONS_NOT_CONFIGURED",
-      };
-    } else {
-      const latest = await runtimeReadWithTimeout(
-        () => sessions.latest(),
-        "OBSERVER_LATEST_TIMEOUT",
-      );
-      if (latest?.timeout) {
-        observer = {
-          status:"DEGRADED",
-          configured:true,
-          authenticated:false,
-          reason:latest.code,
-        };
-      } else if (latest?.ok === true) {
-        observer = {
-          status:"LIVE",
-          configured:true,
-          authenticated:true,
-          reason:"ACTIVE_OBSERVER_SESSION",
-        };
-      } else if (["SESSION_INACTIVE", "SESSION_EXPIRED"].includes(String(latest?.code || ""))) {
-        observer = {
-          status:"OFFLINE",
-          configured:true,
-          authenticated:false,
-          reason:latest.code,
-        };
-      } else {
-        observer = {
-          status:"UNKNOWN",
-          configured:true,
-          authenticated:false,
-          reason:latest?.code || "OBSERVER_LATEST_READ_FAILED",
-        };
-      }
-    }
-  } catch (error) {
-    observer = {
-      status:"UNKNOWN",
-      configured:Boolean(env?.OBSERVER_SESSIONS),
-      authenticated:false,
-      reason:error?.message || "OBSERVER_LATEST_READ_FAILED",
-    };
-  }
-
   const pixieConfigured = Boolean(env?.GITHUB_TOKEN);
   const pixie = {
     status:pixieConfigured ? "LIVE" : "NOT_CONFIGURED",
