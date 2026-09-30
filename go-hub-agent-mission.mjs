@@ -904,12 +904,53 @@ export function createAgentMissionService({
   }
 
   async function resolveTabletContext(input = {}) {
-    const suppliedId = text(input.tabletId || input.cardId);
+    const suppliedTabletId = text(input.tabletId);
+    const suppliedCardId = text(input.cardId);
+    const suppliedId = suppliedTabletId || suppliedCardId;
     if (!suppliedId) throw Object.assign(new Error("HERMES_TABLET_ID_REQUIRED"), { status:400 });
+    const legacyInput = !suppliedTabletId && Boolean(suppliedCardId);
     const resolved = await resolveCardContext({ ...input, cardId:legacyCardIdFromTabletId(suppliedId) });
+    const tabletId = tabletIdFromTicket(resolved.card, suppliedId);
     return {
       ...resolved,
-      tabletId:tabletIdFromTicket(resolved.card, suppliedId),
+      tabletId,
+      compatibility:legacyInput ? {
+        mode:"LEGACY_CARD_COMPAT",
+        supported:true,
+        blocksWork:false,
+        migrationRecommended:true,
+        suppliedId:suppliedCardId,
+        suggestedTabletId:tabletId,
+        recommendation:"ใช้ TABLET:* ในครั้งถัดไป; CARD:* ยังใช้ต่อได้ระหว่างช่วงเปลี่ยนผ่าน",
+      } : null,
+    };
+  }
+
+  function legacyMigrationPolicy(compatibility = null) {
+    const legacy = compatibility?.mode === "LEGACY_CARD_COMPAT";
+    return {
+      entry:{
+        acceptsLegacyCard:true,
+        blocksWork:false,
+        preferredIdentity:"TABLET:*",
+      },
+      exit:{
+        acceptsLegacyCard:true,
+        requiresOwnerReadback:true,
+        blocksOnMigration:false,
+      },
+      emergency:{
+        acceptsLegacyCard:true,
+        migrationGate:false,
+        authorityExpanded:false,
+        destinationOpened:false,
+        exitAction:"return_tablet",
+      },
+      migration:{
+        requiredNow:false,
+        recommended:legacy,
+        suggestedTabletId:legacy ? compatibility?.suggestedTabletId || null : null,
+      },
     };
   }
 
@@ -932,6 +973,13 @@ export function createAgentMissionService({
         firstOpenRequired:false,
         passRequiredByHermes:false,
       },
+      compatibility:clone(resolved.compatibility || {
+        mode:"CURRENT_TABLET",
+        supported:true,
+        blocksWork:false,
+        migrationRecommended:false,
+      }),
+      migrationPolicy:legacyMigrationPolicy(resolved.compatibility),
     };
   }
 
@@ -1019,14 +1067,19 @@ export function createAgentMissionService({
       chooser:"GO",
       prompt:picked.terminal
         ? "อ่านแท็บเล็ตได้แล้ว งานอยู่ในสถานะปลายทาง"
-        : "รับ Work Tablet แล้ว จากนี้เดินงานและเลือกข้อมูลใส่แท็บเล็ตได้เอง",
+        : picked.compatibility?.migrationRecommended
+          ? "บัตรเก่ายังใช้ต่อได้และไม่บล็อกงาน · แนะนำเปลี่ยนมาใช้ " + picked.tabletId + " ในครั้งถัดไป"
+          : "รับ Work Tablet แล้ว จากนี้เดินงานและเลือกข้อมูลใส่แท็บเล็ตได้เอง",
     });
   }
 
   async function emergencyTabletEnter(input = {}) {
     let workContext = null;
-    if (text(input.tabletId)) {
-      workContext = (await resolveTabletContext(input)).workContext;
+    let entryCompatibility = null;
+    if (text(input.tabletId || input.cardId)) {
+      const entryResolved = await resolveTabletContext(input);
+      workContext = entryResolved.workContext;
+      entryCompatibility = entryResolved.compatibility;
     } else {
       workContext = requireWorkContext(input);
     }
@@ -1058,6 +1111,7 @@ export function createAgentMissionService({
       work:current.work,
       card:ticket,
       tabletId:tabletIdFromTicket(ticket),
+      compatibility:entryCompatibility,
     };
     return json({
       ...enteredBody,
@@ -1072,7 +1126,9 @@ export function createAgentMissionService({
       card:enteredBody.card || workCardView(current.work),
       mission:current.mission,
       readout:composeMissionReadout(current.work, current.mission),
-      prompt:"เข้าด่วนแล้ว และมี Work Tablet สำหรับถือข้อมูลระหว่างงาน ขาออกใช้ return_tablet",
+      prompt:entryCompatibility?.migrationRecommended
+        ? "เข้าด่วนด้วยบัตรเก่าได้โดยไม่บล็อกงาน · ขาออกใช้ return_tablet และแนะนำเปลี่ยนเป็น " + resolved.tabletId + " ภายหลัง"
+        : "เข้าด่วนแล้ว และมี Work Tablet สำหรับถือข้อมูลระหว่างงาน ขาออกใช้ return_tablet",
     });
   }
 
@@ -1167,15 +1223,22 @@ export function createAgentMissionService({
     const legacyBody = await payload(legacyResponse);
     if (!okResponse(legacyResponse)) return legacyResponse;
     const final = await resolveTabletContext({ tabletId:resolvedBefore.tabletId });
+    const returned = {
+      ...final,
+      compatibility:resolvedBefore.compatibility || final.compatibility,
+    };
     return json({
       ok:true,
       action:"return_tablet",
-      ...tabletPacket(final),
+      ...tabletPacket(returned),
       returned:true,
+      exitMode:"RETURN",
       readbackVerified:legacyBody.readbackVerified === true || legacyBody.idempotent === true,
       sessionClosed:true,
       retrievalCode:final.card?.snapshot_key || missionTicketSearchCode(final.workContext.workId),
-      prompt:"คืน Work Tablet แล้ว ผลและหลักฐานถูกเก็บไว้สำหรับหยิบมาทำต่อครั้งหน้า",
+      prompt:resolvedBefore.compatibility?.migrationRecommended
+        ? "คืนงานและ readback แล้วโดยไม่บังคับย้ายบัตร · ครั้งถัดไปแนะนำใช้ " + resolvedBefore.tabletId
+        : "คืน Work Tablet แล้ว ผลและหลักฐานถูกเก็บไว้สำหรับหยิบมาทำต่อครั้งหน้า",
     });
   }
 

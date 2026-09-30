@@ -20,7 +20,8 @@
     "Counter → LIGHT → Work → Answer → Readback continuity",
     "GO Control Room live cross-system correlation surface",
     "PIXIE Visual Workbench: IDEA/REFERENCE + BRIEF/PROMPT + MAIN WORKSPACE with local render-packet preparation",
-    "GO Project Viewer: read-only Hub + Factory + Updates live surface"
+    "GO Project Viewer: read-only Hub + Factory + Updates live surface",
+    "Ticket Hub: primary create/find/store Work entry backed by Centre owner truth"
   ],
   "serviceWorker": {
     "file": "go-hub-sw.js",
@@ -61,6 +62,9 @@
     },
     {
       "path": "go-hub-shell.js"
+    },
+    {
+      "path": "go-hub-ticket-hub.js"
     },
     {
       "path": "go-hub-control-room.js"

@@ -1168,3 +1168,110 @@ test("Work Tablet amusement-park flow gates only entry and return while GO write
   assert.equal(final.mission.session.status, "EXITED");
 });
 
+
+
+test("legacy CARD identifier remains usable and recommends Work Tablet migration without blocking", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?legacy-card-compat=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?legacy-card-compat=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const pins = [];
+  const boardRead = async () => new Response(JSON.stringify({ ok:true, pins }), {
+    headers:{ "content-type":"application/json" },
+  });
+  let seq = 0;
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead,
+    createId:prefix => prefix + "-LEGACY-" + (++seq),
+  });
+
+  const created = await body(await service.action({
+    action:"create_tablet",
+    mission:"Continue an old-card work without migration blocking",
+    requestedResult:"Old CARD ID opens the same Work and only recommends TABLET ID",
+    workKey:"LEGACY-CARD-COMPAT",
+    destinations:["GITHUB"],
+    accessScope:"WORK",
+    toolAccess:["go_hub_read_file"],
+    data:{ source:"legacy-card-test" },
+  }));
+
+  pins.push({
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+    jobCode:created.tablet.jobCode,
+    status:"ON PROCESS",
+    title:"Legacy card compatibility",
+    detail:"Use old CARD ID during migration",
+    card:{
+      cardId:"CARD:" + created.tablet.jobCode,
+      checkpointId:created.workContext.checkpointId,
+      jobCode:created.tablet.jobCode,
+      sourceStatus:"ON PROCESS",
+      tool_access:["go_hub_read_file"],
+    },
+  });
+
+  const legacyCardId = "CARD:" + created.tablet.jobCode;
+  const picked = await body(await service.action({
+    action:"pickup_tablet",
+    cardId:legacyCardId,
+  }));
+
+  assert.equal(picked.ok, true);
+  assert.equal(picked.usable, true);
+  assert.equal(picked.compatibility.mode, "LEGACY_CARD_COMPAT");
+  assert.equal(picked.compatibility.supported, true);
+  assert.equal(picked.compatibility.blocksWork, false);
+  assert.equal(picked.compatibility.migrationRecommended, true);
+  assert.equal(picked.compatibility.suppliedId, legacyCardId);
+  assert.equal(picked.compatibility.suggestedTabletId, created.tabletId);
+  assert.match(picked.prompt, /บัตรเก่ายังใช้ต่อได้และไม่บล็อกงาน/);
+  assert.equal(picked.workContext.workId, created.workContext.workId);
+  assert.deepEqual(picked.directToolAccess, ["go_hub_read_file"]);
+  assert.equal(picked.migrationPolicy.entry.acceptsLegacyCard, true);
+  assert.equal(picked.migrationPolicy.entry.blocksWork, false);
+  assert.equal(picked.migrationPolicy.migration.requiredNow, false);
+  assert.equal(picked.migrationPolicy.migration.recommended, true);
+
+  const emergency = await body(await service.action({
+    action:"emergency_enter",
+    cardId:legacyCardId,
+  }));
+  assert.equal(emergency.ok, true);
+  assert.equal(emergency.emergency, true);
+  assert.equal(emergency.compatibility.mode, "LEGACY_CARD_COMPAT");
+  assert.equal(emergency.migrationPolicy.emergency.migrationGate, false);
+  assert.equal(emergency.migrationPolicy.emergency.authorityExpanded, false);
+  assert.equal(emergency.migrationPolicy.emergency.destinationOpened, false);
+  assert.equal(emergency.migrationPolicy.emergency.exitAction, "return_tablet");
+  assert.match(emergency.prompt, /เข้าด่วนด้วยบัตรเก่าได้โดยไม่บล็อกงาน/);
+
+  const current = await body(await service.action({
+    action:"pickup_tablet",
+    tabletId:created.tabletId,
+  }));
+  assert.equal(current.compatibility.mode, "CURRENT_TABLET");
+  assert.equal(current.compatibility.migrationRecommended, false);
+
+  const returned = await body(await service.action({
+    action:"return_tablet",
+    cardId:legacyCardId,
+    status:"COMPLETE",
+    result:{ summary:"legacy card completed safely" },
+    evidence:[{ ref:"test://legacy-card/complete" }],
+    unknowns:[],
+    lastLocation:"GITHUB",
+  }));
+  assert.equal(returned.ok, true);
+  assert.equal(returned.exitMode, "RETURN");
+  assert.equal(returned.readbackVerified, true);
+  assert.equal(returned.sessionClosed, true);
+  assert.equal(returned.compatibility.mode, "LEGACY_CARD_COMPAT");
+  assert.equal(returned.migrationPolicy.exit.acceptsLegacyCard, true);
+  assert.equal(returned.migrationPolicy.exit.requiresOwnerReadback, true);
+  assert.equal(returned.migrationPolicy.exit.blocksOnMigration, false);
+  assert.match(returned.prompt, /ไม่บังคับย้ายบัตร/);
+});

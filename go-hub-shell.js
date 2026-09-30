@@ -11,6 +11,7 @@ import { CENTRE_STATES, admitDestination } from "./go-hub-centre.js";
 import { createCentreLiveClient } from "./go-hub-centre-client.js";
 import { getWorkTarget } from "./go-hub-work-targets.js";
 import { correlateControlRoomTruth } from "./go-hub-control-room.js";
+import { mountTicketHub } from "./go-hub-ticket-hub.js";
 
 const FACTORY_DESTINATION = "destination://factory";
 const cityRoute = createCityRoute();
@@ -28,6 +29,7 @@ let task = null;
 let baseCodeCapability = null;
 let taskLoadError = null;
 let activeWorkbenchKey = null;
+let ticketHub = null;
 
 try {
   centreWork = await centreLive.restoreOrStart();
@@ -168,7 +170,7 @@ function addDressingLesson(value) {
 }
 
 function mountMissionBriefingRoom() {
-  const room = document.querySelector("[data-dressing-room]");
+  const room = document.querySelector("[data-mission-briefing-host]");
   if (!room || room.querySelector("[data-mission-card-reader]")) return;
 
   const panel = document.createElement("div");
@@ -644,6 +646,7 @@ function render() {
   renderCentre();
   renderWorkbench(taskSnapshot());
   renderOperator(taskSnapshot());
+  ticketHub?.refresh();
 }
 
 for (const input of dressingCoreInputs) {
@@ -665,6 +668,21 @@ dressingLesson?.addEventListener("keydown", event => {
 });
 
 renderDressingRoom();
+
+ticketHub = mountTicketHub({
+  root:document,
+  storage:globalThis.localStorage,
+  centreLive,
+  getCurrentWork:() => centreWork,
+  onWorkChanged:async work => {
+    centreWork = work;
+    centreLoadError = null;
+    await ensureWorkbenchForCentre();
+    render();
+    void refreshControlRoom();
+  },
+});
+
 mountMissionBriefingRoom();
 
 controlRoomRefresh?.addEventListener("click", () => { void refreshControlRoom(); });
