@@ -41,3 +41,10 @@ test("project viewer translates strict UNKNOWN into CHECK without hiding evidenc
   assert.match(js, /FACTORY_V4_NOT_FOUND/);
   assert.match(js, /status:"IDLE"/);
 });
+
+
+test("project viewer cache-busts its browser assets so installed PWA sees fresh UI logic", () => {
+  const html = read("project-viewer.html");
+  assert.match(html, /project-viewer\.css\?v=20260930-2/);
+  assert.match(html, /project-viewer\.js\?v=20260930-2/);
+});
