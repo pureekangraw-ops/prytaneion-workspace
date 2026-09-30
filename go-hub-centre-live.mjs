@@ -731,7 +731,6 @@ export class GoHubCentreState {
         }
         const replaced = replaceStandardMissionTicket(machine.current, machine.draft, {
           confirmation:"GO_CONFIRMED",
-          routeOpened:true,
         });
         state.work = {
           ...state.work,
