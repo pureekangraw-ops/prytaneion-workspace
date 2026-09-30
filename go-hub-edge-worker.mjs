@@ -296,6 +296,65 @@ function observerOwnerPage() {
   });
 }
 
+function controlRoomTimeoutResponse({ request, env }) {
+  const url = new URL(request.url);
+  const workId = String(url.searchParams.get("workId") || "").trim();
+  const checkpointId = String(url.searchParams.get("checkpointId") || "").trim();
+  const factoryConfigured = Boolean(env?.GO_HUB_FACTORY_STATE);
+  const cloudflareConfigured = Boolean((env?.CLOUDFLARE_RUNTIME_API_TOKEN || env?.CLOUDFLARE_API_TOKEN || env?.CLOUDFLARE_TOKEN) && (env?.CLOUDFLARE_ACCOUNT_ID || env?.CF_ACCOUNT_ID));
+  const googleConfigured = Boolean(env?.GOOGLE_WORKSPACE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_WORKSPACE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN || env?.GOOGLE_OAUTH_REFRESH_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN);
+  const driveConfigured = Boolean(env?.GOOGLE_DRIVE_ACCESS_TOKEN || env?.DRIVE_ACCESS_TOKEN || env?.GDRIVE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GDRIVE_OAUTH_ACCESS_TOKEN || env?.GOOGLE_DRIVE_REFRESH_TOKEN || env?.DRIVE_REFRESH_TOKEN || env?.GDRIVE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN);
+  const toolReality = {
+    centre:{ exposed:true, configured:Boolean(env?.GO_HUB_CENTRE_STATE), authenticated:false, status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    github:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    factory:{ exposed:true, configured:factoryConfigured, authenticated:factoryConfigured, status:factoryConfigured ? "DEGRADED" : "NOT_CONFIGURED", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    cloudflare:{ exposed:true, configured:cloudflareConfigured, authenticated:cloudflareConfigured, status:cloudflareConfigured ? "DEGRADED" : "NOT_CONFIGURED", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    board:{ exposed:true, configured:Boolean(env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS), authenticated:false, status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    notionLight:{ exposed:true, configured:Boolean(env?.GO_HUB_NOTION_LIGHT_STATE), authenticated:false, status:env?.GO_HUB_NOTION_LIGHT_STATE ? "DEGRADED" : "NOT_CONFIGURED", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    observer:{ exposed:true, configured:Boolean(env?.OBSERVER_SESSIONS), authenticated:false, status:env?.OBSERVER_SESSIONS ? "DEGRADED" : "NOT_CONFIGURED", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    pixie:{ exposed:true, configured:Boolean(env?.GITHUB_TOKEN), authenticated:Boolean(env?.GITHUB_TOKEN), status:env?.GITHUB_TOKEN ? "LIVE" : "NOT_CONFIGURED", reason:"REQUEST_BOUND_RUNTIME_READY" },
+    counter:{ exposed:true, configured:Boolean(env?.GO_HUB_COUNTER_STATE && env?.GO_HUB_COUNTER_DISPATCH_STATE), authenticated:Boolean(env?.GO_HUB_COUNTER_STATE && env?.GO_HUB_COUNTER_DISPATCH_STATE), status:env?.GO_HUB_COUNTER_STATE && env?.GO_HUB_COUNTER_DISPATCH_STATE ? "LIVE" : "NOT_CONFIGURED", reason:"COUNTER_RUNTIME_READY" },
+    googleWorkspace:{ exposed:true, configured:googleConfigured, authenticated:googleConfigured, status:googleConfigured ? "LIVE" : "NOT_CONFIGURED", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    drive:{ exposed:true, configured:driveConfigured, authenticated:driveConfigured, status:driveConfigured ? "LIVE" : "NOT_CONFIGURED", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+  };
+  const observations = correlateControlRoomTruth({
+    centre:{ status:"UNKNOWN" },
+    projectStatus:{ status:"UNKNOWN" },
+    factory:{ status:"UNKNOWN" },
+    board:{},
+    github:{},
+    cloudflare:{},
+    toolReality,
+    capabilities:[],
+    autoRefresh:true,
+  });
+  return json({
+    ok:true, room:"GO_CONTROL_ROOM", entryAuthority:"GO", mode:"LIVE_OBSERVATION_AND_AVAILABLE_CONTROLS",
+    workId, checkpointId, observedAt:new Date().toISOString(),
+    centre:{ workId, checkpointId, status:"UNKNOWN" },
+    projectStatus:{ status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    factory:{ status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    board:{ status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    github:{ status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    cloudflare:{ status:"UNKNOWN", reason:"CONTROL_ROOM_READ_TIMEOUT" },
+    toolReality:observations.toolReality, observations, controls:[],
+  });
+}
+
+async function controlRoomReadBounded({ request, env, fetchImpl }) {
+  let timer;
+  try {
+    return await Promise.race([
+      controlRoomRead({ request, env, fetchImpl }),
+      new Promise(resolve => {
+        timer = setTimeout(() => resolve(controlRoomTimeoutResponse({ request, env })), 8_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function controlRoomRead({ request, env, fetchImpl }) {
   const url = new URL(request.url);
   const workId = String(url.searchParams.get("workId") || "").trim();
@@ -673,7 +732,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         }).fetch(request);
       }
       if (request.method === "GET" && url.pathname === CONTROL_ROOM_PATH) {
-        return controlRoomRead({ request, env, fetchImpl });
+        return controlRoomReadBounded({ request, env, fetchImpl });
       }
       if (url.pathname === `${CENTRE_API_ROOT}/action`) {
         if (request.method !== "POST") return json({ code: "METHOD_NOT_ALLOWED" }, 405);
