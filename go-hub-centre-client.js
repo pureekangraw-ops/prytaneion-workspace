@@ -98,6 +98,12 @@ export function createCentreLiveClient({
   }
 
   return Object.freeze({
+    async inspect(workId, checkpointId) {
+      return (await inspect(workId, checkpointId)).work;
+    },
+
+    startNew,
+
     async restoreOrStart() {
       const pointer = parsePointer(storage);
       if (pointer) {
