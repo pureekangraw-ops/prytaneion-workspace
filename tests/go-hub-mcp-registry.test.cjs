@@ -50,13 +50,14 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.deepEqual(
     tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.action.enum,
-    ["find","enter","reopen","manual_continue","emergency_enter","emergency_exit","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"]
+    ["pickup_card","help_choose","apply_selection","return_card"]
   );
-  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /HERMES owns the user-facing route operation/);
+  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /card helper only/);
+  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.cardId, { type:"string", minLength:1 });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, { type:"string", enum:["WORK","MAINTENANCE"] });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.toolAccess, { type:"array", items:{ type:"string", minLength:1 } });
-  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.confirmation, { type:"string", enum:["GO_CONFIRMED"] });
-  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /Heimdall remains the internal enforcement engine/);
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.confirmation, undefined);
+  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /does not open routes or Passes/);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_ready_gate"), false);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_foreman"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_maintenance").annotations.readOnlyHint, false);
