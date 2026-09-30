@@ -1008,3 +1008,163 @@ test("canonical HERMES card helper lets GO pick up, choose explicitly, use card 
   assert.equal(final.mission.session.status, "EXITED");
 });
 
+test("Work Tablet amusement-park flow gates only entry and return while GO writes data/tools manually", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?work-tablet=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?work-tablet=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const pins = [];
+  const boardRead = async () => new Response(JSON.stringify({ ok:true, pins }), { headers:{ "content-type":"application/json" } });
+  let seq = 0;
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead,
+    createId:prefix => prefix + "-TABLET-" + (++seq),
+  });
+
+  const created = await body(await service.action({
+    action:"create_tablet",
+    mission:"Study one selected repository",
+    requestedResult:"Read only what GO selects and return evidence",
+    workKey:"TABLET-FLOW",
+    destinations:[],
+    scope:[],
+    toolAccess:[],
+    data:{ note:"GO chose this initial note" },
+  }));
+  assert.equal(created.ok, true);
+  assert.equal(created.action, "create_tablet");
+  assert.match(created.tabletId, /^TABLET:/);
+  assert.equal(created.tablet.kind, "HERMES_WORK_TABLET");
+  assert.deepEqual(created.tablet.tool_access, []);
+  assert.deepEqual(created.tablet.data, { note:"GO chose this initial note" });
+  assert.equal(created.ownerReadback.sourceStatus, "ON PROCESS");
+  assert.equal(created.ownerReadback.holder, "GO");
+
+  const inspectedAtEntry = await body(await centreLive.action({
+    action:"v4_inspect",
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+  }));
+  assert.equal(inspectedAtEntry.work.pass, null, "entry must not open a Pass");
+
+  pins.push({
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+    jobCode:created.tablet.jobCode,
+    status:"ON PROCESS",
+    title:"Study one selected repository",
+    detail:"Read only what GO selects and return evidence",
+    card:{
+      cardId:"CARD:" + created.tablet.jobCode,
+      tabletId:created.tabletId,
+      checkpointId:created.workContext.checkpointId,
+      jobCode:created.tablet.jobCode,
+      sourceStatus:"ON PROCESS",
+      tool_access:[],
+    },
+  });
+
+  const picked = await body(await service.action({
+    action:"pickup_tablet",
+    tabletId:created.tabletId,
+  }));
+  assert.equal(picked.ok, true);
+  assert.equal(picked.entryMode, "PICKUP");
+  assert.equal(picked.authority.mode, "TABLET_TOOL_ACCESS");
+  assert.equal(picked.authority.firstOpenRequired, false);
+  assert.equal(picked.authority.passRequiredByHermes, false);
+
+  const candidates = [
+    {
+      contextId:"GH",
+      kind:"TARGET",
+      label:"GitHub repository",
+      summary:"Current source for requested work",
+      target:"pureekangraw-ops/prytaneion-workspace",
+      destination:"GITHUB",
+      tool:"go_hub_read_file",
+    },
+    {
+      contextId:"DRIVE",
+      kind:"TARGET",
+      label:"Archive",
+      summary:"Historical material",
+      target:"archive",
+      destination:"DRIVE",
+      tool:"go_hub_drive_read_document",
+    },
+  ];
+  const helped = await body(await service.action({
+    action:"help_choose",
+    tabletId:created.tabletId,
+    candidates,
+  }));
+  assert.equal(helped.mutates, false);
+  assert.equal(helped.selectedAutomatically, false);
+  assert.equal(helped.chooser, "GO");
+  const afterHelp = await body(await centreLive.action({
+    action:"v4_mission_get",
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+  }));
+  assert.deepEqual(afterHelp.mission.memory.cardMachine.current.data, { note:"GO chose this initial note" }, "help_choose must not write Tablet data");
+
+  const updated = await body(await service.action({
+    action:"update_tablet",
+    tabletId:created.tabletId,
+    data:{
+      target:"pureekangraw-ops/prytaneion-workspace",
+      context:"source code only",
+      note:"GO manually chose this data",
+    },
+    destinations:["GITHUB"],
+    toolAccess:["go_hub_read_file"],
+  }));
+  assert.equal(updated.ok, true);
+  assert.equal(updated.manual, true);
+  assert.equal(updated.selectedAutomatically, false);
+  assert.deepEqual(updated.tablet.destinations, ["GITHUB"]);
+  assert.deepEqual(updated.tablet.tool_access, ["go_hub_read_file"]);
+  assert.deepEqual(updated.tablet.data, {
+    target:"pureekangraw-ops/prytaneion-workspace",
+    context:"source code only",
+    note:"GO manually chose this data",
+  });
+  const afterUpdate = await body(await centreLive.action({
+    action:"v4_inspect",
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+  }));
+  assert.equal(afterUpdate.work.pass, null, "manual Tablet update must not open a Pass");
+  assert.deepEqual(afterUpdate.work.toolAccess, ["go_hub_read_file"]);
+
+  const returned = await body(await service.action({
+    action:"return_tablet",
+    tabletId:created.tabletId,
+    status:"COMPLETE",
+    result:{ summary:"Selected source inspected" },
+    evidence:[{ ref:"github://pureekangraw-ops/prytaneion-workspace@tablet-proof" }],
+    unknowns:[],
+    lastLocation:"GITHUB",
+  }));
+  assert.equal(returned.ok, true);
+  assert.equal(returned.action, "return_tablet");
+  assert.equal(returned.returned, true);
+  assert.equal(returned.sessionClosed, true);
+  assert.equal(returned.ownerReadback.sourceStatus, "COMPLETE");
+  assert.equal(returned.tablet.last_return.missionStatus, "COMPLETE");
+  assert.equal(returned.tablet.last_return.result.summary, "Selected source inspected");
+
+  const final = await body(await centreLive.action({
+    action:"v4_mission_get",
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+  }));
+  assert.equal(final.work.status, "COMPLETE");
+  assert.equal(final.work.holder, null);
+  assert.equal(final.work.pass, null);
+  assert.equal(final.mission.session.status, "EXITED");
+});
+
