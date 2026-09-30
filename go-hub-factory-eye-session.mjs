@@ -2,6 +2,7 @@ const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LIVE_AFTER_MS = 20_000;
 const FRESH_OBSERVATION_VERSION = "0.2.3";
 const MAX_TABS = 100;
+const MAX_COMPARE_SCREENSHOTS = 2;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1_800_000;
 const SCREENSHOT_CHUNK_CHARS = 80_000;
 const encoder = new TextEncoder();
@@ -241,13 +242,18 @@ export function createFactoryEyeSessionService({
   }
 
   async function storeScreenshot({ session, observationId, dataUrl, capturedAt }) {
-    if (!validScreenshotDataUrl(dataUrl)) return { screenshotRef:null, dropped:true };
-    const previous = await storage.get("latest-screenshot-ref");
-    if (previous) await deleteScreenshot(previous);
+    if (!validScreenshotDataUrl(dataUrl)) return { screenshotRef:null, screenshotSha256:null, dropped:true };
+
+    let retained = await storage.get("recent-screenshot-refs");
+    if (!Array.isArray(retained)) {
+      const legacyLatest = await storage.get("latest-screenshot-ref");
+      retained = legacyLatest ? [legacyLatest] : [];
+    }
 
     const screenshotRef = "factory-eye-shot:" + session.sessionId + ":" + clean(observationId, 180);
     const chunks = [];
     const text = String(dataUrl);
+    const screenshotSha256 = await sha256(text);
     for (let i = 0; i < text.length; i += SCREENSHOT_CHUNK_CHARS) {
       chunks.push(text.slice(i, i + SCREENSHOT_CHUNK_CHARS));
     }
@@ -259,9 +265,72 @@ export function createFactoryEyeSessionService({
       chunkCount:chunks.length,
       capturedAt,
       sizeChars:text.length,
+      sha256:screenshotSha256,
     });
+
+    retained = retained.filter(ref => ref && ref !== screenshotRef);
+    retained.push(screenshotRef);
+    while (retained.length > MAX_COMPARE_SCREENSHOTS) {
+      const staleRef = retained.shift();
+      if (staleRef) await deleteScreenshot(staleRef);
+    }
+
+    await storage.put("recent-screenshot-refs", retained);
     await storage.put("latest-screenshot-ref", screenshotRef);
-    return { screenshotRef, dropped:false };
+    return { screenshotRef, screenshotSha256, dropped:false };
+  }
+
+  async function buildComparison(previous, latest) {
+    if (!previous || !latest) {
+      return {
+        ready:false,
+        reason:"INSUFFICIENT_HISTORY",
+        previousObservationId:previous?.observationId || null,
+        currentObservationId:latest?.observationId || null,
+        visualCompareReady:false,
+      };
+    }
+
+    const previousReceivedMs = Date.parse(String(previous.receivedAt || previous.observedAt || ""));
+    const currentReceivedMs = Date.parse(String(latest.receivedAt || latest.observedAt || ""));
+    const previousShotMeta = previous.screenshotRef
+      ? await storage.get("shotmeta:" + clean(previous.screenshotRef, 300))
+      : null;
+    const currentShotMeta = latest.screenshotRef
+      ? await storage.get("shotmeta:" + clean(latest.screenshotRef, 300))
+      : null;
+    const previousShotHash = clean(previous.screenshotSha256 || previousShotMeta?.sha256, 128) || null;
+    const currentShotHash = clean(latest.screenshotSha256 || currentShotMeta?.sha256, 128) || null;
+
+    const sameTab = Number(previous?.tab?.tabId) === Number(latest?.tab?.tabId);
+    const sameUrl = clean(previous?.tab?.url, 2400) === clean(latest?.tab?.url, 2400);
+    const pageChanged = JSON.stringify(previous?.page || null) !== JSON.stringify(latest?.page || null);
+    const screenshotChanged = previousShotHash && currentShotHash
+      ? previousShotHash !== currentShotHash
+      : null;
+    const visualCompareReady = Boolean(
+      previous.screenshotRef &&
+      latest.screenshotRef &&
+      previousShotMeta &&
+      currentShotMeta
+    );
+
+    return {
+      ready:true,
+      previousObservationId:previous.observationId || null,
+      currentObservationId:latest.observationId || null,
+      elapsedMs:Number.isFinite(previousReceivedMs) && Number.isFinite(currentReceivedMs)
+        ? Math.max(0, currentReceivedMs - previousReceivedMs)
+        : null,
+      sameTab,
+      sameUrl,
+      pageChanged,
+      screenshotChanged,
+      visualCompareReady,
+      previousScreenshotRef:visualCompareReady ? previous.screenshotRef : null,
+      currentScreenshotRef:visualCompareReady ? latest.screenshotRef : null,
+      createsAuthority:false,
+    };
   }
 
   return Object.freeze({
@@ -273,11 +342,15 @@ export function createFactoryEyeSessionService({
         return { ok:false, code:"FACTORY_EYE_TTL_INVALID" };
       }
 
-      const previous = await storage.get("latest-screenshot-ref");
-      if (previous) await deleteScreenshot(previous);
+      const retained = await storage.get("recent-screenshot-refs");
+      const legacyLatest = await storage.get("latest-screenshot-ref");
+      const refs = Array.isArray(retained) ? retained : (legacyLatest ? [legacyLatest] : []);
+      for (const ref of [...new Set(refs.filter(Boolean))]) await deleteScreenshot(ref);
       await storage.delete("tabs");
       await storage.delete("latest");
+      await storage.delete("previous");
       await storage.delete("latest-receipt");
+      await storage.delete("recent-screenshot-refs");
       await storage.delete("latest-screenshot-ref");
 
       const sessionId = clean(randomUUID(), 200);
@@ -405,7 +478,7 @@ export function createFactoryEyeSessionService({
             dataUrl:input.screenshotDataUrl,
             capturedAt:observedAtText,
           })
-        : { screenshotRef:null, dropped:false };
+        : { screenshotRef:null, screenshotSha256:null, dropped:false };
 
       if (screenshot.dropped) unknowns.push("SCREENSHOT_DROPPED_INVALID_OR_TOO_LARGE");
 
@@ -423,10 +496,13 @@ export function createFactoryEyeSessionService({
         documentFocused,
         status,
         screenshotRef:screenshot.screenshotRef,
+        screenshotSha256:screenshot.screenshotSha256 || null,
         unknowns:[...new Set(unknowns)],
         source:"FACTORY_EYE",
         createsAuthority:false,
       };
+      const previousObservation = clone(await storage.get("latest") || null);
+      if (previousObservation) await storage.put("previous", previousObservation);
       await storage.put("latest", observation);
       const tabs = normalizeTabs(await storage.get("tabs"));
       const index = tabs.findIndex(item => item.tabId === tab.tabId);
@@ -472,14 +548,18 @@ export function createFactoryEyeSessionService({
       if (!session) return { ok:false, code:"FACTORY_EYE_SESSION_INACTIVE" };
       const nowMs = Number(now());
       const latest = clone(await storage.get("latest") || null);
+      const previous = clone(await storage.get("previous") || null);
       const freshness = observationFreshness(session, latest, nowMs);
+      const comparison = await buildComparison(previous, latest);
       return {
         ok:true,
         source:"FACTORY_EYE",
         state:freshness.state,
         freshness,
+        comparison,
         session:publicSession(session),
         tabs:normalizeTabs(await storage.get("tabs")),
+        previous,
         latest,
         latestReceipt:clone(await storage.get("latest-receipt") || null),
         createsAuthority:false,
@@ -582,5 +662,6 @@ export {
   DEFAULT_TTL_MS,
   LIVE_AFTER_MS,
   FRESH_OBSERVATION_VERSION,
+  MAX_COMPARE_SCREENSHOTS,
   MAX_SCREENSHOT_DATA_URL_CHARS,
 };
