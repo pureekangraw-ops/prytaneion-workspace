@@ -30,3 +30,14 @@ test("project viewer is read-only and exposes Hub Factory Updates", () => {
   assert.match(sw, /project-viewer\.js/);
   assert.match(sw, /project-viewer\.css/);
 });
+
+
+test("project viewer translates strict UNKNOWN into CHECK without hiding evidence unknowns", () => {
+  const js = read("project-viewer.js");
+  assert.match(js, /function deriveViewerSummary/);
+  assert.match(js, /status:"CHECK"/);
+  assert.match(js, /หลักฐานบางรายการยัง UNKNOWN/);
+  assert.match(js, /observations\.deploymentProvenance/);
+  assert.match(js, /FACTORY_V4_NOT_FOUND/);
+  assert.match(js, /status:"IDLE"/);
+});
