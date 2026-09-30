@@ -154,20 +154,28 @@ function assertWork(value) {
 
 const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect","go_hub_notion_tools"]);
 const CARD_READ_BYPASS_TOOLS = new Set(["go_hub_observer_latest","go_hub_observer_screenshot"]);
-function cardToolAllowed(card, toolName) {
+function tabletToolAllowed(work, toolName) {
   if (toolName === "go_hub_maintenance") {
-    return String(card?.access_scope || "").trim().toUpperCase() === "MAINTENANCE";
+    return String(work?.accessScope || "").trim().toUpperCase() === "MAINTENANCE";
   }
-  return Array.isArray(card?.tool_access) && card.tool_access.includes(toolName);
+  return Array.isArray(work?.toolAccess) && work.toolAccess.includes(toolName);
 }
 async function assertCardAccess(lifecycle, name, args) {
   if (CARD_BOOTSTRAP_TOOLS.has(name) || CARD_READ_BYPASS_TOOLS.has(name)) return;
   assertWork(args.workContext);
-  if (typeof lifecycle.agentMission !== "function") throw new Error("HERMES_TABLET_READER_UNAVAILABLE");
-  const response = await lifecycle.agentMission({ action:"inspect", workContext:args.workContext });
+  if (typeof lifecycle.centreInspect !== "function") throw new Error("CENTRE_TABLET_READER_UNAVAILABLE");
+  const response = await lifecycle.centreInspect({
+    workId:args.workContext.workId,
+    checkpointId:args.workContext.checkpointId,
+  });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body?.card) throw new Error("CURRENT_HERMES_TABLET_REQUIRED");
-  if (!cardToolAllowed(body.card, name)) throw new Error("TABLET_TOOL_ACCESS_DENIED");
+  const work = body?.work || null;
+  if (!response.ok || !work ||
+      String(work.workId || "").trim() !== String(args.workContext.workId || "").trim() ||
+      String(work.checkpointId || "").trim() !== String(args.workContext.checkpointId || "").trim()) {
+    throw new Error("CURRENT_WORK_TABLET_REQUIRED");
+  }
+  if (!tabletToolAllowed(work, name)) throw new Error("TABLET_TOOL_ACCESS_DENIED");
 }
 function assertLifecycle(name, args) {
   if (factoryTools.has(name) || linearMutationTools.has(name) || maintenanceTools.has(name) ||
