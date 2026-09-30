@@ -15,6 +15,69 @@
       <h1>GO Hub</h1>
       <p class="hub-status" data-hub-status>Starting neutral runtime…</p>\n      <a class="visual-workbench-entry" href="./pixie-visual-workbench.html">PIXIE Visual Workbench ↗</a>
     </header>
+    <section class="ticket-hub-panel" aria-labelledby="ticket-hub-title" data-ticket-hub>
+      <div class="ticket-hub-heading">
+        <div>
+          <p class="hub-kicker">PRIMARY WORK ENTRY</p>
+          <h2 id="ticket-hub-title">TICKET HUB</h2>
+        </div>
+        <strong>CREATE · FIND · STORE</strong>
+      </div>
+      <p class="ticket-hub-intro">สร้างงานใหม่ ค้นงานเดิม และเก็บ pointer ไว้กลับมาเปิดอีกครั้ง · Centre ยังเป็น owner truth เสมอ</p>
+      <dl class="ticket-current">
+        <div><dt>Current Work</dt><dd data-ticket-current-work>—</dd></div>
+        <div><dt>Checkpoint</dt><dd data-ticket-current-checkpoint>—</dd></div>
+        <div><dt>Status</dt><dd data-ticket-current-status>UNKNOWN</dd></div>
+      </dl>
+
+      <div class="ticket-hub-grid">
+        <form class="ticket-card" data-ticket-create-form>
+          <p class="hub-kicker">สร้าง</p>
+          <h3>ตั๋วใหม่</h3>
+          <label>งาน<textarea name="ticketTask" rows="2" required placeholder="จะทำอะไร"></textarea></label>
+          <label>ผลลัพธ์ที่ต้องการ<textarea name="ticketRequestedResult" rows="2" required placeholder="สำเร็จแล้วต้องเห็นอะไร"></textarea></label>
+          <label>เป้าหมาย
+            <select name="ticketTargetId" required>
+              <option value="">เลือกเป้าหมาย</option>
+              <option value="lighthouse">LIGHTHOUSE</option>
+              <option value="standard">STANDARD / GO Hub</option>
+            </select>
+          </label>
+          <button type="submit">สร้างตั๋ว</button>
+          <p class="counter-hint">สร้าง Centre Work จริงทันที · ไม่ผ่าน Mission Card / Pass / Route gate</p>
+        </form>
+
+        <form class="ticket-card" data-ticket-find-form>
+          <p class="hub-kicker">ค้นหา</p>
+          <h3>เปิดตั๋วเดิม</h3>
+          <label>Work ID<input name="ticketWorkId" required placeholder="WORK-…"></label>
+          <label>Checkpoint ID<input name="ticketCheckpointId" required placeholder="CP-… / CENTRE-…"></label>
+          <button type="submit">ค้นจาก Centre</button>
+          <p class="counter-hint">อ่าน owner truth สดด้วย identity exact · ไม่เดาจากชื่อคล้ายกัน</p>
+        </form>
+
+        <div class="ticket-card">
+          <p class="hub-kicker">จัดเก็บ</p>
+          <h3>ชั้นตั๋ว</h3>
+          <form data-ticket-store-form>
+            <label>ชื่อเรียก <span class="counter-hint">(optional)</span><input name="ticketLabel" placeholder="เช่น จุดขายตั๋ว"></label>
+            <button type="submit">เก็บตั๋วปัจจุบัน</button>
+          </form>
+          <label>ค้นในชั้นตั๋ว<input data-ticket-search placeholder="ชื่อ / Work / Checkpoint"></label>
+          <p class="counter-hint">ที่นี่เก็บ pointer เท่านั้น · สถานะจริงอ่านจาก Centre ทุกครั้งที่เปิด</p>
+          <p class="counter-hint" data-ticket-store-empty>ยังไม่มีตั๋วที่จัดเก็บ</p>
+          <ul class="ticket-store-list" data-ticket-store-list></ul>
+        </div>
+      </div>
+
+      <p class="ticket-result" data-ticket-result role="status"></p>
+
+      <details class="ticket-diagnostics">
+        <summary>Mission Briefing · optional read-only diagnostics</summary>
+        <p class="counter-hint">ใช้ตรวจ owner-source observations เท่านั้น · ไม่ใช่ทางเข้า และไม่ mutate Work / Pass / Route</p>
+        <div data-mission-briefing-host></div>
+      </details>
+    </section>
     <section class="centre-panel" aria-labelledby="centre-title" data-centre>
       <div class="centre-heading">
         <div>
@@ -47,7 +110,7 @@
             <strong data-dressing-status>0/5</strong>
           </div>
           <p class="dressing-intro">สำรวจความเป็น GO แล้วเก็บบทเรียนที่ทำให้จับ Hub ง่ายขึ้น</p>
-          <p class="counter-hint" data-dressing-rule><strong>บทเรียนประจำห้อง:</strong> ทาบบัตร = อ่าน/ฉายข้อมูลเท่านั้น · ไม่สั่งงาน · ไม่เปลี่ยน state · ไม่เปิด/ปิดสิทธิ์ · ไม่บล็อกทาง</p>
+          <p class="counter-hint" data-dressing-rule><strong>บทเรียนประจำห้อง:</strong> ห้องนี้ใช้เตรียม GO เท่านั้น · ไม่สั่งงาน · ไม่เปลี่ยน state · ไม่เปิด/ปิดสิทธิ์ · ไม่บล็อกทาง</p>
           <div class="dressing-checklist" aria-label="GO core checklist">
             <label><input type="checkbox" data-dressing-core value="requested-result"> จับ Requested Result ก่อนวิธีทำ</label>
             <label><input type="checkbox" data-dressing-core value="reality"> แยก Reality / UNKNOWN — ไม่เดา</label>
