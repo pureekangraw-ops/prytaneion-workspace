@@ -115,5 +115,5 @@ test("CURRENT exposure surface summarizes the live MCP contract instead of makin
   assert.equal(exposure.surface.kind, "GO_HUB_CURRENT_EXPOSURE_SURFACE");
   assert.equal(exposure.surface.status, "CURRENT");
   assert.deepEqual(exposure.surface.counts, { total:3, readOnly:1, mutable:2, destructive:1 });
-  assert.deepEqual(exposure.surface.agentMission.actions, ["pickup_card","help_choose","apply_selection","return_card"]);
+  assert.deepEqual(exposure.surface.agentMission.actions, ["create_tablet","pickup_tablet","emergency_enter","help_choose","update_tablet","return_tablet"]);
 });
