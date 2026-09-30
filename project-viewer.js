@@ -1,4 +1,5 @@
 const POINTER_KEY = "go-hub-centre-live-pointer-v1";
+const GLOBAL_STATUS = "/hub/api/project-viewer/status";
 const CONTROL_ROOM = "/hub/api/centre/control-room";
 const $ = selector => document.querySelector(selector);
 
@@ -25,20 +26,9 @@ function display(value, fallback = "—") {
   return text || fallback;
 }
 
-function readPointer() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(POINTER_KEY) || "null");
-    const workId = clean(parsed?.workId);
-    const checkpointId = clean(parsed?.checkpointId);
-    return workId && checkpointId ? { workId, checkpointId } : null;
-  } catch {
-    return null;
-  }
-}
-
 function tone(status) {
   const value = upper(status);
-  if (["PASS","LIVE","VERIFIED","CURRENT","READY","ACTIVE","ON PROCESS","PROCESSING","NORMAL","IDLE"].includes(value)) return "good";
+  if (["PASS","LIVE","VERIFIED","CURRENT","READY","ACTIVE","ON PROCESS","PROCESSING","NORMAL","IDLE","SELF_LIVE"].includes(value)) return "good";
   if (["FAIL","FAILED","ERROR","ISSUE","BLOCKED","CONFLICT","MISMATCH","OFFLINE","UNAVAILABLE","AUTH_REQUIRED","NOT_CONFIGURED"].includes(value)) return "bad";
   if (["CHECK","STALE","DEGRADED","CAUTION","WAIT","WAIT VERIFY","REVIEW_REQUIRED"].includes(value)) return "warn";
   return "unknown";
@@ -47,7 +37,7 @@ function tone(status) {
 function setStatus(selector, status) {
   const node = $(selector);
   if (!node) return;
-  const value = display(status, "UNKNOWN");
+  const value = display(status, "CHECK");
   node.textContent = value;
   node.classList.remove("good","bad","warn","unknown");
   node.classList.add(tone(value));
@@ -63,93 +53,22 @@ function jsonText(value) {
   catch { return "{}"; }
 }
 
-function deriveViewerSummary(payload = {}) {
-  const observations = payload?.observations || {};
-  const tools = observations.toolReality || {};
-  const criticalNames = ["centre","github","cloudflare","googleWorkspace","drive"];
-  const critical = criticalNames.map(name => [name, upper(tools?.[name]?.status)]);
-
-  const hardIssue = [
-    observations.centreProject?.status,
-    observations.deploymentProvenance?.status,
-  ].some(status => ["CONFLICT","MISMATCH"].includes(upper(status)));
-
-  const badCritical = critical.filter(([,status]) =>
-    ["OFFLINE","AUTH_REQUIRED","NOT_CONFIGURED","NOT_EXPOSED","DEGRADED","STALE","ERROR","FAILED","FAIL"].includes(status)
-  );
-
-  if (hardIssue || badCritical.length) {
-    return {
-      status:"ISSUE",
-      message:hardIssue
-        ? "พบความขัดแย้งของข้อมูลจริง — เปิด Attention ดูรายละเอียด"
-        : `บริการหลักมีปัญหา: ${badCritical.map(([name]) => name).join(", ")}`,
-    };
+function readPointer() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(POINTER_KEY) || "null");
+    const workId = clean(parsed?.workId);
+    const checkpointId = clean(parsed?.checkpointId);
+    return workId && checkpointId ? { workId, checkpointId } : null;
+  } catch {
+    return null;
   }
-
-  const missingCritical = critical.filter(([,status]) => !status || status === "UNKNOWN");
-  const evidenceUnknown = [
-    observations.centreProject?.status,
-    observations.board?.status,
-    observations.deploymentProvenance?.status,
-  ].some(status => upper(status) === "UNKNOWN");
-
-  if (missingCritical.length || evidenceUnknown) {
-    return {
-      status:"CHECK",
-      message:missingCritical.length
-        ? `ระบบตอบอยู่ แต่ยังอ่านบริการหลักไม่ครบ: ${missingCritical.map(([name]) => name).join(", ")}`
-        : "ระบบหลักตอบสนองปกติ แต่หลักฐานบางรายการยัง UNKNOWN",
-    };
-  }
-
-  return { status:"NORMAL", message:"ระบบหลักตอบสนองปกติ" };
 }
 
-function factoryView(factory = {}) {
-  const task = factory.task || factory.currentTask || factory.state?.task || {};
-  if (upper(factory.reason) === "FACTORY_V4_NOT_FOUND") {
-    return {
-      status:"IDLE",
-      state:"NO ACTIVE TASK",
-      task:null,
-      repository:null,
-      branchPr:null,
-    };
-  }
-  const pr = first(task.pullRequest, task.pr, task.pullRequestNumber, factory.pullRequest, factory.pr);
-  const branch = first(task.workBranch, task.branch, factory.workBranch, factory.branch);
-  return {
-    status:first(factory.status, task.status, factory.state?.status, "UNKNOWN"),
-    state:first(factory.state?.status, factory.phase, task.phase, task.status, factory.status),
-    task:first(task.id, task.taskId, factory.taskId, factory.id),
-    repository:first(task.repository, factory.repository),
-    branchPr:[branch, pr ? `PR #${pr}` : null].filter(Boolean).join(" · ") || null,
-  };
-}
-
-function updateAttention(payload) {
-  const observations = payload?.observations || {};
-  const attention = [];
-  const signals = [
-    ["Hub", observations.overall],
-    ["Centre ↔ Project", observations.centreProject?.status],
-    ["Board", observations.board?.status],
-    ["Deploy provenance", observations.deploymentProvenance?.status],
-  ];
-  for (const [label,status] of signals) {
-    const value = upper(status);
-    if (value && !["PASS","LIVE","VERIFIED","CURRENT"].includes(value)) {
-      attention.push(`${label}: ${value}`);
-    }
-  }
-  for (const [name,value] of Object.entries(observations.toolReality || {})) {
-    const state = upper(value?.status);
-    if (state && state !== "LIVE") attention.push(`${name}: ${state}`);
-  }
+function setAttention(items = []) {
+  const attention = Array.isArray(items) ? items.filter(Boolean).map(String) : [];
   const list = $("[data-attention-list]");
   if (list) {
-    list.replaceChildren(...(attention.length ? attention : ["No attention signals"]).map(text => {
+    list.replaceChildren(...(attention.length ? attention : ["ไม่มีสัญญาณผิดปกติหลัก"]).map(text => {
       const li = document.createElement("li");
       li.textContent = text;
       return li;
@@ -158,89 +77,111 @@ function updateAttention(payload) {
   setText("[data-attention-count]", attention.length);
 }
 
-function render(payload) {
-  const observations = payload?.observations || {};
-  const summary = deriveViewerSummary(payload);
-  setStatus("[data-overall]", summary.status);
-  setText("[data-observed]", payload?.observedAt || payload?.checkedAt);
-  setText("[data-overall-message]", summary.message);
+function renderGlobal(payload = {}) {
+  setStatus("[data-overall]", payload.overall || "CHECK");
+  setText("[data-overall-message]", payload.message || "กำลังตรวจสถานะ");
+  setText("[data-observed]", payload.observedAt);
+  setStatus("[data-hub-status]", payload.hub?.status || "CHECK");
 
-  const centreStatus = first(payload?.centre?.status, observations.sourceStatus?.centre, "UNKNOWN");
-  setStatus("[data-hub-status]", summary.status);
-  setText("[data-centre-status]", centreStatus);
-  setText("[data-work-id]", payload?.workId);
-  setText("[data-checkpoint-id]", payload?.checkpointId);
-  setText("[data-project-status]", first(payload?.projectStatus?.status, observations.sourceStatus?.project));
-  setText("[data-google-status]", observations.toolReality?.googleWorkspace?.status);
-  setText("[data-drive-status]", observations.toolReality?.drive?.status);
-  setText("[data-board-status]", first(payload?.board?.status, observations.board?.status));
+  setText("[data-project-status]", payload.projectStatus?.status || "CHECK");
+  setText("[data-google-status]", payload.services?.googleWorkspace?.status || "CHECK");
+  setText("[data-drive-status]", payload.services?.drive?.status || "CHECK");
 
-  const factory = factoryView(payload?.factory || {});
-  setStatus("[data-factory-status]", factory.status);
-  setText("[data-factory-state]", factory.state);
-  setText("[data-factory-task]", factory.task);
-  setText("[data-factory-repo]", factory.repository);
-  setText("[data-factory-branch]", factory.branchPr);
-  setText("[data-factory-raw]", jsonText(payload?.factory || {}), "{}");
+  setStatus("[data-factory-status]", payload.factory?.status || "CHECK");
+  setText("[data-factory-state]", payload.factory?.state || "READY");
+  setText("[data-factory-task]", "NO LOCAL TASK");
+  setText("[data-factory-repo]", payload.updates?.github?.repository);
+  setText("[data-factory-branch]", "—");
+  setText("[data-factory-raw]", jsonText(payload.factory), "{}");
 
-  const githubStatus = first(payload?.github?.status, observations.sourceStatus?.github);
-  const cloudflareStatus = first(payload?.cloudflare?.status, observations.sourceStatus?.cloudflare);
-  const provenance = observations.deploymentProvenance?.status || "UNKNOWN";
-  const updateOverall = [githubStatus, cloudflareStatus, provenance].find(s => tone(s) === "bad")
-    || [githubStatus, cloudflareStatus, provenance].find(s => tone(s) === "warn")
-    || (tone(githubStatus) === "good" && tone(cloudflareStatus) === "good" && tone(provenance) === "good"
-      ? "LIVE"
-      : (tone(githubStatus) === "good" && tone(cloudflareStatus) === "good" ? "CHECK" : "UNKNOWN"));
-  setStatus("[data-update-status]", updateOverall);
-  setText("[data-github-status]", githubStatus);
-  setText("[data-head-sha]", first(payload?.github?.headSha, payload?.github?.sha));
-  setText("[data-cloudflare-status]", cloudflareStatus);
-  setText("[data-provenance]", provenance);
-  setText("[data-update-raw]", jsonText({
-    projectStatus:payload?.projectStatus || {},
-    github:payload?.github || {},
-    cloudflare:payload?.cloudflare || {},
-    deploymentProvenance:observations.deploymentProvenance || {},
-  }), "{}");
+  setStatus("[data-update-status]", payload.updates?.status || "CHECK");
+  setText("[data-github-status]", payload.updates?.github?.status || "CHECK");
+  setText("[data-head-sha]", payload.updates?.github?.headSha);
+  setText("[data-cloudflare-status]", payload.updates?.cloudflare?.status || "CHECK");
+  setText("[data-provenance]", payload.updates?.provenance?.status || "CHECK");
+  setText("[data-update-raw]", jsonText(payload.updates), "{}");
 
-  updateAttention(payload);
+  setAttention(payload.attention || []);
 }
 
-function renderNoPointer() {
-  setStatus("[data-overall]", "UNKNOWN");
-  setText("[data-overall-message]", "ยังไม่มี current Work pointer ในเครื่องนี้ — เปิด GO Hub หนึ่งครั้งก่อน");
-  setStatus("[data-hub-status]", "UNKNOWN");
-  setStatus("[data-factory-status]", "UNKNOWN");
-  setStatus("[data-update-status]", "UNKNOWN");
-  setText("[data-attention-count]", 1);
-  const list = $("[data-attention-list]");
-  if (list) list.innerHTML = "<li>NO_LOCAL_CENTRE_POINTER</li>";
+function renderLocalWork(payload = {}) {
+  const observations = payload?.observations || {};
+  setText("[data-centre-status]", first(payload?.centre?.status, observations.sourceStatus?.centre, "CHECK"));
+  setText("[data-work-id]", payload?.workId);
+  setText("[data-checkpoint-id]", payload?.checkpointId);
+  setText("[data-board-status]", first(payload?.board?.status, observations.board?.status, "CHECK"));
+
+  const factory = payload?.factory || {};
+  const task = factory.task || factory.currentTask || factory.state?.task || {};
+  if (upper(factory.reason) === "FACTORY_V4_NOT_FOUND") {
+    setText("[data-factory-task]", "NO ACTIVE TASK");
+    return;
+  }
+  const taskId = first(task.id, task.taskId, factory.taskId, factory.id);
+  if (taskId) {
+    setStatus("[data-factory-status]", first(factory.status, task.status, "ACTIVE"));
+    setText("[data-factory-state]", first(factory.state?.status, factory.phase, task.phase, task.status, factory.status));
+    setText("[data-factory-task]", taskId);
+    setText("[data-factory-repo]", first(task.repository, factory.repository));
+    const pr = first(task.pullRequest, task.pr, task.pullRequestNumber, factory.pullRequest, factory.pr);
+    const branch = first(task.workBranch, task.branch, factory.workBranch, factory.branch);
+    setText("[data-factory-branch]", [branch, pr ? `PR #${pr}` : null].filter(Boolean).join(" · "));
+    setText("[data-factory-raw]", jsonText(factory), "{}");
+  }
+}
+
+function renderNoLocalWork() {
+  setText("[data-centre-status]", "NO LOCAL WORK");
+  setText("[data-work-id]", "—");
+  setText("[data-checkpoint-id]", "—");
+  setText("[data-board-status]", "—");
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, {
+    method:"GET",
+    cache:"no-store",
+    headers:{ "accept":"application/json" },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.code || `HTTP_${response.status}`);
+  return body;
 }
 
 async function refresh() {
   const button = $("[data-refresh]");
   if (button) button.disabled = true;
   try {
+    const global = await fetchJson(`${GLOBAL_STATUS}?t=${Date.now()}`);
+    renderGlobal(global);
+
     const pointer = readPointer();
     if (!pointer) {
-      renderNoPointer();
+      renderNoLocalWork();
       return;
     }
+
     const params = new URLSearchParams(pointer);
-    const response = await fetch(`${CONTROL_ROOM}?${params}`, {
-      method:"GET",
-      cache:"no-store",
-      headers:{ "accept":"application/json" },
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body?.code || `HTTP_${response.status}`);
-    render(body);
+    try {
+      const local = await fetchJson(`${CONTROL_ROOM}?${params}&t=${Date.now()}`);
+      renderLocalWork(local);
+    } catch (error) {
+      setText("[data-centre-status]", "CHECK");
+      setText("[data-board-status]", "CHECK");
+      const current = $("[data-attention-list]");
+      const li = document.createElement("li");
+      li.textContent = "Local Work detail: " + (error instanceof Error ? error.message : String(error));
+      current?.appendChild(li);
+      const count = Number(clean($("[data-attention-count]")?.textContent) || 0);
+      setText("[data-attention-count]", count + 1);
+    }
   } catch (error) {
     setStatus("[data-overall]", "ERROR");
+    setStatus("[data-hub-status]", "ERROR");
+    setStatus("[data-factory-status]", "CHECK");
+    setStatus("[data-update-status]", "CHECK");
     setText("[data-overall-message]", error instanceof Error ? error.message : String(error));
-    setText("[data-attention-count]", 1);
-    const list = $("[data-attention-list]");
-    if (list) list.innerHTML = "<li>PROJECT_VIEWER_REFRESH_FAILED</li>";
+    setAttention(["GLOBAL_PROJECT_STATUS_FAILED"]);
   } finally {
     if (button) button.disabled = false;
   }
