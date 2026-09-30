@@ -50,10 +50,10 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.deepEqual(
     tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.action.enum,
-    ["pickup_card","help_choose","apply_selection","return_card"]
+    ["create_tablet","pickup_tablet","emergency_enter","help_choose","update_tablet","return_tablet"]
   );
-  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /card helper only/);
-  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.cardId, { type:"string", minLength:1 });
+  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /Work Tablet desk/);
+  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.tabletId, { type:"string", minLength:1 });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, { type:"string", enum:["WORK","MAINTENANCE"] });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.toolAccess, { type:"array", items:{ type:"string", minLength:1 } });
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.confirmation, undefined);
