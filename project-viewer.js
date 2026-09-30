@@ -1,5 +1,5 @@
 const POINTER_KEY = "go-hub-centre-live-pointer-v1";
-const GLOBAL_STATUS = "/hub/api/project-viewer/status";
+const GLOBAL_STATUS = "/hub/api/centre/project-viewer-status";
 const CONTROL_ROOM = "/hub/api/centre/control-room";
 const $ = selector => document.querySelector(selector);
 
