@@ -349,12 +349,11 @@ export function issueStandardMissionTicket(draft, { now = () => Date.now(), acce
   });
 }
 
-export function replaceStandardMissionTicket(current, draft, { confirmation, routeOpened, now = () => Date.now() } = {}) {
+export function replaceStandardMissionTicket(current, draft, { confirmation, now = () => Date.now() } = {}) {
   if (!current || current.kind !== "HERMES_STANDARD_TICKET" || current.state !== "CURRENT") throw new Error("MISSION_TICKET_CURRENT_REQUIRED");
   if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
   if (current.workId !== draft.workId || current.checkpointId !== draft.checkpointId) throw new Error("MISSION_TICKET_IDENTITY_MISMATCH");
   if (text(confirmation).toUpperCase() !== "GO_CONFIRMED") throw new Error("HERMES_GO_FINAL_CONFIRMATION_REQUIRED");
-  if (routeOpened !== true) throw new Error("HERMES_ROUTE_OPEN_REQUIRED");
   const at=iso(now);
   return freeze({
     current:{...clone(draft),state:"CURRENT",issuedAt:at,acceptedBy:"GO"},
