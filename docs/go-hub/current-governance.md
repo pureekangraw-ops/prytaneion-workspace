@@ -48,6 +48,7 @@ Rules:
 - `create_tablet`, `pickup_tablet`, and `emergency_enter` are the only canonical entry paths. Entry establishes the active GO-held Work but does not open a Pass.
 - After entry, Tablet `tool_access` is the direct tool gate. GO may change that list manually with `update_tablet` and then call the selected tools directly.
 - Direct tool gating reads Centre Work truth; it must not call HERMES on every tool execution.
+- Merge is an ordinary Tablet-authorized governed tool once GO puts `go_hub_merge_pull_request` in `tool_access`; exact-head CI remains mandatory, but there is no separate BIG approval stop inside the Work.
 - `return_tablet` performs Work return, stores latest result/evidence on the Tablet, closes the HERMES session, and is the canonical exit.
 - Centre remains current Work truth. Tablet data is portable working/resume context and must never replace fresh owner-source readback.
 - Legacy Card fields/actions remain internal compatibility only during migration; they are not canonical user-facing language or flow.
