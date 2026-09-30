@@ -214,3 +214,106 @@ test("Factory Eye v0.2.3 rejects visible web evidence from a non-active tab",asy
   });
   assert.deepEqual(result,{ok:false,code:"FACTORY_EYE_OBSERVATION_NOT_ACTIVE"});
 });
+
+
+test("Factory Eye retains previous and current frames for live visual compare",async()=>{
+  const m=await load("visual-compare");
+  let clock=1000;
+  const storage=new MemoryStorage();
+  const service=m.createFactoryEyeSessionService({
+    storage,now:()=>clock,randomUUID:()=>"s",tokenFactory:()=>"t",
+  });
+  await service.start({adapterId:"A",ttlMs:600000});
+  await service.register({
+    sessionId:"s",sessionToken:"t",adapterId:"A",
+    host:"firefox-addon",version:"0.2.3",protocolVersion:"2",
+  });
+  await service.heartbeat({
+    sessionId:"s",sessionToken:"t",adapterId:"A",activeTabId:1,
+    tabs:[{tabId:1,windowId:1,url:"https://example.com/",title:"One",active:true}],
+  });
+
+  clock=2000;
+  const firstPage=page("https://example.com/","One");
+  firstPage.capturedAt=new Date(clock).toISOString();
+  const first=await service.observe({
+    sessionId:"s",sessionToken:"t",adapterId:"A",
+    observationId:"OBS-1",observedAt:new Date(clock).toISOString(),
+    tab:{tabId:1,windowId:1,url:"https://example.com/",title:"One",active:true},
+    page:firstPage,contentScriptVersion:"0.2.3",documentVisible:true,
+    screenshotDataUrl:"data:image/png;base64,AA==",status:"OBSERVED",
+  });
+  assert.equal(first.ok,true);
+
+  clock=3000;
+  const secondPage=page("https://example.com/","Two");
+  secondPage.capturedAt=new Date(clock).toISOString();
+  const second=await service.observe({
+    sessionId:"s",sessionToken:"t",adapterId:"A",
+    observationId:"OBS-2",observedAt:new Date(clock).toISOString(),
+    tab:{tabId:1,windowId:1,url:"https://example.com/",title:"Two",active:true},
+    page:secondPage,contentScriptVersion:"0.2.3",documentVisible:true,
+    screenshotDataUrl:"data:image/png;base64,AQ==",status:"OBSERVED",
+  });
+  assert.equal(second.ok,true);
+
+  const latest=await service.latest();
+  assert.equal(latest.previous.observationId,"OBS-1");
+  assert.equal(latest.latest.observationId,"OBS-2");
+  assert.equal(latest.comparison.ready,true);
+  assert.equal(latest.comparison.sameTab,true);
+  assert.equal(latest.comparison.sameUrl,true);
+  assert.equal(latest.comparison.pageChanged,true);
+  assert.equal(latest.comparison.screenshotChanged,true);
+  assert.equal(latest.comparison.visualCompareReady,true);
+  assert.equal(latest.comparison.previousScreenshotRef,first.observation.screenshotRef);
+  assert.equal(latest.comparison.currentScreenshotRef,second.observation.screenshotRef);
+
+  const oldShot=await service.screenshot({screenshotRef:first.observation.screenshotRef});
+  const newShot=await service.screenshot({screenshotRef:second.observation.screenshotRef});
+  assert.equal(oldShot.ok,true);
+  assert.equal(newShot.ok,true);
+  assert.equal(oldShot.screenshot.dataUrl,"data:image/png;base64,AA==");
+  assert.equal(newShot.screenshot.dataUrl,"data:image/png;base64,AQ==");
+});
+
+test("Factory Eye visual compare screenshot buffer stays bounded to two frames",async()=>{
+  const m=await load("visual-compare-bound");
+  let clock=1000;
+  const service=m.createFactoryEyeSessionService({
+    storage:new MemoryStorage(),now:()=>clock,randomUUID:()=>"s",tokenFactory:()=>"t",
+  });
+  await service.start({adapterId:"A",ttlMs:600000});
+  await service.register({
+    sessionId:"s",sessionToken:"t",adapterId:"A",
+    host:"firefox-addon",version:"0.2.3",protocolVersion:"2",
+  });
+  await service.heartbeat({
+    sessionId:"s",sessionToken:"t",adapterId:"A",activeTabId:1,
+    tabs:[{tabId:1,windowId:1,url:"https://example.com/",title:"Example",active:true}],
+  });
+
+  const refs=[];
+  for (const [index,data] of ["AA==","AQ==","Ag=="].entries()) {
+    clock=2000+index*1000;
+    const currentPage=page("https://example.com/","Frame "+(index+1));
+    currentPage.capturedAt=new Date(clock).toISOString();
+    const observed=await service.observe({
+      sessionId:"s",sessionToken:"t",adapterId:"A",
+      observationId:"OBS-"+(index+1),observedAt:new Date(clock).toISOString(),
+      tab:{tabId:1,windowId:1,url:"https://example.com/",title:"Frame "+(index+1),active:true},
+      page:currentPage,contentScriptVersion:"0.2.3",documentVisible:true,
+      screenshotDataUrl:"data:image/png;base64,"+data,status:"OBSERVED",
+    });
+    refs.push(observed.observation.screenshotRef);
+  }
+
+  assert.equal((await service.screenshot({screenshotRef:refs[0]})).ok,false);
+  assert.equal((await service.screenshot({screenshotRef:refs[1]})).ok,true);
+  assert.equal((await service.screenshot({screenshotRef:refs[2]})).ok,true);
+
+  const latest=await service.latest();
+  assert.equal(latest.previous.observationId,"OBS-2");
+  assert.equal(latest.latest.observationId,"OBS-3");
+  assert.equal(latest.comparison.visualCompareReady,true);
+});
