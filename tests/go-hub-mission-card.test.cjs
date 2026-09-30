@@ -193,3 +193,29 @@ test("Mission Card carries stable intent and can record GO acceptance without be
   assert.equal("status" in card, false, "Card still must not copy current owner status");
 });
 
+test("Work Tablet has its own ID, accepts GO-chosen data, and may start with no tools", async () => {
+  const mod = await import("../go-hub-mission-card.mjs?tablet=" + Date.now());
+  const work = {
+    workId:"WORK-TABLET-1",
+    checkpointId:"CP-WORK-TABLET-1",
+    jobCode:"3009-TBLT",
+    command:"Enter the work",
+    expectedResult:"Carry GO-selected work data",
+    requestedDestinations:[],
+  };
+  const draft = mod.prepareStandardMissionTicket({
+    work,
+    accessScope:"WORK",
+    destinations:[],
+    toolAccess:[],
+    data:{ note:"GO chose this", target:null },
+    intent:{ mission:"Enter the work", requestedResult:"Carry GO-selected work data" },
+  });
+  const tablet = mod.issueStandardMissionTicket(draft, { acceptedBy:"GO" });
+  assert.equal(tablet.tabletId, "TABLET:3009-TBLT");
+  assert.equal(tablet.cardId, "CARD:3009-TBLT", "legacy Card ID stays internal-compatible during migration");
+  assert.deepEqual(tablet.tool_access, []);
+  assert.deepEqual(tablet.data, { note:"GO chose this", target:null });
+  assert.equal(tablet.acceptedBy, "GO");
+});
+
