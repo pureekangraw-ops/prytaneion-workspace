@@ -258,13 +258,24 @@ test("registry preserves domain failures and rejects unknown tools", async () =>
 });
 
 
-test("Maintenance card scope authorizes maintenance without inheriting tool_access", async () => {
-  const { createMcpRegistry } = await import(registryUrl + "?maintenance-card=" + Date.now());
+test("Maintenance Tablet scope is read from Centre directly without HERMES mediation", async () => {
+  const { createMcpRegistry } = await import(registryUrl + "?maintenance-tablet=" + Date.now());
+  let hermesCalls = 0;
   const registry = createMcpRegistry({
     lifecycle:{
-      agentMission:async input => new Response(JSON.stringify({
+      agentMission:async () => {
+        hermesCalls += 1;
+        throw new Error("HERMES must not mediate tool execution");
+      },
+      centreInspect:async input => new Response(JSON.stringify({
         ok:true,
-        card:input.action === "inspect" ? { access_scope:"MAINTENANCE", tool_access:[] } : null,
+        v4:true,
+        work:{
+          workId:input.workId,
+          checkpointId:input.checkpointId,
+          accessScope:"MAINTENANCE",
+          toolAccess:[],
+        },
       }), { headers:{ "content-type":"application/json" } }),
       maintenance:async () => new Response(JSON.stringify({ ok:true, status:"MAINTENANCE_READY" }), { headers:{ "content-type":"application/json" } }),
     },
@@ -276,8 +287,10 @@ test("Maintenance card scope authorizes maintenance without inheriting tool_acce
     workContext,
   });
   assert.equal(result.structuredContent.status, "MAINTENANCE_READY");
+  assert.equal(hermesCalls, 0);
   await assert.rejects(
     registry.callTool("go_hub_inspect_repository", { repository:"owner/repo", workContext }),
-    /CARD_TOOL_ACCESS_DENIED/,
+    /TABLET_TOOL_ACCESS_DENIED/,
   );
+  assert.equal(hermesCalls, 0);
 });
