@@ -302,12 +302,27 @@ async function controlRoomRead({ request, env, fetchImpl }) {
   const checkpointId = String(url.searchParams.get("checkpointId") || "").trim();
   if (!workId || !checkpointId) return json({ code:"CONTROL_ROOM_WORK_CONTEXT_REQUIRED" }, 400);
 
-  const centreResponse = await createCentreLiveService({ namespace:env?.GO_HUB_CENTRE_STATE }).action({
+  const centreService = createCentreLiveService({ namespace:env?.GO_HUB_CENTRE_STATE });
+  let centreResponse = await centreService.action({
     action:"v4_inspect",
     workId,
     checkpointId,
   });
-  const centre = await centreResponse.clone().json().catch(() => ({}));
+  let centre = await centreResponse.clone().json().catch(() => ({}));
+
+  // The GO Hub browser shell can still hold a legacy Centre pointer created by
+  // the pre-V4 Centre client. Reading that pointer is valid current truth; it
+  // should not make the read-only Control Room fail just because the record is
+  // not a V4-shaped work record.
+  if (!centreResponse.ok && centre?.code === "unsupported Centre live action") {
+    centreResponse = await centreService.action({
+      action:"inspect",
+      workId,
+      checkpointId,
+    });
+    centre = await centreResponse.clone().json().catch(() => ({}));
+  }
+
   if (!centreResponse.ok || !centre?.work) return json({ code:centre?.code || "CONTROL_ROOM_CENTRE_UNAVAILABLE" }, centreResponse.status || 503);
 
   let projectStatus = { status:"UNKNOWN", reason:"PROJECT_STATUS_UNAVAILABLE" };
