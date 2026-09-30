@@ -25,6 +25,7 @@ import { createCounterDispatchService } from "./go-hub-counter-dispatcher.mjs";
 import { createNotionLightService } from "./go-hub-notion-light.mjs";
 import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { createAgentPersonaRoom } from "./go-hub-agent-persona-room.mjs";
+import { createAgentLensRoom } from "./go-hub-agent-lens-room.mjs";
 import { sealReadyGate } from "./go-hub-ready-gate.js";
 
 const LIGHT_REPOSITORY_READ_TOOLS = new Set([
@@ -720,6 +721,10 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const counterDispatch = createCounterDispatchLifecycle({ counter, dispatch, notionLight, hubOrigin:url.origin });
       const lighthouseControlPort = createLighthouseControlPortMcpService({ namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS });
       const agentMission = createAgentMissionService({ centreLive, counterDispatch, boardRead:() => lighthouseControlPort.boardRead() });
+      const agentLensRoom = createAgentLensRoom({
+        readTablet: input => agentMission.action({ action:"pickup_tablet", ...input }),
+        updateTablet: input => agentMission.action({ action:"update_tablet", ...input }),
+      });
       const projectStatus = createProjectStatusReadService({ lifecycle, factoryBinding:env?.GO_HUB_FACTORY_STATE });
       const boardPinRoute = createBoardPinRouteReadService();
       const pixie = createPixieCommandService({ fetchImpl, token:env.GITHUB_TOKEN });
@@ -893,6 +898,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           },
           v4ProjectBoard: input => v4ProjectBoard(input),
           agentPersonaRoom: input => createAgentPersonaRoom().action(input),
+          agentLensRoom: input => agentLensRoom.action(input),
           agentMission: input => agentMission.action(input),
           lightCentreV4Action: async input => {
             if (authenticatedActor !== "LIGHT" || !["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"].includes(input?.action)) {
