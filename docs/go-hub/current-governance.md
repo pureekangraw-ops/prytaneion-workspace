@@ -17,6 +17,33 @@
 9. **Change the canonical owner instead of layering a second authority.** When replacing behavior, migrate callers to the current owner, remove or quarantine obsolete competing paths after dependency proof, and preserve historical material only as explicitly non-authoritative evidence.
 10. **Current runtime/code truth wins over old prose.** If a historical plan conflicts with current runtime contracts, classify the old text as historical evidence rather than merging its rules into the current contract.
 
+## HERMES Card Helper boundary
+
+HERMES is a **card helper**, not a route executor.
+
+Canonical flow:
+
+```text
+Card ID
+→ HERMES pickup
+→ HERMES helps compare target/context choices
+→ GO explicitly selects
+→ selected target/context + tool_access are written to the Card
+→ GO uses authorized tools directly
+→ GO returns the Card once
+```
+
+Rules:
+
+- HERMES may rank, normalize, or explain choices, but **must not auto-select** a target, context item, destination, or tool for GO.
+- `help_choose` is read-only. Only `apply_selection` may persist a selection, and it must persist exactly the IDs chosen by GO.
+- A picked-up Card does not require HERMES `first_open`, a HERMES-opened Pass, or route mediation before card-authorized tools are used.
+- `tool_access` on the CURRENT Card remains the governed tool-entry authority.
+- `pickup_card` may claim/resume the Work so the same Card has one active holder, but it does not open a Pass or destination.
+- `return_card` performs the Work return, records owner readback, stores the latest return snapshot on the Card, and closes the HERMES session in one operation.
+- Card `intent`, selected context/target data, and `last_return` are resume context. They do not replace fresh owner-source Work truth.
+- Legacy HERMES route/pass actions may remain as compatibility code during migration, but they are not part of the canonical exposed HERMES surface.
+
 ## Pin identity routing
 
 The first owner command locks the Pin identity policy for that request chain:
