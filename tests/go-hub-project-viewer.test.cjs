@@ -19,7 +19,7 @@ test("project viewer is read-only and exposes Hub Factory Updates", () => {
   assert.match(html, />UPDATES</);
   assert.match(html, /READ ONLY/);
 
-  assert.match(js, /\/hub\/api\/project-viewer\/status/);
+  assert.match(js, /\/hub\/api\/centre\/project-viewer-status/);
   assert.match(js, /\/hub\/api\/centre\/control-room/);
   assert.match(js, /method:"GET"/);
   assert.doesNotMatch(js, /method:"POST"/);
@@ -37,7 +37,7 @@ test("project viewer global status does not depend on a local Work pointer", () 
   const edge = read("go-hub-edge-worker.mjs");
   const wrangler = JSON.parse(read("wrangler.go-hub.jsonc"));
 
-  assert.match(js, /const GLOBAL_STATUS = "\/hub\/api\/project-viewer\/status"/);
+  assert.match(js, /const GLOBAL_STATUS = "\/hub\/api\/centre\/project-viewer-status"/);
   assert.match(js, /const global = await fetchJson/);
   assert.match(js, /if \(!pointer\) \{/);
   assert.match(js, /renderNoLocalWork\(\)/);
@@ -45,7 +45,7 @@ test("project viewer global status does not depend on a local Work pointer", () 
   assert.match(edge, /PROJECT_VIEWER_STATUS_PATH/);
   assert.match(edge, /mode:"GLOBAL_PROJECT_VIEWER"/);
   assert.match(edge, /viewerVersion:"20260930-3"/);
-  assert.ok(wrangler.assets.run_worker_first.includes("/hub/api/project-viewer/*"));
+  assert.ok(wrangler.assets.run_worker_first.includes("/hub/api/centre/*"));
 });
 
 test("project viewer keeps strict uncertainty in detail while top-level health is actionable", () => {
