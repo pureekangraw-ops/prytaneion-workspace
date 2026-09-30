@@ -1,7 +1,7 @@
 # GO Hub Current Governance
 
 **Status:** CURRENT  
-**Updated:** 2026-09-23  
+**Updated:** 2026-09-30  
 **Scope:** GO Hub authority, routing, repository-operation governance
 
 ## Current operating contract
@@ -52,6 +52,23 @@ Rules:
 - `return_tablet` performs Work return, stores latest result/evidence on the Tablet, closes the HERMES session, and is the canonical exit.
 - Centre remains current Work truth. Tablet data is portable working/resume context and must never replace fresh owner-source readback.
 - Legacy Card fields/actions remain internal compatibility only during migration; they are not canonical user-facing language or flow.
+
+## Optional Lens Fitting Room
+
+PRYTANEION now has two sibling fitting rooms at the same runtime level:
+
+- **Persona Fitting Room** chooses a temporary Persona / role.
+- **Lens Fitting Room** chooses the Lens / framework / viewpoint GO uses to think and work.
+
+Lens Fitting is optional, not a mandatory gate. It has a direct GO Hub door and never changes Work ID, Checkpoint ID, owner truth, route, authority, Pass, tool access, or Persona semantics. GO must explicitly choose a Lens; listing and comparing are read-only and must keep `selectedAutomatically: false`.
+
+An explicit Lens selection is stored as `data.lensSelection` on the current HERMES Work Tablet through the existing `update_tablet` write surface. Re-selection replaces the working selection on the same Tablet, so Lens changes do not create a new Work. Leaving the room returns GO to the same Work immediately.
+
+The canonical runtime catalog is the eight Lens set from the user-provided `GO — NEW LENS SET`: EVIDENCE, CURRENT, SYSTEM, ESSENCE, FRICTION, FORM, CONSEQUENCE, and ACTION. The user-provided `GO — PERSONA SURVIVORS` remains a Persona-layer source: Operations Chief, Housekeeper, Forge, and Teacher remain Personas, and Optician remains the fitting/refitting concern above Lens.
+
+Persona and Lens are independent selections and may be used together. Lens selection preserves existing Tablet data, including any Persona selection; neither room auto-equips the other.
+
+**Current code evidence:** `go-hub-agent-lens-room.mjs`, `go-hub-mcp-registry.mjs`, `go-hub-factory-mcp-worker.mjs`, and `tests/go-hub-agent-lens-room.test.cjs`.
 
 ## Pin identity routing
 
