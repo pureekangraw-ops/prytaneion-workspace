@@ -572,7 +572,7 @@ function appendCounterMessage(actor, message) {
   item.className = "counter-message";
   item.dataset.actor = actor;
   const name = document.createElement("strong");
-  name.textContent = actor === "GO" ? "GO" : "LIGHT";
+  name.textContent = actor === "GO" ? "GO" : actor === "LIGHT" ? "LIGHT" : "NOTION";
   const body = document.createElement("span");
   body.textContent = message;
   item.append(name, body);
@@ -580,23 +580,23 @@ function appendCounterMessage(actor, message) {
   counterConversation.scrollTop = counterConversation.scrollHeight;
 }
 
-async function askLight(question) {
+async function searchNotion(question) {
   const value = String(question || "").trim();
   if (!value || !counterQuestion) return;
   appendCounterMessage("GO", value);
   counterQuestion.value = "";
   counterQuestion.disabled = true;
-  if (counterResult) counterResult.textContent = "LIGHT กำลังค้นใน Notion…";
+  if (counterResult) counterResult.textContent = "Notion AI กำลังค้น…";
   try {
     const body = await postCounterAction("/hub/api/counter/ask", { question:value });
-    appendCounterMessage("LIGHT", String(body?.answer || "UNKNOWN"));
+    appendCounterMessage("NOTION", String(body?.answer || "UNKNOWN"));
     if (counterResult) {
       const count = Number(body?.resultCount || body?.evidence?.length || 0);
       counterResult.textContent = count > 0 ? `Notion AI · ${count} results` : String(body?.status || "UNKNOWN");
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    appendCounterMessage("LIGHT", "UNKNOWN — " + message);
+    appendCounterMessage("NOTION", "UNKNOWN — " + message);
     if (counterResult) counterResult.textContent = message;
   } finally {
     counterQuestion.disabled = false;
@@ -671,13 +671,13 @@ controlRoomRefresh?.addEventListener("click", () => { void refreshControlRoom();
 
 counterAskForm?.addEventListener("submit", event => {
   event.preventDefault();
-  void askLight(counterQuestion?.value);
+  void searchNotion(counterQuestion?.value);
 });
 
 counterQuestion?.addEventListener("keydown", event => {
   if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
   event.preventDefault();
-  void askLight(counterQuestion.value);
+  void searchNotion(counterQuestion.value);
 });
 
 centreForm?.addEventListener("submit", async event => {
