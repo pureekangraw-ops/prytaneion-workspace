@@ -2,6 +2,9 @@ name: ERGASTERION Factory Eye Sign
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ops/factory-eye-v030-sign-trigger
 
 permissions:
   contents: read
