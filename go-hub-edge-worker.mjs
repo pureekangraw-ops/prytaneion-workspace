@@ -43,6 +43,7 @@ const OBSERVER_API_ROOT = `${BROWSER_API_ROOT}/observer`;
 const FACTORY_EYE_API_ROOT = "/hub/api/factory-eye";
 const FACTORY_ACTION_PATH = "/hub/api/github-workspace/factory-action";
 const CONTROL_ROOM_PATH = "/hub/api/centre/control-room";
+const PROJECT_VIEWER_STATUS_PATH = "/hub/api/centre/project-viewer-status";
 const LIGHT_MCP_OWNER_PATH = "/hub/light-mcp";
 const LIGHT_MCP_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const encoder = new TextEncoder();
@@ -294,6 +295,102 @@ function observerOwnerPage() {
   return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GO Eye Session</title></head><body><h1>GO Browser Eye</h1><p>Create Eye Session on GO Hub, then copy the bootstrap code into the Firefox Observer. The owner passcode stays on this GO Hub page and is never stored by the Observer.</p><form id="eye-form"><label>Owner passcode<input id="passcode" type="password" autocomplete="current-password" required></label><label>Allowed Gumroad origin<input id="origin" value="https://gumroad.com" required></label><button type="submit">Create Eye Session</button></form><label>GO Hub bootstrap<textarea id="bootstrap" readonly placeholder="Bootstrap appears here"></textarea></label><p id="status"></p><script>const form=document.getElementById('eye-form'),out=document.getElementById('bootstrap'),status=document.getElementById('status');form.addEventListener('submit',async e=>{e.preventDefault();out.value='';status.textContent='Creating…';try{const r=await fetch('/hub/api/browser/observer/session/start',{method:'POST',headers:{'content-type':'application/json','x-go-owner-passcode':document.getElementById('passcode').value},body:JSON.stringify({allowed_origin:document.getElementById('origin').value})});const body=await r.json();if(!r.ok)throw new Error(body.code||'SESSION_START_FAILED');out.value=JSON.stringify(body);document.getElementById('passcode').value='';status.textContent='Bootstrap ready. Copy it into GO Eye.';}catch(err){document.getElementById('passcode').value='';status.textContent=err.message||'SESSION_START_FAILED';}});</script></body></html>`, {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
+}
+
+async function projectViewerStatusRead({ env, fetchImpl }) {
+  const observedAt = new Date().toISOString();
+  const factoryBound = Boolean(env?.GO_HUB_FACTORY_STATE);
+  const googleConfigured = Boolean(
+    env?.GOOGLE_WORKSPACE_ACCESS_TOKEN || env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN ||
+    env?.GOOGLE_WORKSPACE_REFRESH_TOKEN || env?.GOOGLE_REFRESH_TOKEN || env?.GOOGLE_OAUTH_REFRESH_TOKEN ||
+    env?.GOOGLE_DRIVE_REFRESH_TOKEN
+  );
+  const driveConfigured = Boolean(
+    env?.GOOGLE_DRIVE_ACCESS_TOKEN || env?.DRIVE_ACCESS_TOKEN || env?.GDRIVE_ACCESS_TOKEN ||
+    env?.GOOGLE_ACCESS_TOKEN || env?.GOOGLE_OAUTH_ACCESS_TOKEN || env?.GDRIVE_OAUTH_ACCESS_TOKEN ||
+    env?.GOOGLE_DRIVE_REFRESH_TOKEN || env?.DRIVE_REFRESH_TOKEN || env?.GDRIVE_REFRESH_TOKEN ||
+    env?.GOOGLE_REFRESH_TOKEN
+  );
+
+  let projectStatus = { status:"CHECK", reason:"GITHUB_READER_UNAVAILABLE", sources:[] };
+  let github = { status:"CHECK", reason:"GITHUB_READER_UNAVAILABLE", headSha:null, repository:null, branch:null };
+
+  if (env?.GITHUB_TOKEN) {
+    try {
+      const lifecycle = createGithubLifecycleService({ fetchImpl, token:env.GITHUB_TOKEN });
+      projectStatus = await createProjectStatusReadService({
+        lifecycle,
+        factoryBinding:env?.GO_HUB_FACTORY_STATE,
+      }).read({ targetId:"standard" });
+      const source = projectStatus.sources?.find(item => item.source === "github");
+      if (source?.detail?.sha) {
+        github = {
+          status:"LIVE",
+          repository:source.detail.repo,
+          branch:source.detail.branch || "main",
+          headSha:source.detail.sha,
+          evidenceRef:`github://${source.detail.repo}@${source.detail.branch || "main"}#${source.detail.sha}`,
+        };
+      }
+    } catch (error) {
+      projectStatus = { status:"CHECK", reason:error?.message || "PROJECT_STATUS_READ_FAILED", sources:[] };
+      github = { status:"CHECK", reason:error?.message || "PROJECT_STATUS_READ_FAILED", headSha:null, repository:null, branch:null };
+    }
+  }
+
+  const hub = {
+    status:"LIVE",
+    reason:"PROJECT_VIEWER_SERVED_BY_GO_HUB_WORKER",
+  };
+  const factory = factoryBound
+    ? { status:"READY", state:"RUNTIME_BOUND", reason:"FACTORY_RUNTIME_BINDING_PRESENT" }
+    : { status:"NOT_CONFIGURED", state:"UNAVAILABLE", reason:"FACTORY_RUNTIME_BINDING_MISSING" };
+  const cloudflare = {
+    status:"LIVE",
+    reason:"CURRENT_WORKER_IS_SERVING_PROJECT_VIEWER",
+  };
+  const services = {
+    googleWorkspace:{ status:googleConfigured ? "READY" : "NOT_CONFIGURED" },
+    drive:{ status:driveConfigured ? "READY" : "NOT_CONFIGURED" },
+  };
+
+  const hardIssue = !factoryBound;
+  const needsCheck = github.status !== "LIVE" || !googleConfigured || !driveConfigured;
+  const overall = hardIssue ? "ISSUE" : (needsCheck ? "CHECK" : "NORMAL");
+  const message = overall === "NORMAL"
+    ? "Hub, Factory runtime, GitHub และ Google bindings พร้อมใช้งาน"
+    : overall === "ISSUE"
+      ? "พบส่วนหลักที่ไม่พร้อม — ดู Attention"
+      : "ระบบหลักตอบสนอง แต่มีบางจุดที่ควรตรวจเพิ่ม";
+
+  const attention = [];
+  if (!factoryBound) attention.push("Factory runtime binding is missing");
+  if (github.status !== "LIVE") attention.push("GitHub project truth is not currently verified");
+  if (!googleConfigured) attention.push("Google Workspace binding is not configured");
+  if (!driveConfigured) attention.push("Drive binding is not configured");
+
+  return json({
+    ok:true,
+    mode:"GLOBAL_PROJECT_VIEWER",
+    viewerVersion:"20260930-3",
+    observedAt,
+    overall,
+    message,
+    hub,
+    factory,
+    projectStatus,
+    updates:{
+      status:github.status === "LIVE" ? "LIVE" : "CHECK",
+      github,
+      cloudflare,
+      provenance:{
+        status:"SELF_LIVE",
+        reason:"CURRENT_GO_HUB_WORKER_SERVED_THIS_STATUS",
+      },
+    },
+    services,
+    attention,
+  }, 200, { "cache-control":"no-store" });
 }
 
 function controlRoomTimeoutResponse({ request, env }) {
@@ -730,6 +827,9 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS,
           ownerPasscode:env?.GOHUB_OWNER_PASSCODE,
         }).fetch(request);
+      }
+      if (request.method === "GET" && url.pathname === PROJECT_VIEWER_STATUS_PATH) {
+        return projectViewerStatusRead({ env, fetchImpl });
       }
       if (request.method === "GET" && url.pathname === CONTROL_ROOM_PATH) {
         return controlRoomReadBounded({ request, env, fetchImpl });
