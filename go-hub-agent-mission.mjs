@@ -926,6 +926,34 @@ export function createAgentMissionService({
     };
   }
 
+  function legacyMigrationPolicy(compatibility = null) {
+    const legacy = compatibility?.mode === "LEGACY_CARD_COMPAT";
+    return {
+      entry:{
+        acceptsLegacyCard:true,
+        blocksWork:false,
+        preferredIdentity:"TABLET:*",
+      },
+      exit:{
+        acceptsLegacyCard:true,
+        requiresOwnerReadback:true,
+        blocksOnMigration:false,
+      },
+      emergency:{
+        acceptsLegacyCard:true,
+        migrationGate:false,
+        authorityExpanded:false,
+        destinationOpened:false,
+        exitAction:"return_tablet",
+      },
+      migration:{
+        requiredNow:false,
+        recommended:legacy,
+        suggestedTabletId:legacy ? compatibility?.suggestedTabletId || null : null,
+      },
+    };
+  }
+
   function tabletPacket(resolved) {
     const legacy = cardPacket(resolved);
     const tablet = tabletView(resolved.current?.mission?.memory?.cardMachine?.current || resolved.card, resolved.tabletId);
@@ -951,6 +979,7 @@ export function createAgentMissionService({
         blocksWork:false,
         migrationRecommended:false,
       }),
+      migrationPolicy:legacyMigrationPolicy(resolved.compatibility),
     };
   }
 
@@ -1046,8 +1075,11 @@ export function createAgentMissionService({
 
   async function emergencyTabletEnter(input = {}) {
     let workContext = null;
+    let entryCompatibility = null;
     if (text(input.tabletId || input.cardId)) {
-      workContext = (await resolveTabletContext(input)).workContext;
+      const entryResolved = await resolveTabletContext(input);
+      workContext = entryResolved.workContext;
+      entryCompatibility = entryResolved.compatibility;
     } else {
       workContext = requireWorkContext(input);
     }
@@ -1079,6 +1111,7 @@ export function createAgentMissionService({
       work:current.work,
       card:ticket,
       tabletId:tabletIdFromTicket(ticket),
+      compatibility:entryCompatibility,
     };
     return json({
       ...enteredBody,
@@ -1093,7 +1126,9 @@ export function createAgentMissionService({
       card:enteredBody.card || workCardView(current.work),
       mission:current.mission,
       readout:composeMissionReadout(current.work, current.mission),
-      prompt:"เข้าด่วนแล้ว และมี Work Tablet สำหรับถือข้อมูลระหว่างงาน ขาออกใช้ return_tablet",
+      prompt:entryCompatibility?.migrationRecommended
+        ? "เข้าด่วนด้วยบัตรเก่าได้โดยไม่บล็อกงาน · ขาออกใช้ return_tablet และแนะนำเปลี่ยนเป็น " + resolved.tabletId + " ภายหลัง"
+        : "เข้าด่วนแล้ว และมี Work Tablet สำหรับถือข้อมูลระหว่างงาน ขาออกใช้ return_tablet",
     });
   }
 
@@ -1188,15 +1223,22 @@ export function createAgentMissionService({
     const legacyBody = await payload(legacyResponse);
     if (!okResponse(legacyResponse)) return legacyResponse;
     const final = await resolveTabletContext({ tabletId:resolvedBefore.tabletId });
+    const returned = {
+      ...final,
+      compatibility:resolvedBefore.compatibility || final.compatibility,
+    };
     return json({
       ok:true,
       action:"return_tablet",
-      ...tabletPacket(final),
+      ...tabletPacket(returned),
       returned:true,
+      exitMode:"RETURN",
       readbackVerified:legacyBody.readbackVerified === true || legacyBody.idempotent === true,
       sessionClosed:true,
       retrievalCode:final.card?.snapshot_key || missionTicketSearchCode(final.workContext.workId),
-      prompt:"คืน Work Tablet แล้ว ผลและหลักฐานถูกเก็บไว้สำหรับหยิบมาทำต่อครั้งหน้า",
+      prompt:resolvedBefore.compatibility?.migrationRecommended
+        ? "คืนงานและ readback แล้วโดยไม่บังคับย้ายบัตร · ครั้งถัดไปแนะนำใช้ " + resolvedBefore.tabletId
+        : "คืน Work Tablet แล้ว ผลและหลักฐานถูกเก็บไว้สำหรับหยิบมาทำต่อครั้งหน้า",
     });
   }
 
