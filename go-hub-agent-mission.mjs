@@ -904,12 +904,12 @@ export function createAgentMissionService({
   }
 
   async function resolveTabletContext(input = {}) {
-    const tabletId = text(input.tabletId);
-    if (!tabletId) throw Object.assign(new Error("HERMES_TABLET_ID_REQUIRED"), { status:400 });
-    const resolved = await resolveCardContext({ ...input, cardId:legacyCardIdFromTabletId(tabletId) });
+    const suppliedId = text(input.tabletId || input.cardId);
+    if (!suppliedId) throw Object.assign(new Error("HERMES_TABLET_ID_REQUIRED"), { status:400 });
+    const resolved = await resolveCardContext({ ...input, cardId:legacyCardIdFromTabletId(suppliedId) });
     return {
       ...resolved,
-      tabletId:tabletIdFromTicket(resolved.card, tabletId),
+      tabletId:tabletIdFromTicket(resolved.card, suppliedId),
     };
   }
 
