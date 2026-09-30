@@ -965,6 +965,7 @@ export function createAgentMissionService({
       },
     });
     const workContext = { workId:created.work.workId, checkpointId:created.work.checkpointId };
+    await centre({ action:"v4_claim", ...workContext, actor:"GO" });
     await centre({
       action:"v4_mission_enter",
       ...workContext,
