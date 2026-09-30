@@ -1,12 +1,14 @@
 import { HUB_FACTORY_PROTOCOL } from './go-hub-ergasterion-bridge.mjs';
+import { webcrypto } from 'node:crypto';
 
 const text = value => String(value ?? '').trim();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function signature(payload, secret, timestamp) {
   if (!text(secret)) throw new Error('HUB_FACTORY_SECRET_REQUIRED');
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const bytes = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${timestamp}.${JSON.stringify(payload)}`));
+  const subtle = globalThis.crypto?.subtle || webcrypto.subtle;
+  const key = await subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const bytes = await subtle.sign('HMAC', key, new TextEncoder().encode(`${timestamp}.${JSON.stringify(payload)}`));
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
