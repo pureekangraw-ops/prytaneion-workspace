@@ -137,18 +137,13 @@ test("reverse LIGHT to GO HANDOFF is queued for GO pickup without touching Notio
   assert.deepEqual(calls, []);
 });
 
-test("SEARCH remains the only route that invokes Notion AI Search", async () => {
-  const { GoHubCounterDispatchState } = await import(dispatcherUrl + "?search-compat=" + Date.now());
+test("SEARCH uses the same Counter pickup route and never invokes Notion as LIGHT", async () => {
+  const { GoHubCounterDispatchState } = await import(dispatcherUrl + "?search-counter-route=" + Date.now());
   const calls = [];
   const namespace = { getByName() { return { fetch: async request => {
     const body = JSON.parse(await request.text());
     calls.push(body.action);
-    if (body.action === "status") return new Response(JSON.stringify({ ok: true, connected: true }), { status: 200 });
-    if (body.action === "search") return new Response(JSON.stringify({
-      ok: true, tool: "notion-ai-search", status: "ANSWERED", answer: "Found it",
-      sources: ["https://notion.so/source"], evidence: [{ kind: "notion" }],
-    }), { status: 200 });
-    return new Response(JSON.stringify({ ok: false }), { status: 500 });
+    throw new Error("new SEARCH tickets must not call Notion-Light");
   } }; } };
   const dispatch = new GoHubCounterDispatchState({ storage: storage() }, { GO_HUB_NOTION_LIGHT_STATE: namespace });
   const result = await dispatch.enqueueOpen(handoffInput({
@@ -156,9 +151,12 @@ test("SEARCH remains the only route that invokes Notion AI Search", async () => 
     mode: "SEARCH",
     requestedResult: null,
   }));
-  assert.equal(result.dispatch.legs.LIGHT.status, "DELIVERED");
-  assert.equal(result.dispatch.legs.LIGHT.receipt.tool, "notion-ai-search");
-  assert.deepEqual(calls, ["status", "search"]);
+  assert.equal(result.dispatch.legs.LIGHT.status, "WAITING_PICKUP");
+  assert.equal(result.dispatch.legs.LIGHT.attempts, 0);
+  assert.equal(result.transport, "COUNTER_INBOX");
+  assert.equal(result.mode, "SEARCH");
+  assert.equal(result.pickupRequired, true);
+  assert.deepEqual(calls, []);
 });
 
 test("HANDOFF answer is queued to origin GO inbox and readback clears the pending return", async () => {
