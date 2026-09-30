@@ -1060,12 +1060,18 @@ export function createAgentMissionService({
       tabletId:tabletIdFromTicket(ticket),
     };
     return json({
+      ...enteredBody,
       ok:true,
       action:"emergency_enter",
       ...tabletPacket(resolved),
       emergency:true,
       entryMode:"EMERGENCY",
+      explicitOwnerAction:true,
+      destinationOpened:false,
       authorityExpanded:false,
+      card:enteredBody.card || workCardView(current.work),
+      mission:current.mission,
+      readout:composeMissionReadout(current.work, current.mission),
       prompt:"เข้าด่วนแล้ว และมี Work Tablet สำหรับถือข้อมูลระหว่างงาน ขาออกใช้ return_tablet",
     });
   }
