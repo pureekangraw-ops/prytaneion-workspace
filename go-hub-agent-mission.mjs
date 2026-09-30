@@ -864,6 +864,314 @@ export function createAgentMissionService({
     }, 201);
   }
 
+  function tabletIdFromTicket(ticket, fallback = null) {
+    const explicit = text(ticket?.tabletId);
+    if (explicit) return explicit;
+    const jobCode = text(ticket?.jobCode);
+    if (jobCode) return "TABLET:" + jobCode;
+    const legacy = text(ticket?.cardId);
+    if (/^CARD:/i.test(legacy)) return "TABLET:" + legacy.slice(5);
+    return text(fallback) || null;
+  }
+
+  function legacyCardIdFromTabletId(tabletId) {
+    const value = text(tabletId);
+    if (!value) return null;
+    return /^TABLET:/i.test(value) ? "CARD:" + value.slice(7) : value;
+  }
+
+  function tabletView(ticket, fallbackId = null) {
+    if (!ticket) return null;
+    return {
+      kind:"HERMES_WORK_TABLET",
+      version:Number(ticket.version || 1),
+      state:text(ticket.state) || null,
+      tabletId:tabletIdFromTicket(ticket, fallbackId),
+      workId:text(ticket.workId) || null,
+      checkpointId:text(ticket.checkpointId) || null,
+      jobCode:text(ticket.jobCode) || null,
+      intent:clone(ticket.intent || null),
+      data:clone(ticket.data && typeof ticket.data === "object" && !Array.isArray(ticket.data) ? ticket.data : {}),
+      destinations:unique(ticket.destinations),
+      tool_access:unique(ticket.tool_access),
+      access_scope:text(ticket.access_scope) || null,
+      snapshot_key:text(ticket.snapshot_key) || null,
+      last_return:clone(ticket.last_return || null),
+      preparedAt:text(ticket.preparedAt) || null,
+      issuedAt:text(ticket.issuedAt) || null,
+      acceptedBy:text(ticket.acceptedBy) || null,
+    };
+  }
+
+  async function resolveTabletContext(input = {}) {
+    const tabletId = text(input.tabletId);
+    if (!tabletId) throw Object.assign(new Error("HERMES_TABLET_ID_REQUIRED"), { status:400 });
+    const resolved = await resolveCardContext({ ...input, cardId:legacyCardIdFromTabletId(tabletId) });
+    return {
+      ...resolved,
+      tabletId:tabletIdFromTicket(resolved.card, tabletId),
+    };
+  }
+
+  function tabletPacket(resolved) {
+    const legacy = cardPacket(resolved);
+    const tablet = tabletView(resolved.current?.mission?.memory?.cardMachine?.current || resolved.card, resolved.tabletId);
+    return {
+      tabletId:tablet?.tabletId || resolved.tabletId || null,
+      tablet,
+      workContext:clone(resolved.workContext),
+      intent:clone(tablet?.intent || legacy.intent || null),
+      data:clone(tablet?.data || {}),
+      lastReturn:clone(tablet?.last_return || legacy.lastReturn || null),
+      ownerReadback:clone(legacy.ownerReadback),
+      directToolAccess:unique(tablet?.tool_access || legacy.directToolAccess),
+      destinations:unique(tablet?.destinations || legacy.destinations),
+      authority:{
+        mode:"TABLET_TOOL_ACCESS",
+        hermesMediatesToolCalls:false,
+        firstOpenRequired:false,
+        passRequiredByHermes:false,
+      },
+    };
+  }
+
+  async function createTablet(input = {}) {
+    const mission = text(input.mission);
+    const requestedResult = text(input.requestedResult);
+    if (!mission) return json({ code:"HERMES_MISSION_REQUIRED" }, 400);
+    if (!requestedResult) return json({ code:"HERMES_REQUESTED_RESULT_REQUIRED" }, 400);
+    const raw = await boardRead();
+    const board = await payload(raw);
+    if (!okResponse(raw) || !Array.isArray(board?.pins)) {
+      return json({ code:"HERMES_HEIMDALL_INDEX_UNAVAILABLE" }, 503);
+    }
+    const workId = nextCanonicalWorkId({
+      mission,
+      workKey:input.workKey,
+      pins:board.pins,
+      at:now(),
+    });
+    const created = await centre({
+      action:"v4_create",
+      workId,
+      work:{
+        workId,
+        name:mission,
+        command:mission,
+        expectedResult:requestedResult,
+        requestedDestinations:unique(input.destinations),
+        scope:unique(input.scope),
+        workType:text(input.workType || "NORMAL").toUpperCase(),
+      },
+    });
+    const workContext = { workId:created.work.workId, checkpointId:created.work.checkpointId };
+    await centre({
+      action:"v4_mission_enter",
+      ...workContext,
+      sessionId:text(input.sessionId) || createId("HERMES-TABLET"),
+      agentId:"GO",
+      mission,
+      requestedResult,
+    });
+    const accessScope = text(input.accessScope || (text(created.work.workType).toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
+    await centre({
+      action:"v4_mission_card_prepare",
+      ...workContext,
+      destinations:unique(input.destinations),
+      accessScope,
+      toolAccess:Array.isArray(input.toolAccess) ? unique(input.toolAccess) : [],
+      data:input.data === undefined ? {} : clone(input.data),
+      context:[],
+      reason:"TABLET_CREATE",
+    });
+    await centre({ action:"v4_mission_card_issue", ...workContext, acceptedBy:"GO" });
+    const current = await readMission(workContext);
+    const resolved = {
+      workContext,
+      current,
+      work:current.work,
+      card:current.mission?.memory?.cardMachine?.current || null,
+      tabletId:tabletIdFromTicket(current.mission?.memory?.cardMachine?.current),
+    };
+    return json({
+      ok:true,
+      action:"create_tablet",
+      ...tabletPacket(resolved),
+      created:true,
+      pickedUp:true,
+      entryMode:"CREATE",
+      chooser:"GO",
+      prompt:"สร้าง Work Tablet และเข้าใช้งานแล้ว จากนี้ GO เลือกข้อมูล/target/tool ใส่แท็บเล็ตเองได้",
+    }, 201);
+  }
+
+  async function pickupTablet(input = {}) {
+    const picked = await ensurePickupState(await resolveTabletContext(input));
+    return json({
+      ok:true,
+      action:"pickup_tablet",
+      ...tabletPacket(picked),
+      pickedUp:true,
+      usable:!picked.terminal,
+      terminal:picked.terminal === true,
+      entryMode:"PICKUP",
+      chooser:"GO",
+      prompt:picked.terminal
+        ? "อ่านแท็บเล็ตได้แล้ว งานอยู่ในสถานะปลายทาง"
+        : "รับ Work Tablet แล้ว จากนี้เดินงานและเลือกข้อมูลใส่แท็บเล็ตได้เอง",
+    });
+  }
+
+  async function emergencyTabletEnter(input = {}) {
+    let workContext = null;
+    if (text(input.tabletId)) {
+      workContext = (await resolveTabletContext(input)).workContext;
+    } else {
+      workContext = requireWorkContext(input);
+    }
+    const enteredResponse = await emergencyEnter({ ...input, workContext });
+    const enteredBody = await payload(enteredResponse);
+    if (!okResponse(enteredResponse)) return enteredResponse;
+
+    let current = await readMission(workContext);
+    let ticket = current.mission?.memory?.cardMachine?.current || null;
+    if (!ticket) {
+      const accessScope = text(input.accessScope || (text(current.work?.workType).toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
+      await centre({
+        action:"v4_mission_card_prepare",
+        ...workContext,
+        destinations:Array.isArray(input.destinations) ? unique(input.destinations) : unique(current.work?.requestedDestinations),
+        accessScope,
+        toolAccess:Array.isArray(input.toolAccess) ? unique(input.toolAccess) : unique(current.work?.toolAccess),
+        data:input.data === undefined ? {} : clone(input.data),
+        context:[],
+        reason:"EMERGENCY_TABLET_ENTRY",
+      });
+      await centre({ action:"v4_mission_card_issue", ...workContext, acceptedBy:"GO" });
+      current = await readMission(workContext);
+      ticket = current.mission?.memory?.cardMachine?.current || null;
+    }
+    const resolved = {
+      workContext,
+      current,
+      work:current.work,
+      card:ticket,
+      tabletId:tabletIdFromTicket(ticket),
+    };
+    return json({
+      ok:true,
+      action:"emergency_enter",
+      ...tabletPacket(resolved),
+      emergency:true,
+      entryMode:"EMERGENCY",
+      authorityExpanded:false,
+      prompt:"เข้าด่วนแล้ว และมี Work Tablet สำหรับถือข้อมูลระหว่างงาน ขาออกใช้ return_tablet",
+    });
+  }
+
+  async function helpChooseTablet(input = {}) {
+    const resolved = await resolveTabletContext(input);
+    const candidates = (Array.isArray(input.candidates) ? input.candidates : []).map(contextCandidate);
+    const tablet = tabletView(resolved.card, resolved.tabletId);
+    const memory = resolved.current.mission?.memory || {};
+    const query = [
+      tablet?.intent?.mission,
+      tablet?.intent?.requestedResult,
+      JSON.stringify(tablet?.data || {}),
+      memory.mission,
+      memory.requestedResult,
+      resolved.work?.command,
+      resolved.work?.expectedResult,
+    ].filter(Boolean).join(" ");
+    const choices = candidates
+      .map((candidate, order) => ({ ...candidate, order, fitScore:choiceFitScore(query, candidate) }))
+      .sort((a,b) => b.fitScore - a.fitScore || a.order - b.order);
+    return json({
+      ok:true,
+      action:"help_choose",
+      tabletId:resolved.tabletId,
+      workContext:resolved.workContext,
+      choices,
+      currentData:clone(tablet?.data || {}),
+      selectedAutomatically:false,
+      chooser:"GO",
+      mutates:false,
+      instruction:"HERMES ช่วยจัดตัวเลือกเท่านั้น ไม่เขียนอะไรลง Work Tablet จนกว่า GO จะใช้ update_tablet เอง",
+    });
+  }
+
+  async function updateTablet(input = {}) {
+    let resolved = await ensurePickupState(await resolveTabletContext(input));
+    if (resolved.terminal) {
+      return json({ code:"HERMES_TERMINAL_TABLET_UPDATE_FORBIDDEN", tabletId:resolved.tabletId }, 409);
+    }
+    const currentTicket = resolved.current.mission?.memory?.cardMachine?.current || resolved.card;
+    if (!currentTicket) return json({ code:"HERMES_CURRENT_TABLET_REQUIRED" }, 409);
+    const data = input.data === undefined ? clone(currentTicket.data || {}) : clone(input.data);
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return json({ code:"HERMES_TABLET_DATA_OBJECT_REQUIRED" }, 400);
+    }
+    const destinations = Array.isArray(input.destinations) ? unique(input.destinations) : unique(currentTicket.destinations);
+    const toolAccess = Array.isArray(input.toolAccess) ? unique(input.toolAccess) : unique(currentTicket.tool_access);
+    const accessScope = text(input.accessScope || currentTicket.access_scope || resolved.work.accessScope || "WORK").toUpperCase();
+    if (!["WORK","MAINTENANCE"].includes(accessScope)) return json({ code:"HERMES_ACCESS_SCOPE_REQUIRED" }, 409);
+
+    await centre({
+      action:"v4_mission_card_prepare",
+      ...resolved.workContext,
+      destinations,
+      accessScope,
+      toolAccess,
+      data,
+      context:clone(currentTicket.context || []),
+      reason:"GO_TABLET_UPDATE",
+    });
+    const committed = await centre({
+      action:"v4_mission_card_replace",
+      ...resolved.workContext,
+      confirmation:"GO_CONFIRMED",
+    });
+    resolved = {
+      ...resolved,
+      current:{ work:committed.work, mission:committed.mission },
+      work:committed.work,
+      card:committed.card || committed.mission?.memory?.cardMachine?.current || null,
+      tabletId:tabletIdFromTicket(committed.card || committed.mission?.memory?.cardMachine?.current, resolved.tabletId),
+    };
+    return json({
+      ok:true,
+      action:"update_tablet",
+      ...tabletPacket(resolved),
+      manual:true,
+      chooser:"GO",
+      selectedAutomatically:false,
+      routeOpened:false,
+      passOpened:false,
+      prompt:"บันทึกเฉพาะข้อมูลที่ GO ใส่ลง Work Tablet แล้ว ไม่มีด่านยืนยันกลางทาง",
+    });
+  }
+
+  async function returnTablet(input = {}) {
+    const resolvedBefore = await resolveTabletContext(input);
+    const legacyResponse = await returnCardById({
+      ...input,
+      cardId:legacyCardIdFromTabletId(resolvedBefore.tabletId),
+    });
+    const legacyBody = await payload(legacyResponse);
+    if (!okResponse(legacyResponse)) return legacyResponse;
+    const final = await resolveTabletContext({ tabletId:resolvedBefore.tabletId });
+    return json({
+      ok:true,
+      action:"return_tablet",
+      ...tabletPacket(final),
+      returned:true,
+      readbackVerified:legacyBody.readbackVerified === true || legacyBody.idempotent === true,
+      sessionClosed:true,
+      retrievalCode:final.card?.snapshot_key || missionTicketSearchCode(final.workContext.workId),
+      prompt:"คืน Work Tablet แล้ว ผลและหลักฐานถูกเก็บไว้สำหรับหยิบมาทำต่อครั้งหน้า",
+    });
+  }
+
   async function pickupCard(input = {}) {
     const picked = await ensurePickupState(await resolveCardContext(input));
     return json({
@@ -1501,15 +1809,19 @@ export function createAgentMissionService({
     async action(input = {}) {
       try {
         switch (text(input.action).toLowerCase()) {
+          case "create_tablet": return await createTablet(input);
+          case "pickup_tablet": return await pickupTablet(input);
+          case "emergency_enter": return await emergencyTabletEnter(input);
+          case "help_choose": return await helpChooseTablet(input);
+          case "update_tablet": return await updateTablet(input);
+          case "return_tablet": return await returnTablet(input);
           case "pickup_card": return await pickupCard(input);
-          case "help_choose": return await helpChoose(input);
           case "apply_selection": return await applySelection(input);
           case "return_card": return await returnCardById(input);
           case "find": return await find(input);
           case "enter": return await enter(input);
           case "reopen": return await reopen(input);
           case "manual_continue": return await manualContinue(input);
-          case "emergency_enter": return await emergencyEnter(input);
           case "emergency_exit": return await emergencyExit(input);
           case "create": return await create(input);
           case "issue_card": return await issueCard(input);
