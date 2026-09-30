@@ -224,3 +224,38 @@ test("Centre client fails closed when live readback is unavailable", async () =>
     /CENTRE_STATE_NOT_CONFIGURED/,
   );
 });
+
+
+test("Ticket Hub can explicitly start and inspect Centre Work without inventing local truth", async () => {
+  const { createCentreLiveClient, CENTRE_POINTER_KEY } = await import(moduleUrl + "?ticket-hub=" + Date.now());
+  const storage = memoryStorage();
+  const calls = [];
+  const client = createCentreLiveClient({
+    storage,
+    idFactory: () => "TICKET-1",
+    fetchImpl: async (_url, options) => {
+      const input = JSON.parse(options.body);
+      calls.push(input);
+      if (input.action === "start") {
+        return response({
+          ok:true, workId:"WORK-TICKET-1", checkpointId:"CENTRE-TICKET-1",
+          work:{ workId:"WORK-TICKET-1", checkpointId:"CENTRE-TICKET-1", status:"ARRIVED" },
+        });
+      }
+      return response({
+        ok:true, workId:input.workId, checkpointId:input.checkpointId,
+        work:{ workId:input.workId, checkpointId:input.checkpointId, status:"ARRIVED" },
+      });
+    },
+  });
+
+  const started = await client.startNew();
+  assert.equal(started.workId, "WORK-TICKET-1");
+  const found = await client.inspect("WORK-FOUND", "CP-FOUND");
+  assert.equal(found.workId, "WORK-FOUND");
+  assert.deepEqual(calls.map(item => item.action), ["start", "inspect", "inspect"]);
+  assert.deepEqual(JSON.parse(storage.snapshot()[CENTRE_POINTER_KEY]), {
+    workId:"WORK-FOUND",
+    checkpointId:"CP-FOUND",
+  });
+});
