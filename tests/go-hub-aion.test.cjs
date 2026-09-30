@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 async function mod() { return import("../go-hub-aion.mjs?test=" + Date.now()); }
 
 const actions = [
-  "pickup_card","help_choose","apply_selection","return_card",
+  "create_tablet","pickup_tablet","emergency_enter","help_choose","update_tablet","return_tablet",
 ];
 
 function missionTool(version) {
