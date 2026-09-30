@@ -163,11 +163,11 @@ function cardToolAllowed(card, toolName) {
 async function assertCardAccess(lifecycle, name, args) {
   if (CARD_BOOTSTRAP_TOOLS.has(name) || CARD_READ_BYPASS_TOOLS.has(name)) return;
   assertWork(args.workContext);
-  if (typeof lifecycle.agentMission !== "function") throw new Error("HERMES_CARD_READER_UNAVAILABLE");
+  if (typeof lifecycle.agentMission !== "function") throw new Error("HERMES_TABLET_READER_UNAVAILABLE");
   const response = await lifecycle.agentMission({ action:"inspect", workContext:args.workContext });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body?.card) throw new Error("CURRENT_HERMES_CARD_REQUIRED");
-  if (!cardToolAllowed(body.card, name)) throw new Error("CARD_TOOL_ACCESS_DENIED");
+  if (!response.ok || !body?.card) throw new Error("CURRENT_HERMES_TABLET_REQUIRED");
+  if (!cardToolAllowed(body.card, name)) throw new Error("TABLET_TOOL_ACCESS_DENIED");
 }
 function assertLifecycle(name, args) {
   if (factoryTools.has(name) || linearMutationTools.has(name) || maintenanceTools.has(name) ||
