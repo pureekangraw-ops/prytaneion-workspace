@@ -519,10 +519,13 @@ function v4MissionAction(state, action, input = {}) {
     }
     const currentUpdatedAt = Date.parse(String(mission.memory?.cardMachine?.lastCardUpdateAt || ""));
     const returnedAt = Date.parse(String(emergencyExited ? mission.session.exitedAt : mission.session.returnedAt || ""));
-    if (Number.isFinite(currentUpdatedAt) && Number.isFinite(returnedAt) && currentUpdatedAt >= returnedAt) {
+    const machine = mission.memory.cardMachine || { draft:null,current:null,audit:[] };
+    const currentReturn = machine.current?.last_return || null;
+    const latestReturn = mission.memory.latestReality || null;
+    const returnAlreadyStored = Boolean(latestReturn) && JSON.stringify(currentReturn) === JSON.stringify(latestReturn);
+    if (Number.isFinite(currentUpdatedAt) && Number.isFinite(returnedAt) && currentUpdatedAt >= returnedAt && returnAlreadyStored) {
       return { state, mission, idempotent:true };
     }
-    const machine = mission.memory.cardMachine || { draft:null,current:null,audit:[] };
     mission.memory.cardMachine = {
       ...machine,
       current:machine.current
