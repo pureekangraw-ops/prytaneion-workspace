@@ -471,7 +471,7 @@ test("Notion LIGHT identity authenticates on shared MCP metadata and receives th
 });
 
 
-test("LIGHT repository reads bypass HERMES Card while GO still follows the Card gate", async () => {
+test("LIGHT repository reads bypass GO Tablet gate while GO still requires a current Work Tablet", async () => {
   const { createAccessToken } = await import(oauthUrl + "?light-repo-read-card-bypass=" + Date.now());
   const { createFactoryMcpWorker } = await import(factoryUrl + "?light-repo-read-card-bypass=" + Date.now());
 
@@ -546,5 +546,5 @@ test("LIGHT repository reads bypass HERMES Card while GO still follows the Card 
 
   const go = await call(await tokenFor("GO", "go-hub"));
   assert.equal(go.error?.code, -32602);
-  assert.equal(go.error?.message, "CURRENT_HERMES_CARD_REQUIRED");
+  assert.equal(go.error?.message, "CURRENT_WORK_TABLET_REQUIRED");
 });
