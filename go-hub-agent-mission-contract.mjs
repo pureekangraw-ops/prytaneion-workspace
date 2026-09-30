@@ -1,8 +1,10 @@
 export const AGENT_MISSION_ACTIONS = Object.freeze([
-  "pickup_card",
+  "create_tablet",
+  "pickup_tablet",
+  "emergency_enter",
   "help_choose",
-  "apply_selection",
-  "return_card",
+  "update_tablet",
+  "return_tablet",
 ]);
 
 export const LEGACY_AGENT_MISSION_ACTIONS = Object.freeze([
