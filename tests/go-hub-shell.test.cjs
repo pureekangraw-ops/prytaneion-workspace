@@ -215,7 +215,7 @@ test("Centre includes a thin persistent GO Identity Installer dressing room", ()
     assert.match(html, /data-dressing-room/);
     assert.match(html, /data-dressing-status/);
     assert.match(html, /data-dressing-rule/);
-    assert.match(html, /ทาบบัตร = อ่าน\/ฉายข้อมูลเท่านั้น/);
+    assert.match(html, /ห้องนี้ใช้เตรียม GO เท่านั้น/);
     assert.match(html, /ไม่สั่งงาน/);
     assert.match(html, /ไม่เปลี่ยน state/);
     assert.match(html, /ไม่เปิด\/ปิดสิทธิ์/);
@@ -235,4 +235,26 @@ test("Centre includes a thin persistent GO Identity Installer dressing room", ()
   assert.match(source, /saveDressingState/);
   assert.match(source, /addDressingLesson/);
   assert.match(source, /slice\(-200\)/);
+});
+
+
+test("Ticket Hub is the primary work entry and Mission Briefing is optional diagnostics", () => {
+  const source = read("go-hub-shell.js");
+  for (const html of [read("index.html"), read("go-hub.html")]) {
+    const ticketIndex = html.indexOf('data-ticket-hub');
+    const centreIndex = html.indexOf('data-centre>');
+    assert.ok(ticketIndex >= 0 && centreIndex > ticketIndex, "Ticket Hub must appear before Centre");
+    assert.match(html, /PRIMARY WORK ENTRY/);
+    assert.match(html, /TICKET HUB/);
+    assert.match(html, /CREATE · FIND · STORE/);
+    assert.match(html, /data-ticket-create-form/);
+    assert.match(html, /data-ticket-find-form/);
+    assert.match(html, /data-ticket-store-form/);
+    assert.match(html, /data-ticket-store-list/);
+    assert.match(html, /Mission Briefing · optional read-only diagnostics/);
+    assert.match(html, /data-mission-briefing-host/);
+  }
+  assert.match(source, /mountTicketHub/);
+  assert.match(source, /data-mission-briefing-host/);
+  assert.doesNotMatch(source.slice(source.indexOf("mountTicketHub"), source.indexOf("mountMissionBriefingRoom")), /first_open|open_pass|Pass|Route gate/);
 });
