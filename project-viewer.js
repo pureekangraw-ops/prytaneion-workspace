@@ -38,9 +38,9 @@ function readPointer() {
 
 function tone(status) {
   const value = upper(status);
-  if (["PASS","LIVE","VERIFIED","CURRENT","READY","ACTIVE","ON PROCESS","PROCESSING"].includes(value)) return "good";
-  if (["FAIL","FAILED","ERROR","BLOCKED","CONFLICT","MISMATCH","OFFLINE","UNAVAILABLE"].includes(value)) return "bad";
-  if (["STALE","DEGRADED","CAUTION","WAIT","WAIT VERIFY","REVIEW_REQUIRED"].includes(value)) return "warn";
+  if (["PASS","LIVE","VERIFIED","CURRENT","READY","ACTIVE","ON PROCESS","PROCESSING","NORMAL","IDLE"].includes(value)) return "good";
+  if (["FAIL","FAILED","ERROR","ISSUE","BLOCKED","CONFLICT","MISMATCH","OFFLINE","UNAVAILABLE","AUTH_REQUIRED","NOT_CONFIGURED"].includes(value)) return "bad";
+  if (["CHECK","STALE","DEGRADED","CAUTION","WAIT","WAIT VERIFY","REVIEW_REQUIRED"].includes(value)) return "warn";
   return "unknown";
 }
 
@@ -63,8 +63,60 @@ function jsonText(value) {
   catch { return "{}"; }
 }
 
+function deriveViewerSummary(payload = {}) {
+  const observations = payload?.observations || {};
+  const tools = observations.toolReality || {};
+  const criticalNames = ["centre","github","cloudflare","googleWorkspace","drive"];
+  const critical = criticalNames.map(name => [name, upper(tools?.[name]?.status)]);
+
+  const hardIssue = [
+    observations.centreProject?.status,
+    observations.deploymentProvenance?.status,
+  ].some(status => ["CONFLICT","MISMATCH"].includes(upper(status)));
+
+  const badCritical = critical.filter(([,status]) =>
+    ["OFFLINE","AUTH_REQUIRED","NOT_CONFIGURED","NOT_EXPOSED","DEGRADED","STALE","ERROR","FAILED","FAIL"].includes(status)
+  );
+
+  if (hardIssue || badCritical.length) {
+    return {
+      status:"ISSUE",
+      message:hardIssue
+        ? "พบความขัดแย้งของข้อมูลจริง — เปิด Attention ดูรายละเอียด"
+        : `บริการหลักมีปัญหา: ${badCritical.map(([name]) => name).join(", ")}`,
+    };
+  }
+
+  const missingCritical = critical.filter(([,status]) => !status || status === "UNKNOWN");
+  const evidenceUnknown = [
+    observations.centreProject?.status,
+    observations.board?.status,
+    observations.deploymentProvenance?.status,
+  ].some(status => upper(status) === "UNKNOWN");
+
+  if (missingCritical.length || evidenceUnknown) {
+    return {
+      status:"CHECK",
+      message:missingCritical.length
+        ? `ระบบตอบอยู่ แต่ยังอ่านบริการหลักไม่ครบ: ${missingCritical.map(([name]) => name).join(", ")}`
+        : "ระบบหลักตอบสนองปกติ แต่หลักฐานบางรายการยัง UNKNOWN",
+    };
+  }
+
+  return { status:"NORMAL", message:"ระบบหลักตอบสนองปกติ" };
+}
+
 function factoryView(factory = {}) {
   const task = factory.task || factory.currentTask || factory.state?.task || {};
+  if (upper(factory.reason) === "FACTORY_V4_NOT_FOUND") {
+    return {
+      status:"IDLE",
+      state:"NO ACTIVE TASK",
+      task:null,
+      repository:null,
+      branchPr:null,
+    };
+  }
   const pr = first(task.pullRequest, task.pr, task.pullRequestNumber, factory.pullRequest, factory.pr);
   const branch = first(task.workBranch, task.branch, factory.workBranch, factory.branch);
   return {
@@ -108,22 +160,13 @@ function updateAttention(payload) {
 
 function render(payload) {
   const observations = payload?.observations || {};
-  const overall = first(observations.overall, payload?.status, "UNKNOWN");
-  setStatus("[data-overall]", overall);
+  const summary = deriveViewerSummary(payload);
+  setStatus("[data-overall]", summary.status);
   setText("[data-observed]", payload?.observedAt || payload?.checkedAt);
-
-  const bad = tone(overall) === "bad";
-  const warn = tone(overall) === "warn";
-  setText("[data-overall-message]", bad
-    ? "พบสัญญาณผิดปกติ — เปิดรายละเอียดด้านล่าง"
-    : warn
-      ? "มีจุดที่ควรตรวจต่อ"
-      : tone(overall) === "good"
-        ? "สถานะหลักที่อ่านได้อยู่ในภาวะปกติ"
-        : "ข้อมูลบางส่วนยัง UNKNOWN");
+  setText("[data-overall-message]", summary.message);
 
   const centreStatus = first(payload?.centre?.status, observations.sourceStatus?.centre, "UNKNOWN");
-  setStatus("[data-hub-status]", overall);
+  setStatus("[data-hub-status]", summary.status);
   setText("[data-centre-status]", centreStatus);
   setText("[data-work-id]", payload?.workId);
   setText("[data-checkpoint-id]", payload?.checkpointId);
@@ -145,7 +188,9 @@ function render(payload) {
   const provenance = observations.deploymentProvenance?.status || "UNKNOWN";
   const updateOverall = [githubStatus, cloudflareStatus, provenance].find(s => tone(s) === "bad")
     || [githubStatus, cloudflareStatus, provenance].find(s => tone(s) === "warn")
-    || (tone(githubStatus) === "good" && tone(cloudflareStatus) === "good" && tone(provenance) === "good" ? "LIVE" : "UNKNOWN");
+    || (tone(githubStatus) === "good" && tone(cloudflareStatus) === "good" && tone(provenance) === "good"
+      ? "LIVE"
+      : (tone(githubStatus) === "good" && tone(cloudflareStatus) === "good" ? "CHECK" : "UNKNOWN"));
   setStatus("[data-update-status]", updateOverall);
   setText("[data-github-status]", githubStatus);
   setText("[data-head-sha]", first(payload?.github?.headSha, payload?.github?.sha));
