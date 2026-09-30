@@ -113,15 +113,10 @@ test("standard HERMES ticket issues directly and preserves BIG confirmation on r
     snapshotKey:current.snapshot_key,
   }, { now:() => Date.parse("2026-09-28T12:02:00Z") });
 
-  assert.throws(
-    () => mod.replaceStandardMissionTicket(current, replacementDraft, { confirmation:"GO_CONFIRMED", routeOpened:false }),
-    /HERMES_ROUTE_OPEN_REQUIRED/
-  );
   assert.deepEqual(current.destinations, ["hermes"]);
 
   const replaced = mod.replaceStandardMissionTicket(current, replacementDraft, {
     confirmation:"GO_CONFIRMED",
-    routeOpened:true,
     now:() => Date.parse("2026-09-28T12:03:00Z"),
   });
   assert.deepEqual(replaced.current.destinations, ["hermes","factory"]);
@@ -170,3 +165,57 @@ test("MAINTENANCE card preserves explicit destination tools and carries no work 
   assert.deepEqual(draft.tool_access, ["go_hub_maintenance"]);
   assert.equal(draft.snapshot_key, null);
 });
+
+test("Mission Card carries stable intent and can record GO acceptance without becoming owner truth", async () => {
+  const mod = await import("../go-hub-mission-card.mjs?card-helper=" + Date.now());
+  const work = {
+    workId:"WORK-CARD-HELPER-1",
+    checkpointId:"CP-WORK-CARD-HELPER-1",
+    jobCode:"3009-CHLP",
+    command:"Inspect GitHub target",
+    expectedResult:"Read selected source and return evidence",
+    requestedDestinations:["GITHUB"],
+  };
+  const draft = mod.prepareStandardMissionTicket({
+    work,
+    accessScope:"WORK",
+    destinations:["GITHUB"],
+    toolAccess:["go_hub_read_file"],
+    context:[{ contextId:"T1", kind:"TARGET", target:"repo", destination:"GITHUB", tool:"go_hub_read_file" }],
+    intent:{ mission:"Inspect GitHub target", requestedResult:"Read selected source and return evidence" },
+  });
+  const card = mod.issueStandardMissionTicket(draft, { acceptedBy:"GO" });
+  assert.equal(card.acceptedBy, "GO");
+  assert.equal(card.intent.mission, "Inspect GitHub target");
+  assert.equal(card.intent.requestedResult, "Read selected source and return evidence");
+  assert.equal(card.context[0].destination, "GITHUB");
+  assert.equal(card.last_return, null);
+  assert.equal("status" in card, false, "Card still must not copy current owner status");
+});
+
+test("Work Tablet has its own ID, accepts GO-chosen data, and may start with no tools", async () => {
+  const mod = await import("../go-hub-mission-card.mjs?tablet=" + Date.now());
+  const work = {
+    workId:"WORK-TABLET-1",
+    checkpointId:"CP-WORK-TABLET-1",
+    jobCode:"3009-TBLT",
+    command:"Enter the work",
+    expectedResult:"Carry GO-selected work data",
+    requestedDestinations:[],
+  };
+  const draft = mod.prepareStandardMissionTicket({
+    work,
+    accessScope:"WORK",
+    destinations:[],
+    toolAccess:[],
+    data:{ note:"GO chose this", target:null },
+    intent:{ mission:"Enter the work", requestedResult:"Carry GO-selected work data" },
+  });
+  const tablet = mod.issueStandardMissionTicket(draft, { acceptedBy:"GO" });
+  assert.equal(tablet.tabletId, "TABLET:3009-TBLT");
+  assert.equal(tablet.cardId, "CARD:3009-TBLT", "legacy Card ID stays internal-compatible during migration");
+  assert.deepEqual(tablet.tool_access, []);
+  assert.deepEqual(tablet.data, { note:"GO chose this", target:null });
+  assert.equal(tablet.acceptedBy, "GO");
+});
+

@@ -17,6 +17,42 @@
 9. **Change the canonical owner instead of layering a second authority.** When replacing behavior, migrate callers to the current owner, remove or quarantine obsolete competing paths after dependency proof, and preserve historical material only as explicitly non-authoritative evidence.
 10. **Current runtime/code truth wins over old prose.** If a historical plan conflicts with current runtime contracts, classify the old text as historical evidence rather than merging its rules into the current contract.
 
+## HERMES Work Tablet boundary
+
+HERMES is the **entrance/exit desk for a Work Tablet**, not a route executor.
+
+The operating model is intentionally like entering an amusement park:
+
+```text
+ENTRY (mandatory once)
+  ├─ create_tablet
+  ├─ pickup_tablet
+  └─ emergency_enter
+        ↓
+GO moves freely inside the Work
+  ├─ chooses targets/tools/order manually
+  ├─ writes chosen data with update_tablet
+  └─ may ask help_choose, but HERMES never selects or writes for GO
+        ↓
+EXIT (mandatory once)
+  └─ return_tablet
+```
+
+Rules:
+
+- The user-facing portable context is a **Work Tablet**, identified by `tabletId`.
+- The Tablet carries persistent resume data chosen by GO: intent, arbitrary `data`, destinations, `tool_access`, evidence/result pointers, and `last_return`.
+- `data` is GO-owned working data. HERMES must not inject unselected target/context information into it.
+- `help_choose` is optional and read-only. It may rank or explain candidates, but `selectedAutomatically` must remain false.
+- `update_tablet` is GO's manual write surface. It does not open a route or Pass and does not require an additional confirmation prompt.
+- `create_tablet`, `pickup_tablet`, and `emergency_enter` are the only canonical entry paths. Entry establishes the active GO-held Work but does not open a Pass.
+- After entry, Tablet `tool_access` is the direct tool gate. GO may change that list manually with `update_tablet` and then call the selected tools directly.
+- Direct tool gating reads Centre Work truth; it must not call HERMES on every tool execution.
+- Merge is an ordinary Tablet-authorized governed tool once GO puts `go_hub_merge_pull_request` in `tool_access`; exact-head CI remains mandatory, but there is no separate BIG approval stop inside the Work.
+- `return_tablet` performs Work return, stores latest result/evidence on the Tablet, closes the HERMES session, and is the canonical exit.
+- Centre remains current Work truth. Tablet data is portable working/resume context and must never replace fresh owner-source readback.
+- Legacy Card fields/actions remain internal compatibility only during migration; they are not canonical user-facing language or flow.
+
 ## Pin identity routing
 
 The first owner command locks the Pin identity policy for that request chain:

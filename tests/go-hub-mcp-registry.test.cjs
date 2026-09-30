@@ -50,13 +50,14 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.deepEqual(
     tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.action.enum,
-    ["find","enter","reopen","manual_continue","emergency_enter","emergency_exit","create","issue_card","prepare_route_change","confirm_route_change","select_context","note","ask_light","first_open","touch","return","update_card","exit","inspect"]
+    ["create_tablet","pickup_tablet","emergency_enter","help_choose","update_tablet","return_tablet"]
   );
-  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /HERMES owns the user-facing route operation/);
+  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /Work Tablet desk/);
+  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.tabletId, { type:"string", minLength:1 });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, { type:"string", enum:["WORK","MAINTENANCE"] });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.toolAccess, { type:"array", items:{ type:"string", minLength:1 } });
-  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.confirmation, { type:"string", enum:["GO_CONFIRMED"] });
-  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /Heimdall remains the internal enforcement engine/);
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.confirmation, undefined);
+  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /does not open routes or Passes/);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_ready_gate"), false);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_foreman"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_maintenance").annotations.readOnlyHint, false);
@@ -223,24 +224,51 @@ test("governed tools expose exactly two gate identity values and reject extras",
   assert.deepEqual(calls.at(-1).input.workContext, { workId:"WORK-A", checkpointId:"CENTRE-001" });
 });
 
-test("merge schema requires explicit BIG approval on every merge", async () => {
-  const { createMcpRegistry } = await import(registryUrl + "?merge=" + Date.now());
+test("merge uses Work Tablet tool authority and adds no separate BIG approval gate", async () => {
+  const { createMcpRegistry } = await import(registryUrl + "?merge-tablet=" + Date.now());
   let received = null;
-  const registry = createMcpRegistry({ lifecycle: { mergePullRequest: async input => { received = input; return new Response(JSON.stringify({ ok:true }), { headers:{ "content-type":"application/json" } }); } } });
-  await assert.rejects(registry.callTool("go_hub_merge_pull_request", {
-    repository: "pureekangraw-ops/standard-", number: 50, expectedHeadSha: "head-sha", workContext: factoryWorkContext,
-  }), /ownerApproval|approval/i);
-  await assert.rejects(registry.callTool("go_hub_merge_pull_request", {
-    repository: "pureekangraw-ops/standard-", number: 50, expectedHeadSha: "head-sha", ownerApproval: "GO_APPROVED", workContext: factoryWorkContext,
-  }), /BIG merge approval/i);
+  let centreReads = 0;
+  let hermesCalls = 0;
+  const registry = createMcpRegistry({
+    lifecycle:{
+      agentMission:async () => {
+        hermesCalls += 1;
+        throw new Error("HERMES must not mediate merge");
+      },
+      centreInspect:async input => {
+        centreReads += 1;
+        return new Response(JSON.stringify({
+          ok:true,
+          v4:true,
+          work:{
+            workId:input.workId,
+            checkpointId:input.checkpointId,
+            accessScope:"WORK",
+            toolAccess:["go_hub_merge_pull_request"],
+          },
+        }), { headers:{ "content-type":"application/json" } });
+      },
+      mergePullRequest:async input => {
+        received = input;
+        return new Response(JSON.stringify({ ok:true, merged:true }), { headers:{ "content-type":"application/json" } });
+      },
+    },
+    enforceCardAccess:true,
+  });
+  const tool = registry.listTools().find(item => item.name === "go_hub_merge_pull_request");
+  assert.equal(tool.inputSchema.properties.ownerApproval, undefined);
+  assert.equal(tool.inputSchema.required.includes("ownerApproval"), false);
   const result = await registry.callTool("go_hub_merge_pull_request", {
-    repository: "pureekangraw-ops/standard-", number: 50, expectedHeadSha: "head-sha", ownerApproval: "BIG_APPROVED", workContext: factoryWorkContext,
+    repository:"pureekangraw-ops/standard-",
+    number:50,
+    expectedHeadSha:"head-sha",
+    workContext:factoryWorkContext,
   });
   assert.equal(result.structuredContent.ok, true);
   assert.equal(received.number, 50);
-  assert.equal(received.ownerApproval, "BIG_APPROVED");
-  assert.equal(Object.hasOwn(received, "goId"), false);
-  assert.equal(Object.hasOwn(received, "jobId"), false);
+  assert.equal(Object.hasOwn(received, "ownerApproval"), false);
+  assert.equal(centreReads, 1);
+  assert.equal(hermesCalls, 0);
 });
 
 test("registry preserves domain failures and rejects unknown tools", async () => {
@@ -257,13 +285,24 @@ test("registry preserves domain failures and rejects unknown tools", async () =>
 });
 
 
-test("Maintenance card scope authorizes maintenance without inheriting tool_access", async () => {
-  const { createMcpRegistry } = await import(registryUrl + "?maintenance-card=" + Date.now());
+test("Maintenance Tablet scope is read from Centre directly without HERMES mediation", async () => {
+  const { createMcpRegistry } = await import(registryUrl + "?maintenance-tablet=" + Date.now());
+  let hermesCalls = 0;
   const registry = createMcpRegistry({
     lifecycle:{
-      agentMission:async input => new Response(JSON.stringify({
+      agentMission:async () => {
+        hermesCalls += 1;
+        throw new Error("HERMES must not mediate tool execution");
+      },
+      centreInspect:async input => new Response(JSON.stringify({
         ok:true,
-        card:input.action === "inspect" ? { access_scope:"MAINTENANCE", tool_access:[] } : null,
+        v4:true,
+        work:{
+          workId:input.workId,
+          checkpointId:input.checkpointId,
+          accessScope:"MAINTENANCE",
+          toolAccess:[],
+        },
       }), { headers:{ "content-type":"application/json" } }),
       maintenance:async () => new Response(JSON.stringify({ ok:true, status:"MAINTENANCE_READY" }), { headers:{ "content-type":"application/json" } }),
     },
@@ -275,8 +314,10 @@ test("Maintenance card scope authorizes maintenance without inheriting tool_acce
     workContext,
   });
   assert.equal(result.structuredContent.status, "MAINTENANCE_READY");
+  assert.equal(hermesCalls, 0);
   await assert.rejects(
     registry.callTool("go_hub_inspect_repository", { repository:"owner/repo", workContext }),
-    /CARD_TOOL_ACCESS_DENIED/,
+    /TABLET_TOOL_ACCESS_DENIED/,
   );
+  assert.equal(hermesCalls, 0);
 });

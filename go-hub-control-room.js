@@ -1,4 +1,13 @@
 export const AGENT_MISSION_ACTIONS = Object.freeze([
+  "create_tablet",
+  "pickup_tablet",
+  "emergency_enter",
+  "help_choose",
+  "update_tablet",
+  "return_tablet",
+]);
+
+export const LEGACY_AGENT_MISSION_ACTIONS = Object.freeze([
   "find",
   "enter",
   "reopen",

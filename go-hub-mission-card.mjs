@@ -296,7 +296,7 @@ function cardSearchCode(workId) {
   return "W" + hash.toString(36).toUpperCase().padStart(4, "0").slice(-4);
 }
 
-export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
+export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], data = {}, intent = null, lastReturn = null, reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
   if (!work || typeof work !== "object") throw new Error("MISSION_TICKET_WORK_REQUIRED");
   const workId = required(work.workId, "Mission Ticket Work ID");
   const cp = required(checkpointId || work.checkpointId, "Mission Ticket Checkpoint ID");
@@ -304,13 +304,23 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
   const scope = text(accessScope || work.accessScope || (String(work.workType || "").toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
   if (!["WORK","MAINTENANCE"].includes(scope)) throw new Error("MISSION_TICKET_ACCESS_SCOPE_INVALID");
   const tools = cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
-  if (scope === "WORK" && !tools.length) throw new Error("MISSION_TICKET_TOOL_ACCESS_REQUIRED");
+  const tabletData = data && typeof data === "object" && !Array.isArray(data) ? clone(data) : {};
   const snapshot = scope === "WORK" ? (text(snapshotKey || work.snapshotKey) || createSnapshotKey({ at:now(), randomId })) : null;
+  const missionIntent = intent && typeof intent === "object" && !Array.isArray(intent)
+    ? {
+        mission:text(intent.mission || work.command || work.name) || null,
+        requestedResult:text(intent.requestedResult || work.expectedResult) || null,
+      }
+    : {
+        mission:text(work.command || work.name) || null,
+        requestedResult:text(work.expectedResult) || null,
+      };
   return freeze({
     kind:"HERMES_STANDARD_TICKET",
     version:1,
     state:"DRAFT",
     cardId:text(work.cardId) || (text(work.jobCode) ? "CARD:" + text(work.jobCode) : null),
+    tabletId:text(work.tabletId) || (text(work.jobCode) ? "TABLET:" + text(work.jobCode) : null),
     workId,
     checkpointId:cp,
     jobCode:text(work.jobCode) || null,
@@ -318,7 +328,10 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
     access_scope:scope,
     tool_access:tools,
     snapshot_key:snapshot,
+    intent:clone(missionIntent),
+    data:tabletData,
     context:clone(Array.isArray(context) ? context : []),
+    last_return:lastReturn && typeof lastReturn === "object" && !Array.isArray(lastReturn) ? clone(lastReturn) : null,
     reason:text(reason) || "MISSION_ENTRY",
     preparedAt:iso(now),
     issuedAt:null,
@@ -326,7 +339,7 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
   });
 }
 
-export function issueStandardMissionTicket(draft, { now = () => Date.now() } = {}) {
+export function issueStandardMissionTicket(draft, { now = () => Date.now(), acceptedBy = "HERMES" } = {}) {
   if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") {
     throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
   }
@@ -334,16 +347,15 @@ export function issueStandardMissionTicket(draft, { now = () => Date.now() } = {
     ...clone(draft),
     state:"CURRENT",
     issuedAt:iso(now),
-    acceptedBy:"HERMES",
+    acceptedBy:text(acceptedBy) || "HERMES",
   });
 }
 
-export function replaceStandardMissionTicket(current, draft, { confirmation, routeOpened, now = () => Date.now() } = {}) {
+export function replaceStandardMissionTicket(current, draft, { confirmation, now = () => Date.now() } = {}) {
   if (!current || current.kind !== "HERMES_STANDARD_TICKET" || current.state !== "CURRENT") throw new Error("MISSION_TICKET_CURRENT_REQUIRED");
   if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
   if (current.workId !== draft.workId || current.checkpointId !== draft.checkpointId) throw new Error("MISSION_TICKET_IDENTITY_MISMATCH");
   if (text(confirmation).toUpperCase() !== "GO_CONFIRMED") throw new Error("HERMES_GO_FINAL_CONFIRMATION_REQUIRED");
-  if (routeOpened !== true) throw new Error("HERMES_ROUTE_OPEN_REQUIRED");
   const at=iso(now);
   return freeze({
     current:{...clone(draft),state:"CURRENT",issuedAt:at,acceptedBy:"GO"},

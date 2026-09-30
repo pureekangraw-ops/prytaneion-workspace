@@ -254,8 +254,12 @@ function missionContextItem(value, index) {
   if (!contextId) throw Object.assign(new Error("HERMES_CONTEXT_ID_REQUIRED"), { status:400 });
   return {
     contextId,
+    kind:String(value.kind || value.type || "CONTEXT").trim().toUpperCase() || "CONTEXT",
     label:String(value.label || value.title || "").trim() || null,
     summary:String(value.summary || value.detail || "").trim() || null,
+    target:String(value.target || value.value || "").trim() || null,
+    destination:String(value.destination || "").trim() || null,
+    tool:String(value.tool || value.toolName || "").trim() || null,
     ref:String(value.ref || value.url || "").trim() || null,
     refs:missionUnique(value.refs),
     source:String(value.source || "").trim() || null,
@@ -360,11 +364,24 @@ function v4MissionAction(state, action, input = {}) {
   if (action === "v4_mission_card_prepare") {
     let mission = activeMissionSession(state);
     const currentMachine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
+    const tabletData = input.data === undefined
+      ? (currentMachine.current?.data && typeof currentMachine.current.data === "object" && !Array.isArray(currentMachine.current.data) ? clone(currentMachine.current.data) : {})
+      : input.data;
+    if (!tabletData || typeof tabletData !== "object" || Array.isArray(tabletData)) {
+      throw Object.assign(new Error("HERMES_TABLET_DATA_OBJECT_REQUIRED"), { status:400 });
+    }
+    rejectSecretFields(tabletData, "tabletData");
     const draft = prepareStandardMissionTicket({
       work:state.work,
       checkpointId:state.work?.checkpointId,
       destinations:missionUnique(input.destinations?.length ? input.destinations : state.work?.requestedDestinations),
       context:Array.isArray(input.context) ? input.context : mission.memory.selectedContext,
+      data:tabletData,
+      intent:{
+        mission:mission.memory.mission || state.work?.command || state.work?.name || null,
+        requestedResult:mission.memory.requestedResult || state.work?.expectedResult || null,
+      },
+      lastReturn:mission.memory.latestReality || currentMachine.current?.last_return || null,
       accessScope:input.accessScope,
       toolAccess:missionUnique(input.toolAccess),
       snapshotKey:currentMachine.current?.snapshot_key || state.work?.snapshotKey || null,
@@ -379,7 +396,9 @@ function v4MissionAction(state, action, input = {}) {
     let mission = activeMissionSession(state);
     const machine = mission.memory.cardMachine || { draft:null, current:null, audit:[] };
     if (!machine.draft) throw Object.assign(new Error("HERMES_CARD_DRAFT_REQUIRED"), { status:409 });
-    const issued = issueStandardMissionTicket(machine.draft);
+    const issued = issueStandardMissionTicket(machine.draft, {
+      acceptedBy:String(input.acceptedBy || "HERMES").trim() || "HERMES",
+    });
     state.work = { ...state.work, accessScope:issued.access_scope, toolAccess:clone(issued.tool_access || []), snapshotKey:issued.snapshot_key || null };
     mission.memory.cardMachine = { draft:null, current:clone(issued), audit:Array.isArray(machine.audit) ? machine.audit : [], lastCardUpdateAt:at };
     bumpMission(mission, at);
@@ -508,10 +527,20 @@ function v4MissionAction(state, action, input = {}) {
     }
     const currentUpdatedAt = Date.parse(String(mission.memory?.cardMachine?.lastCardUpdateAt || ""));
     const returnedAt = Date.parse(String(emergencyExited ? mission.session.exitedAt : mission.session.returnedAt || ""));
-    if (Number.isFinite(currentUpdatedAt) && Number.isFinite(returnedAt) && currentUpdatedAt >= returnedAt) {
+    const machine = mission.memory.cardMachine || { draft:null,current:null,audit:[] };
+    const currentReturn = machine.current?.last_return || null;
+    const latestReturn = mission.memory.latestReality || null;
+    const returnAlreadyStored = Boolean(latestReturn) && JSON.stringify(currentReturn) === JSON.stringify(latestReturn);
+    if (Number.isFinite(currentUpdatedAt) && Number.isFinite(returnedAt) && currentUpdatedAt >= returnedAt && returnAlreadyStored) {
       return { state, mission, idempotent:true };
     }
-    mission.memory.cardMachine = { ...(mission.memory.cardMachine || { draft:null,current:null,audit:[] }), lastCardUpdateAt:at };
+    mission.memory.cardMachine = {
+      ...machine,
+      current:machine.current
+        ? { ...clone(machine.current), last_return:mission.memory.latestReality ? clone(mission.memory.latestReality) : (machine.current.last_return || null) }
+        : null,
+      lastCardUpdateAt:at,
+    };
     bumpMission(mission, at);
     return { state:saveMission(state, mission, "V4_MISSION_CARD_UPDATED"), mission };
   }
@@ -713,7 +742,6 @@ export class GoHubCentreState {
         }
         const replaced = replaceStandardMissionTicket(machine.current, machine.draft, {
           confirmation:"GO_CONFIRMED",
-          routeOpened:true,
         });
         state.work = {
           ...state.work,
