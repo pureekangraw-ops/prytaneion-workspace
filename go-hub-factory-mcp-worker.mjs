@@ -710,6 +710,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         fetchImpl,
         endpoint: env?.ERGASTERION_FACTORY_URL,
         secret: env?.ERGASTERION_HUB_SHARED_SECRET,
+        binding: env?.ERGASTERION_FACTORY,
       });
       const observer = createObserverEvidenceService({
         namespace:env?.OBSERVER_SESSIONS,
