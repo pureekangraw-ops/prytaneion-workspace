@@ -4,7 +4,7 @@ const CONTROL_ROOM = "/hub/api/centre/control-room";
 const $ = selector => document.querySelector(selector);
 
 let installPrompt = null;
-let refreshTimer = null;
+let refreshInFlight = false;
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -149,6 +149,8 @@ async function fetchJson(url) {
 }
 
 async function refresh() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   const button = $("[data-refresh]");
   if (button) button.disabled = true;
   try {
@@ -183,6 +185,7 @@ async function refresh() {
     setText("[data-overall-message]", error instanceof Error ? error.message : String(error));
     setAttention(["GLOBAL_PROJECT_STATUS_FAILED"]);
   } finally {
+    refreshInFlight = false;
     if (button) button.disabled = false;
   }
 }
@@ -209,5 +212,6 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || ["localho
 }
 
 void refresh();
-refreshTimer = setInterval(() => void refresh(), 30_000);
-window.addEventListener("pagehide", () => clearInterval(refreshTimer), { once:true });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void refresh();
+});
