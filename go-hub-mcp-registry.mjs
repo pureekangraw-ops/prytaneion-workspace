@@ -160,11 +160,13 @@ const CARD_READ_BYPASS_TOOLS = new Set(["go_hub_observer_latest","go_hub_observe
 function backendPolicyDecision(work, toolName) {
   const status = String(work?.status || "").trim().toUpperCase();
   const holder = String(work?.holder || "").trim();
-  if (status !== "ON PROCESS" || !holder) {
+  const legacyBackendGrant = Array.isArray(work?.toolAccess) && work.toolAccess.includes(toolName);
+  if ((status !== "ON PROCESS" || !holder) && !legacyBackendGrant) {
     return { allowed:false, code:"CURRENT_WORK_TABLET_REQUIRED" };
   }
   if (toolName === "go_hub_maintenance" &&
       String(work?.workType || "").trim().toUpperCase() !== "MAINTENANCE" &&
+      String(work?.accessScope || "").trim().toUpperCase() !== "MAINTENANCE" &&
       String(work?.pass?.kind || "").trim().toUpperCase() !== "MAINTENANCE") {
     return { allowed:false, code:"BACKEND_POLICY_DENIED" };
   }
