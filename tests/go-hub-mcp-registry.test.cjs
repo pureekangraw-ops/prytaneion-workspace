@@ -63,10 +63,12 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.tabletId, { type:"string", minLength:1 });
   assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.cardId, { type:"string", minLength:1 });
   assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /Legacy CARD:\*/);
-  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, { type:"string", enum:["WORK","MAINTENANCE"] });
-  assert.deepEqual(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.toolAccess, { type:"array", items:{ type:"string", minLength:1 } });
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.accessScope, undefined);
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.toolAccess, undefined);
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.destinations, undefined);
+  assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.scope, undefined);
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.confirmation, undefined);
-  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /does not open routes or Passes/);
+  assert.match(tools.find(tool => tool.name === "go_hub_agent_mission").description, /backend policy/);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_ready_gate"), false);
   assert.equal(tools.some(tool => tool.name === "go_hub_factory_foreman"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_maintenance").annotations.readOnlyHint, false);
@@ -252,7 +254,8 @@ test("merge uses Work Tablet tool authority and adds no separate BIG approval ga
           work:{
             workId:input.workId,
             checkpointId:input.checkpointId,
-            accessScope:"WORK",
+            status:"ON PROCESS",
+            holder:"GO",
             toolAccess:["go_hub_merge_pull_request"],
           },
         }), { headers:{ "content-type":"application/json" } });
@@ -309,8 +312,9 @@ test("Maintenance Tablet scope is read from Centre directly without HERMES media
         work:{
           workId:input.workId,
           checkpointId:input.checkpointId,
-          accessScope:"MAINTENANCE",
-          toolAccess:[],
+          status:"ON PROCESS",
+          holder:"GO",
+          workType:"MAINTENANCE",
         },
       }), { headers:{ "content-type":"application/json" } }),
       maintenance:async () => new Response(JSON.stringify({ ok:true, status:"MAINTENANCE_READY" }), { headers:{ "content-type":"application/json" } }),
@@ -324,9 +328,7 @@ test("Maintenance Tablet scope is read from Centre directly without HERMES media
   });
   assert.equal(result.structuredContent.status, "MAINTENANCE_READY");
   assert.equal(hermesCalls, 0);
-  await assert.rejects(
-    registry.callTool("go_hub_inspect_repository", { repository:"owner/repo", workContext }),
-    /TABLET_TOOL_ACCESS_DENIED/,
-  );
+  const backendRouted = await registry.callTool("go_hub_inspect_repository", { repository:"owner/repo", workContext });
+  assert.equal(backendRouted.structuredContent.ok, true);
   assert.equal(hermesCalls, 0);
 });
