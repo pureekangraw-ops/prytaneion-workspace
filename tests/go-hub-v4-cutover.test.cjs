@@ -21,3 +21,14 @@ test("Emergency Pass refuses already-expired time and reports live expiry state"
   assert.equal(c.passIsExpired(w.pass,{at:"2026-09-24T07:04:59Z"}),false);
   assert.equal(c.passIsExpired(w.pass,{at:"2026-09-24T07:05:00Z"}),true);
 });
+
+
+test("V4 board remains a Centre-derived read model", async () => {
+  const { createWorkRecord, boardView } = await import("../go-hub-centre-v4.js");
+  const work = createWorkRecord({ workId:"WORK-BOARD-CANONICAL-1", name:"canonical board", command:"inspect", expectedResult:"readback" });
+  const board = boardView([work]);
+  assert.equal(board.length, 1);
+  assert.equal(board[0].workId, work.workId);
+  assert.equal(board[0].status, work.status);
+  assert.equal(board[0].card.workId, work.workId);
+});
