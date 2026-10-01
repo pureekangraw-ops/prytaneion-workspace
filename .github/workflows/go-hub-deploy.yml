@@ -706,7 +706,8 @@ jobs:
             workContext:context(),
           });
           if (ergasterionReceipt.proof?.ok !== true ||
-              ergasterionReceipt.proof?.status !== "RECEIVED" ||
+              ergasterionReceipt.proof?.status !== "VERIFIED" ||
+              ergasterionReceipt.proof?.readback?.readbackStatus !== "VERIFIED" ||
               ergasterionReceipt.proof?.verified?.handoffId !== ergasterionHandoffId ||
               ergasterionReceipt.proof?.verified?.workId !== workId ||
               ergasterionReceipt.proof?.verified?.checkpointId !== checkpointId ||
