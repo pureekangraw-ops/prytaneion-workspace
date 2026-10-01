@@ -692,9 +692,18 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         expiresAt: input.expiresAt, closeCondition: input.closeCondition, returnAddress: input.returnAddress,
         reason: input.reason, audit: input.audit, status: input.status, result: input.result, evidence: input.evidence,
       });
-      const v4ProjectBoard = input => centreLive.action({
-        action: "v4_board", workId: input.workId, checkpointId: input.checkpointId, returnAddress: input.checkpointId,
-      });
+      const v4ProjectBoard = async input => {
+        const response = await centreLive.action({
+          action: "v4_board", workId: input.workId, checkpointId: input.checkpointId, returnAddress: input.checkpointId,
+        });
+        const body = await response.clone().json().catch(() => null);
+        if (response.ok && body?.v4 === true && Array.isArray(body?.board)) {
+          try {
+            await lighthouseControlPort.projectCentre({ v4:true, work:body.board.find(item => item?.workId === input.workId) || body.board[0] || null });
+          } catch {}
+        }
+        return response;
+      };
       const linear = createLinearService({
         fetchImpl,
         token: env?.LINEAR_API_KEY || env?.["linear-API"],
