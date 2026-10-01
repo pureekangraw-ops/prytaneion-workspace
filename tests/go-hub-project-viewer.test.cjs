@@ -62,3 +62,12 @@ test("project viewer cache-busts its browser assets so installed PWA sees fresh 
   assert.match(html, /project-viewer\.css\?v=20260930-3/);
   assert.match(html, /project-viewer\.js\?v=20260930-3/);
 });
+
+
+test("project viewer refreshes on demand and visibility without background polling", () => {
+  const js = read("project-viewer.js");
+  assert.doesNotMatch(js, /setInterval\s*\(/);
+  assert.match(js, /visibilitychange/);
+  assert.match(js, /document\.visibilityState === "visible"/);
+  assert.match(js, /if \(refreshInFlight\) return/);
+});

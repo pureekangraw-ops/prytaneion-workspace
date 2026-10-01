@@ -716,7 +716,7 @@ jobs:
 
           const factoryForm = {
             projectId:"FACTORY-" + workId,
-            repository:"pureekangraw-ops/standard-",
+            repository:"pureekangraw-ops/prytaneion-workspace",
             branch:"main",
             plan:"Verify deployed V4 Factory lifecycle against production runtime",
             expectedOutput:"Production runtime Factory receipt",

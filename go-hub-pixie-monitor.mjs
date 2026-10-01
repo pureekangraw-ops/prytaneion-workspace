@@ -1,4 +1,9 @@
-const PIXIE_MONITOR_MS = 15_000;
+const PIXIE_MONITOR_INITIAL_MS = 15_000;
+const PIXIE_MONITOR_MAX_MS = 120_000;
+
+function nextMonitorDelay(attempt = 0) {
+  return Math.min(PIXIE_MONITOR_INITIAL_MS * (2 ** Math.max(0, Number(attempt) || 0)), PIXIE_MONITOR_MAX_MS);
+}
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers:{ "content-type":"application/json; charset=utf-8" } });
@@ -15,9 +20,9 @@ export class GoHubPixieMonitorState {
     const id = String(requestId || "").trim();
     if (!id) return json({ code:"PIXIE_REQUEST_ID_INVALID" }, 400);
     const current = await this.storage.get("pending") || {};
-    current[id] = { requestId:id, workContext:workContext || null, status:"WAIT", updatedAt:new Date().toISOString() };
+    current[id] = { requestId:id, workContext:workContext || null, status:"WAIT", monitorAttempt:0, updatedAt:new Date().toISOString() };
     await this.storage.put("pending", current);
-    await this.storage.setAlarm(Date.now() + PIXIE_MONITOR_MS);
+    await this.storage.setAlarm(Date.now() + nextMonitorDelay(0));
     return json({ ok:true, status:"WATCHING", requestId:id });
   }
 
@@ -30,7 +35,10 @@ export class GoHubPixieMonitorState {
     const current = await this.storage.get("pending") || {};
     const ids = Object.keys(current);
     if (!ids.length || !this.env?.GITHUB_TOKEN) {
-      if (ids.length) await this.storage.setAlarm(Date.now() + PIXIE_MONITOR_MS);
+      if (ids.length) {
+        const attempt = Math.min(...ids.map(id => Number(current[id]?.monitorAttempt) || 0));
+        await this.storage.setAlarm(Date.now() + nextMonitorDelay(attempt));
+      }
       return;
     }
     const { createPixieCommandService } = await import("./go-hub-pixie-service.mjs");
@@ -39,11 +47,19 @@ export class GoHubPixieMonitorState {
     for (const id of ids) {
       const response = await pixie.result({ requestId:id });
       const body = await response.json().catch(() => null);
-      if (body?.status === "WAIT") { waiting = true; continue; }
+      if (body?.status === "WAIT") {
+        waiting = true;
+        current[id] = { ...current[id], monitorAttempt:(Number(current[id]?.monitorAttempt) || 0) + 1, updatedAt:new Date().toISOString() };
+        continue;
+      }
       current[id] = { ...current[id], status:body?.status || "UNKNOWN", result:body?.result || null, evidenceRef:body?.evidenceRef || null, updatedAt:new Date().toISOString() };
     }
     await this.storage.put("pending", current);
-    if (waiting) await this.storage.setAlarm(Date.now() + PIXIE_MONITOR_MS);
+    if (waiting) {
+      const waitingIds = ids.filter(id => current[id]?.status === "WAIT");
+      const attempt = waitingIds.length ? Math.min(...waitingIds.map(id => Number(current[id]?.monitorAttempt) || 0)) : 0;
+      await this.storage.setAlarm(Date.now() + nextMonitorDelay(attempt));
+    }
   }
 
   async fetch(request) {
