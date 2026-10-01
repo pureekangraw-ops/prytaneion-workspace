@@ -156,7 +156,11 @@ function assertWork(value) {
 }
 
 const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect","go_hub_notion_tools"]);
-const CARD_READ_BYPASS_TOOLS = new Set(["go_hub_observer_latest","go_hub_observer_screenshot"]);
+const CARD_READ_BYPASS_TOOLS = new Set([
+  "go_hub_observer_latest",
+  "go_hub_observer_screenshot",
+  "go_hub_centre_inspect",
+]);
 function backendPolicyDecision(work, toolName) {
   const status = String(work?.status || "").trim().toUpperCase();
   const holder = String(work?.holder || "").trim();
