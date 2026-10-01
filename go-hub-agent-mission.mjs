@@ -933,8 +933,8 @@ export function createAgentMissionService({
         name:mission,
         command:mission,
         expectedResult:requestedResult,
-        requestedDestinations:unique(input.destinations),
-        scope:unique(input.scope),
+        requestedDestinations:[],
+        scope:[],
         workType:text(input.workType || "NORMAL").toUpperCase(),
       },
     });
@@ -979,26 +979,22 @@ export function createAgentMissionService({
     return /^TABLET:/i.test(value) ? "CARD:" + value.slice(7) : value;
   }
 
-  function tabletView(ticket, fallbackId = null) {
+  function tabletView(ticket, fallbackId = null, current = null) {
     if (!ticket) return null;
+    const reality = ticket.last_return || current?.mission?.memory?.latestReality || {};
     return {
       kind:"HERMES_WORK_TABLET",
       version:Number(ticket.version || 1),
-      state:text(ticket.state) || null,
       tabletId:tabletIdFromTicket(ticket, fallbackId),
+      agentId:text(ticket.agentId || current?.mission?.session?.agentId) || null,
+      sessionId:text(ticket.sessionId || current?.mission?.session?.sessionId) || null,
       workId:text(ticket.workId) || null,
       checkpointId:text(ticket.checkpointId) || null,
-      jobCode:text(ticket.jobCode) || null,
-      intent:clone(ticket.intent || null),
-      data:clone(ticket.data && typeof ticket.data === "object" && !Array.isArray(ticket.data) ? ticket.data : {}),
-      destinations:unique(ticket.destinations),
-      tool_access:unique(ticket.tool_access),
-      access_scope:text(ticket.access_scope) || null,
-      snapshot_key:text(ticket.snapshot_key) || null,
-      last_return:clone(ticket.last_return || null),
-      preparedAt:text(ticket.preparedAt) || null,
-      issuedAt:text(ticket.issuedAt) || null,
-      acceptedBy:text(ticket.acceptedBy) || null,
+      task:text(ticket.task || ticket.intent?.mission || current?.mission?.memory?.mission || current?.work?.command) || null,
+      initialContext:clone(ticket.initialContext !== undefined ? ticket.initialContext : (ticket.context || current?.mission?.memory?.selectedContext || {})),
+      status:text(ticket.status || reality.missionStatus || current?.work?.status) || null,
+      result:clone(ticket.result !== undefined ? ticket.result : (reality.result ?? null)),
+      evidence:clone(ticket.evidence !== undefined ? ticket.evidence : (reality.evidence || [])),
     };
   }
 
@@ -1055,30 +1051,22 @@ export function createAgentMissionService({
 
   function tabletPacket(resolved) {
     const legacy = cardPacket(resolved);
-    const tablet = tabletView(resolved.current?.mission?.memory?.cardMachine?.current || resolved.card, resolved.tabletId);
+    const tablet = tabletView(
+      resolved.current?.mission?.memory?.cardMachine?.current || resolved.card,
+      resolved.tabletId,
+      resolved.current,
+    );
     return {
       tabletId:tablet?.tabletId || resolved.tabletId || null,
       tablet,
       workContext:clone(resolved.workContext),
-      intent:clone(tablet?.intent || legacy.intent || null),
-      data:clone(tablet?.data || {}),
-      lastReturn:clone(tablet?.last_return || legacy.lastReturn || null),
       ownerReadback:clone(legacy.ownerReadback),
-      directToolAccess:unique(tablet?.tool_access || legacy.directToolAccess),
-      destinations:unique(tablet?.destinations || legacy.destinations),
-      authority:{
-        mode:"TABLET_TOOL_ACCESS",
-        hermesMediatesToolCalls:false,
-        firstOpenRequired:false,
-        passRequiredByHermes:false,
-      },
       compatibility:clone(resolved.compatibility || {
         mode:"CURRENT_TABLET",
         supported:true,
         blocksWork:false,
         migrationRecommended:false,
       }),
-      migrationPolicy:legacyMigrationPolicy(resolved.compatibility),
     };
   }
 
@@ -1106,29 +1094,30 @@ export function createAgentMissionService({
         name:mission,
         command:mission,
         expectedResult:requestedResult,
-        requestedDestinations:unique(input.destinations),
-        scope:unique(input.scope),
+        requestedDestinations:[],
+        scope:[],
         workType:text(input.workType || "NORMAL").toUpperCase(),
       },
     });
     const workContext = { workId:created.work.workId, checkpointId:created.work.checkpointId };
     await centre({ action:"v4_claim", ...workContext, actor:"GO" });
+    const sessionId = text(input.sessionId) || createId("HERMES-TABLET");
     await centre({
       action:"v4_mission_enter",
       ...workContext,
-      sessionId:text(input.sessionId) || createId("HERMES-TABLET"),
-      agentId:"GO",
+      sessionId,
+      agentId:text(input.agentId) || "GO",
       mission,
       requestedResult,
     });
-    const accessScope = text(input.accessScope || (text(created.work.workType).toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
     await centre({
       action:"v4_mission_card_prepare",
       ...workContext,
-      destinations:unique(input.destinations),
-      accessScope,
-      toolAccess:Array.isArray(input.toolAccess) ? unique(input.toolAccess) : [],
-      data:input.data === undefined ? {} : clone(input.data),
+      surface:"TABLET",
+      agentId:text(input.agentId) || "GO",
+      sessionId,
+      initialContext:input.initialContext === undefined ? {} : clone(input.initialContext),
+      data:{},
       context:[],
       reason:"TABLET_CREATE",
     });
@@ -1189,14 +1178,14 @@ export function createAgentMissionService({
     let current = await readMission(workContext);
     let ticket = current.mission?.memory?.cardMachine?.current || null;
     if (!ticket) {
-      const accessScope = text(input.accessScope || (text(current.work?.workType).toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
       await centre({
         action:"v4_mission_card_prepare",
         ...workContext,
-        destinations:Array.isArray(input.destinations) ? unique(input.destinations) : unique(current.work?.requestedDestinations),
-        accessScope,
-        toolAccess:Array.isArray(input.toolAccess) ? unique(input.toolAccess) : unique(current.work?.toolAccess),
-        data:input.data === undefined ? {} : clone(input.data),
+        surface:"TABLET",
+        agentId:text(input.agentId) || "GO",
+        sessionId:text(input.sessionId) || current.mission?.session?.sessionId || createId("HERMES-TABLET"),
+        initialContext:input.initialContext === undefined ? {} : clone(input.initialContext),
+        data:{},
         context:[],
         reason:"EMERGENCY_TABLET_ENTRY",
       });
@@ -1234,12 +1223,11 @@ export function createAgentMissionService({
   async function helpChooseTablet(input = {}) {
     const resolved = await resolveTabletContext(input);
     const candidates = (Array.isArray(input.candidates) ? input.candidates : []).map(contextCandidate);
-    const tablet = tabletView(resolved.card, resolved.tabletId);
+    const tablet = tabletView(resolved.card, resolved.tabletId, resolved.current);
     const memory = resolved.current.mission?.memory || {};
     const query = [
-      tablet?.intent?.mission,
-      tablet?.intent?.requestedResult,
-      JSON.stringify(tablet?.data || {}),
+      tablet?.task,
+      JSON.stringify(tablet?.initialContext || {}),
       memory.mission,
       memory.requestedResult,
       resolved.work?.command,
@@ -1254,7 +1242,7 @@ export function createAgentMissionService({
       tabletId:resolved.tabletId,
       workContext:resolved.workContext,
       choices,
-      currentData:clone(tablet?.data || {}),
+      currentContext:clone(tablet?.initialContext || {}),
       selectedAutomatically:false,
       chooser:"GO",
       mutates:false,
@@ -1269,23 +1257,24 @@ export function createAgentMissionService({
     }
     const currentTicket = resolved.current.mission?.memory?.cardMachine?.current || resolved.card;
     if (!currentTicket) return json({ code:"HERMES_CURRENT_TABLET_REQUIRED" }, 409);
-    const data = input.data === undefined ? clone(currentTicket.data || {}) : clone(input.data);
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
-      return json({ code:"HERMES_TABLET_DATA_OBJECT_REQUIRED" }, 400);
-    }
-    const destinations = Array.isArray(input.destinations) ? unique(input.destinations) : unique(currentTicket.destinations);
-    const toolAccess = Array.isArray(input.toolAccess) ? unique(input.toolAccess) : unique(currentTicket.tool_access);
-    const accessScope = text(input.accessScope || currentTicket.access_scope || resolved.work.accessScope || "WORK").toUpperCase();
-    if (!["WORK","MAINTENANCE"].includes(accessScope)) return json({ code:"HERMES_ACCESS_SCOPE_REQUIRED" }, 409);
-
+    const initialContext = input.initialContext === undefined
+      ? clone(currentTicket.initialContext !== undefined ? currentTicket.initialContext : (currentTicket.context || {}))
+      : clone(input.initialContext);
+    const status = text(input.status || currentTicket.status || resolved.work.status).toUpperCase() || "ON PROCESS";
+    const result = input.result === undefined ? clone(currentTicket.result ?? null) : clone(input.result);
+    const evidence = input.evidence === undefined ? clone(currentTicket.evidence || []) : clone(input.evidence);
     await centre({
       action:"v4_mission_card_prepare",
       ...resolved.workContext,
-      destinations,
-      accessScope,
-      toolAccess,
-      data,
-      context:clone(currentTicket.context || []),
+      surface:"TABLET",
+      agentId:text(input.agentId) || resolved.current.mission?.session?.agentId || "GO",
+      sessionId:text(input.sessionId) || resolved.current.mission?.session?.sessionId || null,
+      initialContext,
+      data:{},
+      context:[],
+      status,
+      result,
+      evidence,
       reason:"GO_TABLET_UPDATE",
     });
     const committed = await centre({
@@ -1307,9 +1296,7 @@ export function createAgentMissionService({
       manual:true,
       chooser:"GO",
       selectedAutomatically:false,
-      routeOpened:false,
-      passOpened:false,
-      prompt:"บันทึกเฉพาะข้อมูลที่ GO ใส่ลง Work Tablet แล้ว ไม่มีด่านยืนยันกลางทาง",
+      prompt:"บันทึกข้อมูลใบงานแล้ว ความพร้อมใช้งานและเส้นทางถูกตัดสินโดย backend policy",
     });
   }
 
