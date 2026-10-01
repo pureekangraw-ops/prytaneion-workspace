@@ -296,16 +296,10 @@ function cardSearchCode(workId) {
   return "W" + hash.toString(36).toUpperCase().padStart(4, "0").slice(-4);
 }
 
-export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], data = {}, intent = null, lastReturn = null, reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null } = {}, { now = () => Date.now(), randomId } = {}) {
+export function prepareStandardMissionTicket({ work, checkpointId, destinations, context = [], initialContext = null, data = {}, intent = null, lastReturn = null, reason = "MISSION_ENTRY", accessScope, toolAccess = [], snapshotKey = null, tabletOnly = false, agentId = null, sessionId = null, status = "ON PROCESS", result = null, evidence = [] } = {}, { now = () => Date.now(), randomId } = {}) {
   if (!work || typeof work !== "object") throw new Error("MISSION_TICKET_WORK_REQUIRED");
   const workId = required(work.workId, "Mission Ticket Work ID");
   const cp = required(checkpointId || work.checkpointId, "Mission Ticket Checkpoint ID");
-  const routes = cardUnique(destinations?.length ? destinations : work.requestedDestinations);
-  const scope = text(accessScope || work.accessScope || (String(work.workType || "").toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
-  if (!["WORK","MAINTENANCE"].includes(scope)) throw new Error("MISSION_TICKET_ACCESS_SCOPE_INVALID");
-  const tools = cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
-  const tabletData = data && typeof data === "object" && !Array.isArray(data) ? clone(data) : {};
-  const snapshot = scope === "WORK" ? (text(snapshotKey || work.snapshotKey) || createSnapshotKey({ at:now(), randomId })) : null;
   const missionIntent = intent && typeof intent === "object" && !Array.isArray(intent)
     ? {
         mission:text(intent.mission || work.command || work.name) || null,
@@ -315,6 +309,33 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
         mission:text(work.command || work.name) || null,
         requestedResult:text(work.expectedResult) || null,
       };
+  const tabletContext = initialContext === null ? clone(Array.isArray(context) ? context : []) : clone(initialContext);
+  const tabletData = data && typeof data === "object" && !Array.isArray(data) ? clone(data) : {};
+  if (tabletOnly) {
+    return freeze({
+      kind:"HERMES_WORK_TABLET",
+      version:1,
+      state:"DRAFT",
+      tabletId:text(work.tabletId) || (text(work.jobCode) ? "TABLET:" + text(work.jobCode) : null),
+      workId,
+      checkpointId:cp,
+      agentId:text(agentId) || null,
+      sessionId:text(sessionId) || null,
+      task:missionIntent.mission,
+      initialContext:tabletContext,
+      status:text(status).toUpperCase() || "ON PROCESS",
+      result:clone(result),
+      evidence:clone(Array.isArray(evidence) ? evidence : []),
+      preparedAt:iso(now),
+      issuedAt:null,
+      acceptedBy:null,
+    });
+  }
+  const routes = cardUnique(destinations?.length ? destinations : work.requestedDestinations);
+  const scope = text(accessScope || work.accessScope || (String(work.workType || "").toUpperCase() === "MAINTENANCE" ? "MAINTENANCE" : "WORK")).toUpperCase();
+  if (!["WORK","MAINTENANCE"].includes(scope)) throw new Error("MISSION_TICKET_ACCESS_SCOPE_INVALID");
+  const tools = cardUnique(toolAccess?.length ? toolAccess : work.toolAccess);
+  const snapshot = scope === "WORK" ? (text(snapshotKey || work.snapshotKey) || createSnapshotKey({ at:now(), randomId })) : null;
   return freeze({
     kind:"HERMES_STANDARD_TICKET",
     version:1,
