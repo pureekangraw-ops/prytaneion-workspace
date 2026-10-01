@@ -318,6 +318,7 @@ test("Maintenance Tablet scope is read from Centre directly without HERMES media
         },
       }), { headers:{ "content-type":"application/json" } }),
       maintenance:async () => new Response(JSON.stringify({ ok:true, status:"MAINTENANCE_READY" }), { headers:{ "content-type":"application/json" } }),
+      inspect:async () => new Response(JSON.stringify({ ok:true, inspected:true }), { headers:{ "content-type":"application/json" } }),
     },
     enforceCardAccess:true,
   });
