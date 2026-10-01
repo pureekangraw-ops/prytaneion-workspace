@@ -36,7 +36,7 @@ export class GoHubPixieMonitorState {
     const ids = Object.keys(current);
     if (!ids.length || !this.env?.GITHUB_TOKEN) {
       if (ids.length) {
-        const attempt = Math.max(...ids.map(id => Number(current[id]?.monitorAttempt) || 0));
+        const attempt = Math.min(...ids.map(id => Number(current[id]?.monitorAttempt) || 0));
         await this.storage.setAlarm(Date.now() + nextMonitorDelay(attempt));
       }
       return;
