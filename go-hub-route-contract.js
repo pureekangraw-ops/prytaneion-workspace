@@ -5,7 +5,7 @@ const DESTINATIONS = Object.freeze({
   linear: Object.freeze({ id: "linear", role: "work-tracking-entry", route: "destination://linear" }),
   browser: Object.freeze({ id: "browser", role: "reality-entry", route: "destination://browser" }),
   maintenance: Object.freeze({ id: "maintenance", role: "maintenance-entry", route: "destination://maintenance" }),
-  notion: Object.freeze({ id: "notion", role: "notion-gate-entry", route: "destination://notion" }),
+  notion: Object.freeze({ id: "notion", role: "search-archive-service", route: "destination://notion" }),
   counter: Object.freeze({ id: "counter", role: "agent-handoff-entry", route: "destination://counter" }),
   github: Object.freeze({ id: "github", role: "code-reality-entry", route: "destination://github" }),
   gmail: Object.freeze({ id: "gmail", role: "mail-entry", route: "destination://gmail" }),
@@ -19,6 +19,17 @@ const WORK_CONTEXT_FIELDS = Object.freeze([
 ]);
 
 export const CITY_DESTINATIONS = DESTINATIONS;
+
+export const CITY_MAP_BACKEND = Object.freeze({
+  owner:"GO_HUB_BACKEND",
+  agentSelectionRequired:false,
+  currentWork:{ service:"NOTION_AI_LIGHT", role:"CURRENT_WORK_CONTEXT" },
+  completeArchive:{ service:"DOOR", role:"SEARCH_ARCHIVE", onlyAfter:"COMPLETE" },
+  systems:Object.freeze(["FACTORY","GO_HUB","NOTION","DRIVE","CLOUDFLARE"]),
+  routes:Object.freeze(["WORK_CONTEXT","FACTORY_EXECUTION","COMPLETE_ARCHIVE_SEARCH"]),
+  standards:Object.freeze(["WORK_ID","CHECKPOINT_ID","RESULT","EVIDENCE","OWNER_READBACK"]),
+});
+
 
 export function getCityDestination(value) {
   const target = String(value || "").trim();
