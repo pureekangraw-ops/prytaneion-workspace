@@ -1311,3 +1311,66 @@ test("HERMES normal search excludes pre-epoch Cards while exact snapshot lookup 
   assert.equal(exact.candidates[0].workId, "WORK-PRE-EPOCH");
   assert.equal(exact.source, "SNAPSHOT_KEY");
 });
+
+
+test("HERMES entry asks for Work ID first, then reuses existing Work or creates when search has no match", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?entry-resolver=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?entry-resolver=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const pins = [];
+  const boardRead = async () => new Response(JSON.stringify({ ok:true, pins }), { headers:{ "content-type":"application/json" } });
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead,
+    createId:prefix => prefix + "-ENTRY",
+    now:() => "2026-10-01T12:00:00.000Z",
+  });
+
+  const asked = await body(await service.action({ action:"enter" }));
+  assert.equal(asked.resolution, "ASK_WORK_ID");
+  assert.equal(asked.workContext, null);
+
+  const createdResponse = await service.action({
+    action:"enter",
+    mission:"PRISM Browser visibility",
+    requestedResult:"GO can read captured Browser evidence",
+    workKey:"PRISM-BROWSER-VISIBILITY",
+    destinations:["destination://factory"],
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await body(createdResponse);
+  assert.equal(created.resolution, "CREATED_NEW_WORK");
+  assert.equal(created.created, true);
+  assert.match(created.workContext.workId, /^WORK-PRISM-BROWSER-VISIBILITY-20261001-001$/);
+  assert.equal(created.workContext.checkpointId, "CP-" + created.workContext.workId);
+
+  pins.push({
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+    status:"ON PROCESS",
+    title:"PRISM Browser visibility",
+    detail:"GO can read captured Browser evidence",
+    updatedAt:"2026-10-01T12:01:00.000Z",
+  });
+
+  const reused = await body(await service.action({
+    action:"enter",
+    mission:"PRISM Browser visibility",
+    requestedResult:"GO can read captured Browser evidence",
+  }));
+  assert.equal(reused.resolution, "REUSED_EXISTING_WORK");
+  assert.equal(reused.reused, true);
+  assert.equal(reused.created, false);
+  assert.equal(reused.workContext.workId, created.workContext.workId);
+  assert.equal(reused.workContext.checkpointId, created.workContext.checkpointId);
+
+  const supplied = await body(await service.action({
+    action:"enter",
+    workId:created.workContext.workId,
+  }));
+  assert.equal(supplied.resolution, "SUPPLIED_WORK_ID");
+  assert.equal(supplied.workContext.workId, created.workContext.workId);
+  assert.equal(supplied.workContext.checkpointId, created.workContext.checkpointId);
+});
