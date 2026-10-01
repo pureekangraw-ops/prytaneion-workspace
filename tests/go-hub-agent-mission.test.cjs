@@ -60,7 +60,7 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
       status:"DOING",
       title:"ซ่อมโรงงาน",
       detail:"Factory maintenance",
-      updatedAt:"2026-09-27T01:00:00.000Z",
+      updatedAt:"2026-10-01T03:00:00.000Z",
       card:{
         cardId:"CARD:2709-OLD1",
         workId:"WORK-OLD-FACTORY",
@@ -84,7 +84,9 @@ test("HERMES production flow uses existing Work Card, durable memory, LIGHT, fir
   const found = await body(await service.action({ action:"find", mission:"มาซ่อมโรงงาน" }));
   assert.equal(found.ok, true);
   assert.equal(found.boardExposed, false);
-  assert.equal(found.source, "HEIMDALL_PROJECT_INDEX");
+  assert.equal(found.source, "HEIMDALL_PROJECT_INDEX_CURRENT_EPOCH");
+  assert.equal(found.historyPolicy.mode, "LOGICAL_RESET");
+  assert.equal(found.historyPolicy.archiveRef, "gdrive://1DiOsl3wt7Tch_qMQMrgIk-hWx_FIHpzz");
   assert.equal(found.candidates[0].workId, "WORK-OLD-FACTORY");
 
   const callerOverride = await service.action({
@@ -694,7 +696,7 @@ test("HERMES reconciles indexed checkpoint pointers against Centre owner truth",
       workId,
       title:"GO Hub system check",
       detail:"inspect current system",
-      updatedAt:"2026-09-29T08:00:00.000Z",
+      updatedAt:"2026-10-01T03:00:00.000Z",
       card:{ checkpointId:"CP-WORK-GO-HUB-SYSTEM-CHECK-20260924-001", title:"GO Hub system check", detail:"inspect current system" },
     }] }), { headers:{ "content-type":"application/json" } }),
   });
@@ -1274,4 +1276,38 @@ test("legacy CARD identifier remains usable and recommends Work Tablet migration
   assert.equal(returned.migrationPolicy.exit.requiresOwnerReadback, true);
   assert.equal(returned.migrationPolicy.exit.blocksOnMigration, false);
   assert.match(returned.prompt, /ไม่บังคับย้ายบัตร/);
+});
+
+
+test("HERMES normal search excludes pre-epoch Cards while exact snapshot lookup remains available", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?history-epoch=" + Date.now());
+  const oldPin = {
+    workId:"WORK-PRE-EPOCH",
+    checkpointId:"CP-WORK-PRE-EPOCH",
+    title:"old card archive example",
+    detail:"historical card",
+    updatedAt:"2026-09-30T00:00:00.000Z",
+    card:{
+      cardId:"CARD:OLD1",
+      checkpointId:"CP-WORK-PRE-EPOCH",
+      snapshot_key:"SNAP-20260930-ABC123",
+      title:"old card archive example",
+      detail:"historical card",
+    },
+  };
+  const work = { workId:oldPin.workId, checkpointId:oldPin.checkpointId, status:"OPEN" };
+  const service = createAgentMissionService({
+    centreLive:{ async action(){ return new Response(JSON.stringify({ ok:true, v4:true, work, mission:{ memory:{ cardMachine:{ current:oldPin.card } } } }), { headers:{ "content-type":"application/json" } }); } },
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[oldPin] }), { headers:{ "content-type":"application/json" } }),
+  });
+
+  const normal = await body(await service.action({ action:"find", mission:"old card archive example", threshold:0 }));
+  assert.equal(normal.noMatch, true);
+  assert.equal(normal.historyPolicy.preserveExactLegacyLookup, true);
+
+  const exact = await body(await service.action({ action:"find", mission:"SNAP-20260930-ABC123" }));
+  assert.equal(exact.noMatch, false);
+  assert.equal(exact.candidates[0].workId, "WORK-PRE-EPOCH");
+  assert.equal(exact.source, "SNAPSHOT_KEY");
 });
