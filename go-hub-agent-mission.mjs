@@ -585,7 +585,8 @@ export function createAgentMissionService({
       mission,
       candidates,
       recommendedTools:unique(candidates.flatMap(item => item.toolAccess || [])),
-      source:exactSnapshot.length ? "SNAPSHOT_KEY" : exactMissionReference(mission)?.type || "HEIMDALL_PROJECT_INDEX",
+      source:exactSnapshot.length ? "SNAPSHOT_KEY" : exactMissionReference(mission)?.type || "HEIMDALL_PROJECT_INDEX_CURRENT_EPOCH",
+      historyPolicy:cardHistoryPolicyView(CARD_HISTORY_RESET),
       noMatch:candidates.length === 0,
       boardExposed:false,
     });
