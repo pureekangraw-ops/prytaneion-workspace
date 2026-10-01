@@ -933,8 +933,8 @@ export function createAgentMissionService({
         name:mission,
         command:mission,
         expectedResult:requestedResult,
-        requestedDestinations:[],
-        scope:[],
+        requestedDestinations:unique(input.destinations),
+        scope:unique(input.scope),
         workType:text(input.workType || "NORMAL").toUpperCase(),
       },
     });
@@ -1067,6 +1067,7 @@ export function createAgentMissionService({
         blocksWork:false,
         migrationRecommended:false,
       }),
+      migrationPolicy:legacyMigrationPolicy(resolved.compatibility || null),
     };
   }
 
