@@ -32,6 +32,10 @@ test('ERGASTERION runtime sends signed work-bound handoff and verifies receipt i
     endpoint:'https://factory.example/',
     secret:'shared-secret',
     fetchImpl:async (url, options) => {
+      if (String(url).includes('/api/hub-factory/readback?')) {
+        assert.equal(options.method, 'GET');
+        return Response.json({ protocol:'GO_HUB_ERGASTERION_FACTORY_V1', handoffId:'HANDOFF-1', source:'ERGASTERION', destination:'PRYTANEION', workId:'WORK-1', checkpointId:'CP-1', status:'RECEIVED', readbackStatus:'VERIFIED', evidenceRefs:['factory-receipt://HANDOFF-1','factory-readback://HANDOFF-1'], authorityTransferred:false, routeAuthorityCreated:false, approval:'NOT_AN_APPROVAL' });
+      }
       assert.equal(String(url), 'https://factory.example/api/hub-factory/receive');
       assert.equal(options.method, 'POST');
       assert.equal(options.headers['x-go-hub-protocol'], 'GO_HUB_ERGASTERION_FACTORY_V1');
@@ -66,7 +70,8 @@ test('ERGASTERION runtime sends signed work-bound handoff and verifies receipt i
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
-  assert.equal(body.status, 'RECEIVED');
+  assert.equal(body.status, 'VERIFIED');
+  assert.equal(body.readback.readbackStatus, 'VERIFIED');
   assert.equal(body.verified.workId, 'WORK-1');
   assert.equal(body.transport.authenticated, true);
   assert.equal(body.transport.mode, 'PUBLIC_URL');
@@ -80,6 +85,10 @@ test('ERGASTERION runtime prefers Cloudflare Service Binding over public fetch',
       seen.push({ url:request.url, method:request.method });
       if (new URL(request.url).pathname === '/api/hub-factory/health') {
         return Response.json({ ok:true, authenticatedTransport:true });
+      }
+      if (new URL(request.url).pathname === '/api/hub-factory/readback') {
+        const handoffId = new URL(request.url).searchParams.get('handoffId');
+        return Response.json({ protocol:'GO_HUB_ERGASTERION_FACTORY_V1', handoffId, source:'ERGASTERION', destination:'PRYTANEION', workId:'WORK-SERVICE', checkpointId:'CP-SERVICE', status:'RECEIVED', readbackStatus:'VERIFIED', evidenceRefs:['factory-receipt://' + handoffId, 'factory-readback://' + handoffId], authorityTransferred:false, routeAuthorityCreated:false, approval:'NOT_AN_APPROVAL' });
       }
       const body = await request.json();
       return Response.json({
@@ -126,6 +135,7 @@ test('ERGASTERION runtime prefers Cloudflare Service Binding over public fetch',
   assert.deepEqual(seen.map(item => new URL(item.url).pathname), [
     '/api/hub-factory/health',
     '/api/hub-factory/receive',
+    '/api/hub-factory/readback',
   ]);
 });
 
@@ -158,4 +168,17 @@ test('ERGASTERION runtime refuses missing route or secret', async () => {
   });
   assert.equal(response.status, 503);
   assert.equal((await response.json()).code, 'ERGASTERION_HUB_SHARED_SECRET_NOT_CONFIGURED');
+});
+
+
+test('ERGASTERION runtime rejects durable readback that is not verified', async () => {
+  const { createErgasterionRuntime } = await mod();
+  const runtime = createErgasterionRuntime({ endpoint:'https://factory.example', secret:'shared-secret', fetchImpl:async (url, options) => {
+    if (String(url).includes('/readback?')) return Response.json({ protocol:'GO_HUB_ERGASTERION_FACTORY_V1', handoffId:'HANDOFF-NV', source:'ERGASTERION', destination:'PRYTANEION', workId:'WORK-NV', checkpointId:'CP-NV', status:'RECEIVED', readbackStatus:'UNKNOWN', evidenceRefs:['factory-receipt://HANDOFF-NV'] });
+    const handoff = JSON.parse(options.body);
+    return Response.json({ protocol:handoff.protocol, handoffId:handoff.handoffId, source:'ERGASTERION', destination:'PRYTANEION', workId:handoff.workId, checkpointId:handoff.checkpointId, status:'RECEIVED', evidenceRefs:['factory-receipt://' + handoff.handoffId] });
+  }});
+  const response = await runtime.handoff({ handoffId:'HANDOFF-NV', workContext:{workId:'WORK-NV',checkpointId:'CP-NV'}, requestedResult:'evidence' });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).code, 'ERGASTERION_READBACK_NOT_VERIFIED');
 });
