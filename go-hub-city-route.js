@@ -1,5 +1,5 @@
 import { decideEvidenceGate } from "./go-hub-heimdall.js";
-import { CITY_DESTINATIONS, getCityDestination } from "./go-hub-route-contract.js";
+import { CITY_DESTINATIONS, CITY_MAP_BACKEND, getCityDestination } from "./go-hub-route-contract.js";
 import { resolveWorkInterruption } from "./go-hub-work-lifecycle.js";
 
 const HEIMDALL = Object.freeze({
@@ -37,6 +37,7 @@ const CITY_ROUTE = Object.freeze({
   }),
   exit: HEIMDALL,
   returnTo: "big-chat",
+  map: CITY_MAP_BACKEND,
   destinations: CITY_DESTINATIONS,
 });
 
@@ -89,6 +90,22 @@ function canonicalFitDestination(fit = {}) {
 
 export function createCityRoute() {
   return CITY_ROUTE;
+}
+
+export function resolveBackendRoute({ destination, workId, checkpointId, status = "ON PROCESS" } = {}) {
+  const target = getCityDestination(destination);
+  if (!target) return Object.freeze({ map: CITY_MAP_BACKEND.owner, route: null, status:"UNKNOWN", reason:"DESTINATION_UNKNOWN" });
+  return Object.freeze({
+    map:CITY_MAP_BACKEND.owner,
+    route:target.route,
+    destinationId:target.id,
+    role:target.role,
+    workId:String(workId || "").trim() || null,
+    checkpointId:String(checkpointId || "").trim() || null,
+    status:String(status || "ON PROCESS").trim().toUpperCase(),
+    automatic:true,
+    agentSelectionRequired:false,
+  });
 }
 
 export function crossBifrost(packet = {}, { direction = "" } = {}) {
