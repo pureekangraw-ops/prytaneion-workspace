@@ -361,7 +361,7 @@ export function prepareStandardMissionTicket({ work, checkpointId, destinations,
 }
 
 export function issueStandardMissionTicket(draft, { now = () => Date.now(), acceptedBy = "HERMES" } = {}) {
-  if (!draft || draft.kind !== "HERMES_STANDARD_TICKET" || draft.state !== "DRAFT") {
+  if (!draft || !["HERMES_STANDARD_TICKET", "HERMES_WORK_TABLET"].includes(draft.kind) || draft.state !== "DRAFT") {
     throw new Error("MISSION_TICKET_DRAFT_REQUIRED");
   }
   return freeze({
