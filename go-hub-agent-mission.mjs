@@ -592,12 +592,89 @@ export function createAgentMissionService({
     });
   }
 
+  async function resolveEntryWork(input = {}) {
+    const suppliedWorkId = text(input?.workContext?.workId || input.workId);
+    const suppliedCheckpointId = text(input?.workContext?.checkpointId || input.checkpointId);
+
+    if (suppliedWorkId) {
+      const inspected = await centre({ action:"v4_inspect", workId:suppliedWorkId });
+      const ownerCheckpointId = text(inspected?.work?.checkpointId);
+      if (!ownerCheckpointId) {
+        throw Object.assign(new Error("HERMES_WORK_OWNER_CONTEXT_UNKNOWN"), { status:409 });
+      }
+      if (suppliedCheckpointId && suppliedCheckpointId !== ownerCheckpointId) {
+        throw Object.assign(new Error("HERMES_WORK_IDENTITY_MISMATCH"), { status:409 });
+      }
+      return {
+        mode:"SUPPLIED_WORK_ID",
+        workContext:{ workId:suppliedWorkId, checkpointId:ownerCheckpointId },
+        work:inspected.work,
+      };
+    }
+
+    const mission = text(input.mission);
+    if (!mission) {
+      return { mode:"ASK_WORK_ID", workContext:null, work:null };
+    }
+
+    const foundResponse = await find({ ...input, action:"find", mission });
+    const found = await payload(foundResponse);
+    if (!okResponse(foundResponse)) {
+      throw Object.assign(new Error(found?.code || "HERMES_WORK_SEARCH_FAILED"), {
+        status:foundResponse?.status || 500,
+        body:found,
+      });
+    }
+
+    if (found.candidates?.length) {
+      const candidate = found.candidates[0];
+      if (!candidate.workId || !candidate.checkpointId) {
+        throw Object.assign(new Error("HERMES_WORK_OWNER_CONTEXT_UNKNOWN"), { status:409 });
+      }
+      return {
+        mode:"REUSED_EXISTING_WORK",
+        workContext:{ workId:candidate.workId, checkpointId:candidate.checkpointId },
+        work:await inspectWork({ workId:candidate.workId, checkpointId:candidate.checkpointId }),
+        candidate,
+      };
+    }
+
+    const requestedResult = text(input.requestedResult);
+    if (!requestedResult) {
+      return {
+        mode:"ASK_REQUESTED_RESULT_FOR_NEW_WORK",
+        workContext:null,
+        work:null,
+        searched:true,
+        noMatch:true,
+      };
+    }
+
+    const createdResponse = await create({
+      ...input,
+      action:"create",
+      workId:undefined,
+      workContext:undefined,
+      createDecision:"CREATE_NEW",
+    });
+    const created = await payload(createdResponse);
+    if (!okResponse(createdResponse)) {
+      throw Object.assign(new Error(created?.code || "HERMES_WORK_CREATE_FAILED"), {
+        status:createdResponse?.status || 500,
+        body:created,
+      });
+    }
+    return {
+      mode:"CREATED_NEW_WORK",
+      workContext:created.workContext,
+      work:created.card ? await inspectWork(created.workContext) : null,
+      created,
+    };
+  }
+
   async function enter(input = {}) {
-    const hasWorkContext = Boolean(
-      text(input?.workContext?.workId || input.workId) &&
-      text(input?.workContext?.checkpointId || input.checkpointId)
-    );
-    if (!hasWorkContext) {
+    const resolved = await resolveEntryWork(input);
+    if (!resolved.workContext) {
       return json({
         ok:true,
         action:"enter",
@@ -607,29 +684,48 @@ export function createAgentMissionService({
         noGate:true,
         authorityCreated:false,
         routeSelected:false,
-        nextActions:["find","create"],
-        prompt:"HERMES ready. No Work selected; GO may find or create explicitly.",
+        resolution:resolved.mode,
+        nextActions:resolved.mode === "ASK_WORK_ID"
+          ? ["supply_work_id","enter_with_mission"]
+          : ["supply_requested_result"],
+        prompt:resolved.mode === "ASK_WORK_ID"
+          ? "มี Work ID ไหม? ถ้ามีส่ง Work ID มาได้เลย; ถ้าไม่มี ส่ง mission มาแล้ว HERMES จะค้น Work เดิมหนึ่งครั้ง และสร้างใหม่เมื่อไม่พบ"
+          : "ไม่พบ Work เดิม กรุณาระบุ Requested Result เพื่อสร้าง Work ใหม่แล้วไปต่อ",
       });
     }
-    const workContext = requireWorkContext(input);
-    const work = await inspectWork(workContext);
-    const response = await centre({
-      action:"v4_mission_enter",
-      ...workContext,
-      sessionId:text(input.sessionId) || createId("HERMES-SESSION"),
-      agentId:text(input.agentId) || "GO",
-      mission:text(input.mission) || work.command || work.name,
-      requestedResult:text(input.requestedResult) || work.expectedResult || null,
-    });
+
+    const workContext = resolved.workContext;
+    let work = resolved.work || await inspectWork(workContext);
+    const current = await readMission(workContext);
+    const sessionStatus = text(current.mission?.session?.status).toUpperCase();
+    let mission = current.mission;
+
+    if (!sessionStatus || sessionStatus === "EXITED") {
+      const response = await centre({
+        action:"v4_mission_enter",
+        ...workContext,
+        sessionId:text(input.sessionId) || createId("HERMES-SESSION"),
+        agentId:text(input.agentId) || "GO",
+        mission:text(input.mission) || work.command || work.name,
+        requestedResult:text(input.requestedResult) || work.expectedResult || null,
+      });
+      mission = response.mission;
+    }
+
     return json({
       ok:true,
       action:"enter",
+      entered:true,
       card:workCardView(work),
       workContext,
-      mission:response.mission,
-      readout:composeMissionReadout(work, response.mission),
+      mission,
+      readout:composeMissionReadout(work, mission),
       noGate:true,
-    });
+      workSelected:true,
+      resolution:resolved.mode,
+      reused:resolved.mode === "REUSED_EXISTING_WORK" || resolved.mode === "SUPPLIED_WORK_ID",
+      created:resolved.mode === "CREATED_NEW_WORK",
+    }, resolved.mode === "CREATED_NEW_WORK" ? 201 : 200);
   }
 
   async function reopen(input = {}) {
