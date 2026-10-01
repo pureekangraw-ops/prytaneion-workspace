@@ -1039,8 +1039,10 @@ test("Work Tablet amusement-park flow gates only entry and return while GO write
   assert.equal(created.action, "create_tablet");
   assert.match(created.tabletId, /^TABLET:/);
   assert.equal(created.tablet.kind, "HERMES_WORK_TABLET");
-  assert.deepEqual(created.tablet.tool_access, []);
-  assert.deepEqual(created.tablet.data, { note:"GO chose this initial note" });
+  for (const key of ["tool_access", "access_scope", "destinations", "scope", "data", "pass"]) {
+    assert.equal(Object.hasOwn(created.tablet, key), false, key);
+  }
+  assert.deepEqual(created.tablet.initialContext, {});
   assert.equal(created.ownerReadback.sourceStatus, "ON PROCESS");
   assert.equal(created.ownerReadback.holder, "GO");
 
@@ -1054,15 +1056,15 @@ test("Work Tablet amusement-park flow gates only entry and return while GO write
   pins.push({
     workId:created.workContext.workId,
     checkpointId:created.workContext.checkpointId,
-    jobCode:created.tablet.jobCode,
+    jobCode:created.tabletId.slice("TABLET:".length),
     status:"ON PROCESS",
     title:"Study one selected repository",
     detail:"Read only what GO selects and return evidence",
     card:{
-      cardId:"CARD:" + created.tablet.jobCode,
+      cardId:"CARD:" + created.tabletId.slice("TABLET:".length),
       tabletId:created.tabletId,
       checkpointId:created.workContext.checkpointId,
-      jobCode:created.tablet.jobCode,
+      jobCode:created.tabletId.slice("TABLET:".length),
       sourceStatus:"ON PROCESS",
       tool_access:[],
     },
@@ -1074,9 +1076,8 @@ test("Work Tablet amusement-park flow gates only entry and return while GO write
   }));
   assert.equal(picked.ok, true);
   assert.equal(picked.entryMode, "PICKUP");
-  assert.equal(picked.authority.mode, "TABLET_TOOL_ACCESS");
-  assert.equal(picked.authority.firstOpenRequired, false);
-  assert.equal(picked.authority.passRequiredByHermes, false);
+  assert.equal(picked.tablet.tool_access, undefined);
+  assert.equal(picked.tablet.destinations, undefined);
 
   const candidates = [
     {
@@ -1111,25 +1112,23 @@ test("Work Tablet amusement-park flow gates only entry and return while GO write
     workId:created.workContext.workId,
     checkpointId:created.workContext.checkpointId,
   }));
-  assert.deepEqual(afterHelp.mission.memory.cardMachine.current.data, { note:"GO chose this initial note" }, "help_choose must not write Tablet data");
+  assert.deepEqual(afterHelp.mission.memory.cardMachine.current.initialContext, {}, "help_choose must not write Tablet data");
 
   const updated = await body(await service.action({
     action:"update_tablet",
     tabletId:created.tabletId,
-    data:{
+    initialContext:{
       target:"pureekangraw-ops/prytaneion-workspace",
       context:"source code only",
       note:"GO manually chose this data",
     },
-    destinations:["GITHUB"],
-    toolAccess:["go_hub_read_file"],
   }));
   assert.equal(updated.ok, true);
   assert.equal(updated.manual, true);
   assert.equal(updated.selectedAutomatically, false);
-  assert.deepEqual(updated.tablet.destinations, ["GITHUB"]);
-  assert.deepEqual(updated.tablet.tool_access, ["go_hub_read_file"]);
-  assert.deepEqual(updated.tablet.data, {
+  assert.equal(updated.tablet.destinations, undefined);
+  assert.equal(updated.tablet.tool_access, undefined);
+  assert.deepEqual(updated.tablet.initialContext, {
     target:"pureekangraw-ops/prytaneion-workspace",
     context:"source code only",
     note:"GO manually chose this data",
@@ -1140,7 +1139,7 @@ test("Work Tablet amusement-park flow gates only entry and return while GO write
     checkpointId:created.workContext.checkpointId,
   }));
   assert.equal(afterUpdate.work.pass, null, "manual Tablet update must not open a Pass");
-  assert.deepEqual(afterUpdate.work.toolAccess, ["go_hub_read_file"]);
+  assert.notDeepEqual(afterUpdate.work.toolAccess, ["go_hub_read_file"]);
 
   const returned = await body(await service.action({
     action:"return_tablet",
@@ -1156,8 +1155,9 @@ test("Work Tablet amusement-park flow gates only entry and return while GO write
   assert.equal(returned.returned, true);
   assert.equal(returned.sessionClosed, true);
   assert.equal(returned.ownerReadback.sourceStatus, "COMPLETE");
-  assert.equal(returned.tablet.last_return.missionStatus, "COMPLETE");
-  assert.equal(returned.tablet.last_return.result.summary, "Selected source inspected");
+  assert.equal(returned.tablet.status, "COMPLETE");
+  assert.equal(returned.tablet.result.summary, "Selected source inspected");
+  assert.equal(returned.tablet.evidence[0].ref, "github://pureekangraw-ops/prytaneion-workspace@tablet-proof");
 
   const final = await body(await centreLive.action({
     action:"v4_mission_get",
@@ -1203,20 +1203,20 @@ test("legacy CARD identifier remains usable and recommends Work Tablet migration
   pins.push({
     workId:created.workContext.workId,
     checkpointId:created.workContext.checkpointId,
-    jobCode:created.tablet.jobCode,
+    jobCode:created.tabletId.slice("TABLET:".length),
     status:"ON PROCESS",
     title:"Legacy card compatibility",
     detail:"Use old CARD ID during migration",
     card:{
-      cardId:"CARD:" + created.tablet.jobCode,
+      cardId:"CARD:" + created.tabletId.slice("TABLET:".length),
       checkpointId:created.workContext.checkpointId,
-      jobCode:created.tablet.jobCode,
+      jobCode:created.tabletId.slice("TABLET:".length),
       sourceStatus:"ON PROCESS",
       tool_access:["go_hub_read_file"],
     },
   });
 
-  const legacyCardId = "CARD:" + created.tablet.jobCode;
+  const legacyCardId = "CARD:" + created.tabletId.slice("TABLET:".length);
   const picked = await body(await service.action({
     action:"pickup_tablet",
     cardId:legacyCardId,
@@ -1232,7 +1232,7 @@ test("legacy CARD identifier remains usable and recommends Work Tablet migration
   assert.equal(picked.compatibility.suggestedTabletId, created.tabletId);
   assert.match(picked.prompt, /บัตรเก่ายังใช้ต่อได้และไม่บล็อกงาน/);
   assert.equal(picked.workContext.workId, created.workContext.workId);
-  assert.deepEqual(picked.directToolAccess, ["go_hub_read_file"]);
+  assert.equal(picked.directToolAccess, undefined);
   assert.equal(picked.migrationPolicy.entry.acceptsLegacyCard, true);
   assert.equal(picked.migrationPolicy.entry.blocksWork, false);
   assert.equal(picked.migrationPolicy.migration.requiredNow, false);

@@ -9,8 +9,8 @@ test("read-only reality sensors stay outside Work Tablet enforcement",()=>{
   assert.match(source,/enforceCardAccess && !optionalWorkContext\.has\(name\)/);
 });
 
-test("direct Work Tablet gate reads Centre truth and keeps Maintenance as the scope exception",()=>{
-  const start=source.indexOf("function tabletToolAllowed");
+test("backend policy reads Centre truth and keeps Maintenance as the scope exception",()=>{
+  const start=source.indexOf("function backendPolicyDecision");
   const end=source.indexOf("function assertLifecycle",start);
   const guard=source.slice(start,end);
   assert.match(guard,/toolName === "go_hub_maintenance"/);
@@ -18,5 +18,5 @@ test("direct Work Tablet gate reads Centre truth and keeps Maintenance as the sc
   assert.match(guard,/"MAINTENANCE"/);
   assert.match(guard,/work\?\.toolAccess|work\.toolAccess/);
   assert.match(guard,/lifecycle\.centreInspect/);
-  assert.doesNotMatch(guard,/lifecycle\.agentMission/);
+  assert.doesNotMatch(guard,/agentMission/);
 });

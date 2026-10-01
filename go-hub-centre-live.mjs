@@ -371,20 +371,28 @@ function v4MissionAction(state, action, input = {}) {
       throw Object.assign(new Error("HERMES_TABLET_DATA_OBJECT_REQUIRED"), { status:400 });
     }
     rejectSecretFields(tabletData, "tabletData");
+    const tabletOnly = String(input.surface || "").trim().toUpperCase() === "TABLET";
     const draft = prepareStandardMissionTicket({
       work:state.work,
       checkpointId:state.work?.checkpointId,
-      destinations:missionUnique(input.destinations?.length ? input.destinations : state.work?.requestedDestinations),
+      destinations:tabletOnly ? [] : missionUnique(input.destinations?.length ? input.destinations : state.work?.requestedDestinations),
       context:Array.isArray(input.context) ? input.context : mission.memory.selectedContext,
+      initialContext:input.initialContext,
       data:tabletData,
       intent:{
         mission:mission.memory.mission || state.work?.command || state.work?.name || null,
         requestedResult:mission.memory.requestedResult || state.work?.expectedResult || null,
       },
       lastReturn:mission.memory.latestReality || currentMachine.current?.last_return || null,
-      accessScope:input.accessScope,
-      toolAccess:missionUnique(input.toolAccess),
-      snapshotKey:currentMachine.current?.snapshot_key || state.work?.snapshotKey || null,
+      accessScope:tabletOnly ? null : input.accessScope,
+      toolAccess:tabletOnly ? [] : missionUnique(input.toolAccess),
+      snapshotKey:tabletOnly ? null : (currentMachine.current?.snapshot_key || state.work?.snapshotKey || null),
+      tabletOnly,
+      agentId:input.agentId || mission.session?.agentId || "GO",
+      sessionId:input.sessionId || mission.session?.sessionId || null,
+      status:input.status || "ON PROCESS",
+      result:input.result ?? null,
+      evidence:Array.isArray(input.evidence) ? input.evidence : [],
       reason:String(input.reason || "MISSION_ENTRY").trim() || "MISSION_ENTRY",
     });
     mission.memory.cardMachine = { ...currentMachine, draft:clone(draft) };
@@ -399,7 +407,9 @@ function v4MissionAction(state, action, input = {}) {
     const issued = issueStandardMissionTicket(machine.draft, {
       acceptedBy:String(input.acceptedBy || "HERMES").trim() || "HERMES",
     });
-    state.work = { ...state.work, accessScope:issued.access_scope, toolAccess:clone(issued.tool_access || []), snapshotKey:issued.snapshot_key || null };
+    if (issued.kind !== "HERMES_WORK_TABLET") {
+      state.work = { ...state.work, accessScope:issued.access_scope, toolAccess:clone(issued.tool_access || []), snapshotKey:issued.snapshot_key || null };
+    }
     mission.memory.cardMachine = { draft:null, current:clone(issued), audit:Array.isArray(machine.audit) ? machine.audit : [], lastCardUpdateAt:at };
     bumpMission(mission, at);
     return { state:saveMission(state, mission, "V4_MISSION_CARD_ISSUED"), mission };
@@ -503,6 +513,12 @@ function v4MissionAction(state, action, input = {}) {
         passState:state.work?.pass?.state || null,
         lastUpdated:state.work?.lastUpdated || null,
       },
+      archive:exactStatus === "COMPLETE" ? {
+        service:"DOOR",
+        role:"SEARCH_ARCHIVE",
+        queryKey:missionTicketSearchCode(state.work?.workId),
+        available:true,
+      } : null,
       returnedAt:at,
     };
     rejectSecretFields(reality, "missionReality");
@@ -534,11 +550,20 @@ function v4MissionAction(state, action, input = {}) {
     if (Number.isFinite(currentUpdatedAt) && Number.isFinite(returnedAt) && currentUpdatedAt >= returnedAt && returnAlreadyStored) {
       return { state, mission, idempotent:true };
     }
+    const latestReality = mission.memory.latestReality || null;
+    const currentCard = machine.current
+      ? (machine.current.kind === "HERMES_WORK_TABLET"
+        ? {
+            ...clone(machine.current),
+            status:String(latestReality?.missionStatus || machine.current.status || "ON PROCESS").toUpperCase(),
+            result:clone(latestReality?.result ?? machine.current.result ?? null),
+            evidence:clone(latestReality?.evidence || machine.current.evidence || []),
+          }
+        : { ...clone(machine.current), last_return:latestReality ? clone(latestReality) : (machine.current.last_return || null) })
+      : null;
     mission.memory.cardMachine = {
       ...machine,
-      current:machine.current
-        ? { ...clone(machine.current), last_return:mission.memory.latestReality ? clone(mission.memory.latestReality) : (machine.current.last_return || null) }
-        : null,
+      current:currentCard,
       lastCardUpdateAt:at,
     };
     bumpMission(mission, at);
@@ -743,13 +768,15 @@ export class GoHubCentreState {
         const replaced = replaceStandardMissionTicket(machine.current, machine.draft, {
           confirmation:"GO_CONFIRMED",
         });
-        state.work = {
-          ...state.work,
-          requestedDestinations:missionUnique(replaced.current.destinations),
-          accessScope:replaced.current.access_scope,
-          toolAccess:clone(replaced.current.tool_access || []),
-          snapshotKey:replaced.current.snapshot_key || state.work?.snapshotKey || null,
-        };
+        if (replaced.current.kind !== "HERMES_WORK_TABLET") {
+          state.work = {
+            ...state.work,
+            requestedDestinations:missionUnique(replaced.current.destinations),
+            accessScope:replaced.current.access_scope,
+            toolAccess:clone(replaced.current.tool_access || []),
+            snapshotKey:replaced.current.snapshot_key || state.work?.snapshotKey || null,
+          };
+        }
         mission.memory.cardMachine = {
           draft:null,
           current:clone(replaced.current),

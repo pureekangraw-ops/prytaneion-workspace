@@ -58,10 +58,10 @@ const definitions = [
   def("go_hub_agent_fitting_room", "Canonical optional Fitting Room for choosing one Persona and one Lens on the same Work Tablet without changing Work, route, owner, authority, Pass, or tool access.", "agentFittingRoom", schema({ action:{ type:"string", enum:["list","fit"] }, agentId:str, personaId:str, lensId:str, tabletId:str, accessScope:{ type:"string", enum:["WORK","MAINTENANCE"] }, workContext }, ["action","workContext"]), ann(false)),
   def("go_hub_agent_persona_room", "Explicitly enter the optional Agent Persona Room to list canonical Personas or equip one assigned Persona. This tool is never a mandatory gate, never auto-enters, and never changes Work, route, owner, or authority.", "agentPersonaRoom", schema({ action: { type:"string", enum:["list","equip"] }, agentId:str, personaId:str }, ["action"]), ann(false)),
   def("go_hub_agent_lens_room", "Explicitly enter the optional Agent Lens Fitting Room to list, compare, or select a working Lens. This sibling room never becomes a mandatory gate, never auto-selects, and stores an explicit selection only in Work Tablet data without changing Work, route, owner, authority, Pass, or tool access.", "agentLensRoom", schema({ action: { type:"string", enum:["list","compare","select"] }, agentId:str, lensId:str, lensIds:{ type:"array", items:str }, tabletId:str, accessScope:{ type:"string", enum:["WORK","MAINTENANCE"] }, workContext }, ["action","workContext"]), ann(false)),
-  def("go_hub_agent_mission", "HERMES Work Tablet desk. Entry is create_tablet, pickup_tablet, or emergency_enter; exit is return_tablet. Legacy CARD:* identifiers remain accepted as a non-blocking compatibility alias and return an upgrade recommendation to TABLET:*; they do not become a gate. Inside the Work, GO manually chooses and writes Tablet data/tools/targets. help_choose is optional and never mutates or auto-selects. HERMES does not open routes or Passes and does not mediate Tablet-authorized tool execution.", "agentMission", schema({ action:{ type:"string", enum:[...AGENT_MISSION_ACTIONS] }, tabletId:str, cardId:str, mission:str, requestedResult:str, workKey:str, workType:{ type:"string", enum:["NORMAL","URGENT","MAINTENANCE","SOS"] }, data:obj, candidates:{ type:"array", items:obj }, destinations:{ type:"array", items:str }, scope:{ type:"array", items:str }, accessScope:{ type:"string", enum:["WORK","MAINTENANCE"] }, toolAccess:{ type:"array", items:str }, workContext, status:{ type:"string", enum:["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"] }, result:obj, nextAction:str, evidence:{ type:"array", items:obj }, unknowns:{ type:"array", items:str }, lastLocation:str }, ["action"]), ann(false)),
+  def("go_hub_agent_mission", "HERMES Work Tablet desk. Legacy CARD:* identifiers remain accepted as a non-blocking compatibility alias. Entry loads the current Work context; exit returns Result and Evidence. The Tablet contains only Agent/Session identity, Work identity, task, initial context, status, and final result/evidence. Routing, Passes, permissions, and tool availability are backend policy concerns and are never selected or opened by the Agent.", "agentMission", schema({ action:{ type:"string", enum:[...AGENT_MISSION_ACTIONS] }, tabletId:str, cardId:str, agentId:str, sessionId:str, mission:str, requestedResult:str, workKey:str, workType:{ type:"string", enum:["NORMAL","URGENT","MAINTENANCE","SOS"] }, initialContext:obj, candidates:{ type:"array", items:obj }, status:{ type:"string", enum:["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"] }, result:obj, nextAction:str, evidence:{ type:"array", items:obj }, unknowns:{ type:"array", items:str }, lastLocation:str }, ["action"]), ann(false)),
   def("go_hub_light_centre_v4_action", "LIGHT may inspect, claim, wait, resume, or open a Factory-scoped Work Pass for an existing V4 Work it holds. This cannot create Work, widen destinations, or Return.", "lightCentreV4Action", schema({ action: { type: "string", enum: ["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"] }, workId: str, checkpointId: str, reason: str, resumeFrom: str }, ["action", "workId", "checkpointId"]), ann(false)),
   def("go_hub_light_factory_v4_action", "LIGHT may operate Factory V4 only for the same LIGHT-held Work after a Factory-scoped active Pass. Merge/delete remain unavailable.", "lightFactoryV4Action", schema({ action: { type: "string", enum: ["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"] }, form: obj, reality: obj, inspection: obj, plan: str, result: obj, evidence: obj, checkId: str, status: str, reason: str, file: obj, ref: str, summary: str, workContext }, ["action", "workContext"]), ann(false)),
-  def("go_hub_merge_pull_request", "Merge through GitHub owner truth after exact-head CI. Inside an active Work Tablet, merge authority comes from Tablet tool_access; no separate owner-confirmation gate is added mid-work.", "mergePullRequest", schema({ repository: str, number: int, expectedHeadSha: str, method: { type: "string", enum: ["merge", "squash", "rebase"] }, workContext }, ["repository", "number", "expectedHeadSha", "workContext"]), ann(false, true)),
+  def("go_hub_merge_pull_request", "Merge through GitHub owner truth after exact-head CI. Inside an active Work Tablet, merge availability is decided by backend policy; the Agent does not select or expand permissions.", "mergePullRequest", schema({ repository: str, number: int, expectedHeadSha: str, method: { type: "string", enum: ["merge", "squash", "rebase"] }, workContext }, ["repository", "number", "expectedHeadSha", "workContext"]), ann(false, true)),
   def("go_hub_get_workflow_runs", "Observe workflow and deployment runs.", "getWorkflowRuns", schema({ repository: str, sha: str }, ["repository", "sha"]), ann(true)),
   def("go_hub_list_workflow_artifacts", "List GitHub Actions artifacts for one workflow run, or inventory recent repository artifacts when runId is omitted.", "listWorkflowArtifacts", schema({ repository: str, runId: int }, ["repository"]), ann(true)),
   def("go_hub_archive_workflow_artifact", "Download one GitHub Actions artifact server-side, optionally extract one entry, and archive it to governed Google Drive with hash metadata and readback.", "archiveWorkflowArtifact", schema({ repository: str, runId: int, artifactId: int, parentId: str, entrySuffix: str, destinationName: str, mimeType: str, workContext }, ["repository", "runId", "artifactId", "workContext"]), ann(false)),
@@ -157,11 +157,20 @@ function assertWork(value) {
 
 const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect","go_hub_notion_tools"]);
 const CARD_READ_BYPASS_TOOLS = new Set(["go_hub_observer_latest","go_hub_observer_screenshot"]);
-function tabletToolAllowed(work, toolName) {
-  if (toolName === "go_hub_maintenance") {
-    return String(work?.accessScope || "").trim().toUpperCase() === "MAINTENANCE";
+function backendPolicyDecision(work, toolName) {
+  const status = String(work?.status || "").trim().toUpperCase();
+  const holder = String(work?.holder || "").trim();
+  const legacyBackendGrant = Array.isArray(work?.toolAccess) && work.toolAccess.includes(toolName);
+  if ((status !== "ON PROCESS" || !holder) && !legacyBackendGrant) {
+    return { allowed:false, code:"CURRENT_WORK_TABLET_REQUIRED" };
   }
-  return Array.isArray(work?.toolAccess) && work.toolAccess.includes(toolName);
+  if (toolName === "go_hub_maintenance" &&
+      String(work?.workType || "").trim().toUpperCase() !== "MAINTENANCE" &&
+      String(work?.accessScope || "").trim().toUpperCase() !== "MAINTENANCE" &&
+      String(work?.pass?.kind || "").trim().toUpperCase() !== "MAINTENANCE") {
+    return { allowed:false, code:"BACKEND_POLICY_DENIED" };
+  }
+  return { allowed:true, code:null };
 }
 async function assertCardAccess(lifecycle, name, args) {
   if (CARD_BOOTSTRAP_TOOLS.has(name) || CARD_READ_BYPASS_TOOLS.has(name)) return;
@@ -178,7 +187,8 @@ async function assertCardAccess(lifecycle, name, args) {
       String(work.checkpointId || "").trim() !== String(args.workContext.checkpointId || "").trim()) {
     throw new Error("CURRENT_WORK_TABLET_REQUIRED");
   }
-  if (!tabletToolAllowed(work, name)) throw new Error("TABLET_TOOL_ACCESS_DENIED");
+  const decision = backendPolicyDecision(work, name);
+  if (!decision.allowed) throw new Error(decision.code);
 }
 function assertLifecycle(name, args) {
   if (factoryTools.has(name) || linearMutationTools.has(name) || maintenanceTools.has(name) ||
