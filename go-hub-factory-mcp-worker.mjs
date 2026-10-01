@@ -698,9 +698,10 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         });
         const body = await response.clone().json().catch(() => null);
         if (response.ok && body?.v4 === true && Array.isArray(body?.board)) {
-          try {
-            await lighthouseControlPort.projectCentre({ v4:true, work:body.board.find(item => item?.workId === input.workId) || body.board[0] || null });
-          } catch {}
+          const work = body.board.find(item => item?.workId === input.workId) || body.board[0] || null;
+          if (work?.workId) {
+            try { await lighthouseControlPort.projectCentre({ v4:true, work }); } catch {}
+          }
         }
         return response;
       };
