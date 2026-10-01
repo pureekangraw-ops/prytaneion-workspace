@@ -1,226 +1,78 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111318">
-  <title>GO Hub</title>
+  <meta name="theme-color" content="#0b0d12">
+  <title>YGGMETRO CONTROL</title>
   <link rel="manifest" href="./go-hub.webmanifest">
-  <link rel="stylesheet" href="./go-hub-shell.css">
+  <link rel="stylesheet" href="./go-hub-control-surface.css">
 </head>
 <body>
-  <main class="hub-shell" data-hub-shell>
-    <header class="hub-header">
-      <p class="hub-kicker">CONTROL SURFACE</p>
-      <h1>GO Hub</h1>
-      <p class="hub-status" data-hub-status>Starting neutral runtime…</p>\n      <a class="visual-workbench-entry" href="./project-viewer.html">PROJECT VIEWER ↗</a>\n      <a class="visual-workbench-entry" href="./pixie-visual-workbench.html">PIXIE Visual Workbench ↗</a>
+  <main class="control-shell">
+    <header class="control-topbar">
+      <div><p class="eyebrow">YGGMETRO</p><h1>CONTROL</h1></div>
+      <span class="system-state" data-hub-status>● CONNECTING</span>
     </header>
-    <section class="ticket-hub-panel" aria-labelledby="ticket-hub-title" data-ticket-hub>
-      <div class="ticket-hub-heading">
-        <div>
-          <p class="hub-kicker">PRIMARY WORK ENTRY</p>
-          <h2 id="ticket-hub-title">TICKET HUB</h2>
-        </div>
-        <strong>CREATE · FIND · STORE</strong>
+
+    <section class="attention" aria-labelledby="attention-title">
+      <div class="section-heading"><div><p class="eyebrow">NOW</p><h2 id="attention-title">ต้องจัดการ</h2></div><button class="primary" type="button" data-command-open>＋ สั่งงาน</button></div>
+      <div class="summary-grid">
+        <article><strong data-count-decision>—</strong><span>รอตัดสินใจ</span></article>
+        <article><strong data-count-active>—</strong><span>กำลังทำ</span></article>
+        <article><strong data-count-complete>—</strong><span>เสร็จแล้ว</span></article>
       </div>
-      <p class="ticket-hub-intro">สร้างงานใหม่ ค้นงานเดิม และเก็บ pointer ไว้กลับมาเปิดอีกครั้ง · Centre ยังเป็น owner truth เสมอ</p>
-      <dl class="ticket-current">
-        <div><dt>Current Work</dt><dd data-ticket-current-work>—</dd></div>
-        <div><dt>Checkpoint</dt><dd data-ticket-current-checkpoint>—</dd></div>
-        <div><dt>Status</dt><dd data-ticket-current-status>UNKNOWN</dd></div>
-      </dl>
-
-      <div class="ticket-hub-grid">
-        <form class="ticket-card" data-ticket-create-form>
-          <p class="hub-kicker">สร้าง</p>
-          <h3>ตั๋วใหม่</h3>
-          <label>งาน<textarea name="ticketTask" rows="2" required placeholder="จะทำอะไร"></textarea></label>
-          <label>ผลลัพธ์ที่ต้องการ<textarea name="ticketRequestedResult" rows="2" required placeholder="สำเร็จแล้วต้องเห็นอะไร"></textarea></label>
-          <label>เป้าหมาย
-            <select name="ticketTargetId" required>
-              <option value="">เลือกเป้าหมาย</option>
-              <option value="lighthouse">LIGHTHOUSE</option>
-              <option value="standard">STANDARD / GO Hub</option>
-            </select>
-          </label>
-          <button type="submit">สร้างตั๋ว</button>
-          <p class="counter-hint">สร้าง Centre Work จริงทันที · ไม่ผ่าน Mission Card / Pass / Route gate</p>
-        </form>
-
-        <form class="ticket-card" data-ticket-find-form>
-          <p class="hub-kicker">ค้นหา</p>
-          <h3>เปิดตั๋วเดิม</h3>
-          <label>Work ID<input name="ticketWorkId" required placeholder="WORK-…"></label>
-          <label>Checkpoint ID<input name="ticketCheckpointId" required placeholder="CP-… / CENTRE-…"></label>
-          <button type="submit">ค้นจาก Centre</button>
-          <p class="counter-hint">อ่าน owner truth สดด้วย identity exact · ไม่เดาจากชื่อคล้ายกัน</p>
-        </form>
-
-        <div class="ticket-card">
-          <p class="hub-kicker">จัดเก็บ</p>
-          <h3>ชั้นตั๋ว</h3>
-          <form data-ticket-store-form>
-            <label>ชื่อเรียก <span class="counter-hint">(optional)</span><input name="ticketLabel" placeholder="เช่น จุดขายตั๋ว"></label>
-            <button type="submit">เก็บตั๋วปัจจุบัน</button>
-          </form>
-          <label>ค้นในชั้นตั๋ว<input data-ticket-search placeholder="ชื่อ / Work / Checkpoint"></label>
-          <p class="counter-hint">ที่นี่เก็บ pointer เท่านั้น · สถานะจริงอ่านจาก Centre ทุกครั้งที่เปิด</p>
-          <p class="counter-hint" data-ticket-store-empty>ยังไม่มีตั๋วที่จัดเก็บ</p>
-          <ul class="ticket-store-list" data-ticket-store-list></ul>
-        </div>
-      </div>
-
-      <p class="ticket-result" data-ticket-result role="status"></p>
-
-      <details class="ticket-diagnostics">
-        <summary>Mission Briefing · optional read-only diagnostics</summary>
-        <p class="counter-hint">ใช้ตรวจ owner-source observations เท่านั้น · ไม่ใช่ทางเข้า และไม่ mutate Work / Pass / Route</p>
-        <div data-mission-briefing-host></div>
-      </details>
     </section>
-    <section class="centre-panel" aria-labelledby="centre-title" data-centre>
-      <div class="centre-heading">
-        <div>
-          <p class="hub-kicker">FIRST CHECKPOINT</p>
-          <h2 id="centre-title">CENTRE</h2>
+
+    <section class="work-section" aria-labelledby="work-title">
+      <div class="section-heading"><div><p class="eyebrow">LIVE WORK</p><h2 id="work-title">งานที่กำลังวิ่ง</h2></div><button class="quiet" type="button" data-control-room-refresh>รีเฟรช</button></div>
+      <article class="work-card">
+        <div class="work-title"><div><span class="pulse"></span><div><strong data-work-title>งานปัจจุบัน</strong><small data-control-room-work>กำลังอ่าน…</small></div></div><span class="work-state" data-control-room-status>UNKNOWN</span></div>
+        <div class="handoff" aria-label="GO to LIGHT handoff">
+          <span class="agent active">GO</span><span class="line"></span><span class="agent" data-holder>LIGHT</span>
         </div>
-        <strong class="centre-state" data-centre-state>ARRIVED</strong>
-      </div>
-      <dl class="centre-identity">
-        <div><dt>Checkpoint</dt><dd data-centre-checkpoint>—</dd></div>
-        <div><dt>Work</dt><dd data-centre-work>—</dd></div>
-      </dl>
-      <form class="centre-form" data-centre-form>
-        <label>Task<textarea name="task" rows="2" required></textarea></label>
-        <label>Requested Result<textarea name="requestedResult" rows="2" required></textarea></label>
-        <label>Authority<input name="authority" value="BIG" required></label>
-        <label>Work Target
-          <select name="targetId" required>
-            <option value="">Choose target</option>
-            <option value="lighthouse">LIGHTHOUSE</option>
-            <option value="standard">STANDARD / GO Hub</option>
-          </select>
-        </label>
-        <fieldset class="dressing-room" data-dressing-room>
-          <div class="dressing-heading">
-            <div>
-              <p class="hub-kicker">GO IDENTITY INSTALLER</p>
-              <h3>ห้องแต่งตัว</h3>
-            </div>
-            <strong data-dressing-status>0/5</strong>
-          </div>
-          <p class="dressing-intro">สำรวจความเป็น GO แล้วเก็บบทเรียนที่ทำให้จับ Hub ง่ายขึ้น</p>
-          <p class="counter-hint" data-dressing-rule><strong>บทเรียนประจำห้อง:</strong> ห้องนี้ใช้เตรียม GO เท่านั้น · ไม่สั่งงาน · ไม่เปลี่ยน state · ไม่เปิด/ปิดสิทธิ์ · ไม่บล็อกทาง</p>
-          <div class="dressing-checklist" aria-label="GO core checklist">
-            <label><input type="checkbox" data-dressing-core value="requested-result"> จับ Requested Result ก่อนวิธีทำ</label>
-            <label><input type="checkbox" data-dressing-core value="reality"> แยก Reality / UNKNOWN — ไม่เดา</label>
-            <label><input type="checkbox" data-dressing-core value="next-action"> ไปต่อเองเมื่อมี Tool + Authority</label>
-            <label><input type="checkbox" data-dressing-core value="verify"> DO ≠ DONE — Verify จาก Reality</label>
-            <label><input type="checkbox" data-dressing-core value="challenge"> กล้าค้านเมื่อ Evidence ขัด</label>
-          </div>
-          <div class="dressing-lessons">
-            <label>บทเรียนใหม่<input type="text" data-dressing-lesson placeholder="สิ่งที่ GO เรียนรู้เพิ่ม…"></label>
-            <button type="button" data-dressing-add>เพิ่มบทเรียน</button>
-            <p class="counter-hint" data-dressing-empty>ยังไม่มีบทเรียนที่เพิ่ม</p>
-            <ul data-dressing-lessons></ul>
-          </div>
-          <details class="dressing-work-fit">
-            <summary>ชุดที่ใช้กับงานนี้</summary>
-            <label>Persona Reference<input name="personaReference" placeholder="persona://…"></label>
-            <label>Working View<textarea name="workingView" rows="2"></textarea></label>
-          </details>
-        </fieldset>
-        <input type="hidden" name="destination" value="destination://factory">
-        <p class="centre-route">Target: <strong data-centre-target>—</strong> · Via: <strong>GO WORKS</strong> · Return: <strong data-centre-return>this checkpoint</strong></p>
-        <p class="centre-error" data-centre-error role="alert"></p>
-        <button type="submit" data-centre-action>Review task</button>
+        <p class="work-now" data-work-now>กำลังอ่านสถานะจาก owner truth…</p>
+        <button class="details-toggle" type="button" data-details-toggle>ดูรายละเอียด</button>
+        <dl class="technical" data-technical hidden>
+          <div><dt>Checkpoint</dt><dd data-control-room-checkpoint>UNKNOWN</dd></div>
+          <div><dt>Centre</dt><dd data-control-room-centre>UNKNOWN</dd></div>
+          <div><dt>Project</dt><dd data-control-room-project>UNKNOWN</dd></div>
+          <div><dt>Factory</dt><dd data-control-room-factory>UNKNOWN</dd></div>
+          <div><dt>Board</dt><dd data-control-room-board>UNKNOWN</dd></div>
+          <div><dt>Cloudflare</dt><dd data-control-room-cloudflare>UNKNOWN</dd></div>
+          <div><dt>Provenance</dt><dd data-control-room-provenance>UNKNOWN</dd></div>
+          <div><dt>Observed</dt><dd data-control-room-updated>UNKNOWN</dd></div>
+        </dl>
+        <p class="error" data-control-room-error role="alert"></p>
+      </article>
+    </section>
+
+    <section class="activity-section" aria-labelledby="activity-title">
+      <div class="section-heading"><div><p class="eyebrow">HANDOFF</p><h2 id="activity-title">GO ↔ LIGHT</h2></div></div>
+      <ol class="activity" data-activity>
+        <li><time>NOW</time><strong>GO</strong><span>พร้อมรับคำสั่งและส่งต่อ Work เดิม</span></li>
+        <li><time>—</time><strong>LIGHT</strong><span>รอ context / requested result</span></li>
+      </ol>
+    </section>
+
+    <details class="system-drawer">
+      <summary>System details</summary>
+      <p>รายละเอียดระบบอยู่ชั้นนี้ ไม่รบกวนหน้าทำงานหลัก</p>
+      <ul data-control-room-signals><li>UNKNOWN: waiting for live observation</li></ul>
+    </details>
+
+    <dialog data-command-dialog>
+      <form method="dialog" class="command-card">
+        <div class="section-heading"><div><p class="eyebrow">NEW WORK</p><h2>สั่งงาน</h2></div><button class="icon-button" value="cancel" aria-label="ปิด">×</button></div>
+        <label>จะให้ทำอะไร<textarea rows="4" data-command-task placeholder="พิมพ์งานตรง ๆ ได้เลย"></textarea></label>
+        <label>ผลที่ต้องการ <span>ถ้ามี</span><textarea rows="2" data-command-result placeholder="อยากได้อะไรกลับมา"></textarea></label>
+        <p class="hint">GO จะจัด Work และเลือกเส้นทางหลังฉากให้</p>
+        <button class="primary full" value="cancel" type="button" data-command-submit>ส่งให้ GO</button>
+        <p class="error" data-command-error role="status"></p>
       </form>
-    </section>
-    <section class="counter-panel" aria-labelledby="counter-title" data-counter>
-      <div class="counter-heading">
-        <div>
-          <p class="hub-kicker">SHARED COUNTER</p>
-          <h2 id="counter-title">COUNTER</h2>
-        </div>
-      </div>
-      <div class="counter-guide">
-        <p class="hub-kicker">GO ↔ LIGHT — COUNTER ONLY</p>
-        <p>การสื่อสาร GO Hub ↔ LIGHT ใช้ Counter เส้นเดียว · Work/Checkpoint เดิมเท่านั้น</p>
-      </div>
-      <div class="counter-chat" aria-label="Notion AI Search — direct capability, not LIGHT">
-        <div class="counter-conversation" data-counter-conversation>
-          <p class="counter-chat-empty" data-counter-chat-empty>NOTION AI SEARCH — ค้นของในคลังเท่านั้น · ไม่ใช่ LIGHT</p>
-        </div>
-        <form class="counter-form" data-counter-ask-form>
-          <label>ค้นในคลัง Notion<textarea name="counterQuestion" data-counter-question rows="3" required placeholder="พิมพ์คำถาม แล้วกด Enter"></textarea></label>
-          <p class="counter-hint">Enter = ถาม · Shift+Enter = ขึ้นบรรทัดใหม่</p>
-          <p class="counter-result" data-counter-result role="status"></p>
-        </form>
-      </div>
-      <p class="counter-notion"><a href="https://app.notion.com/p/fe23e5c0f7a1436aad58827b8a8c9bb9" target="_blank" rel="noreferrer">เปิด GO × LIGHT ใน Notion ↗</a></p>
-    </section>
-    <section class="go-workbench" aria-label="GO Workbench" data-workbench-shell hidden>
-      <div class="go-workbench__item"><span>Mission</span><strong data-workbench-mission>—</strong></div>
-      <div class="go-workbench__item"><span>Blueprint</span><strong data-workbench-blueprint>—</strong></div>
-      <div class="go-workbench__item"><span>Current Piece</span><strong data-workbench-piece>—</strong></div>
-      <div class="go-workbench__item"><span>Status</span><strong data-workbench-status>—</strong></div>
-      <div class="go-workbench__item"><span>Evidence</span><strong data-workbench-evidence>—</strong></div>
-      <div class="go-workbench__item"><span>Next</span><strong data-workbench-next>—</strong></div>
-    </section>
-    <section class="hub-panel control-room" data-control-room aria-labelledby="control-room-title">
-      <div class="operator-heading">
-        <div>
-          <p class="hub-kicker">GO-ONLY LIVE OBSERVATION</p>
-          <h2 id="control-room-title">GO Control Room</h2>
-        </div>
-        <strong data-control-room-status>UNKNOWN</strong>
-      </div>
-      <p>อ่านความจริงจาก Centre, Project, GO WORKS, Board และ runtime โดยใช้ authority เดิม — ไม่มี permission layer ใหม่ และไม่เดาเมื่อหลักฐานไม่ครบ</p>
-      <dl class="operator-grid">
-        <div><dt>Work</dt><dd data-control-room-work>UNKNOWN</dd></div>
-        <div><dt>Checkpoint</dt><dd data-control-room-checkpoint>UNKNOWN</dd></div>
-        <div><dt>Centre</dt><dd data-control-room-centre>UNKNOWN</dd></div>
-        <div><dt>Project</dt><dd data-control-room-project>UNKNOWN</dd></div>
-        <div><dt>GO WORKS</dt><dd data-control-room-factory>UNKNOWN</dd></div>
-        <div><dt>Board</dt><dd data-control-room-board>UNKNOWN</dd></div>
-        <div><dt>Cloudflare</dt><dd data-control-room-cloudflare>UNKNOWN</dd></div>
-        <div><dt>SHA provenance</dt><dd data-control-room-provenance>UNKNOWN</dd></div>
-      </dl>
-      <p class="counter-hint">Signals</p>
-      <ul class="hub-capabilities" data-control-room-signals><li>UNKNOWN: waiting for live observation</li></ul>
-      <p class="centre-error" data-control-room-error role="alert"></p>
-      <button type="button" data-control-room-refresh>Refresh observations</button>
-      <p class="counter-hint">Last observed: <span data-control-room-updated>UNKNOWN</span> · auto-refresh 30s</p>
-    </section>
-    <section class="hub-panel code-operator" data-code-operator aria-labelledby="code-operator-title">
-      <div class="operator-heading">
-        <div>
-          <p class="hub-kicker">CURRENT WORK TRUTH</p>
-          <h2 id="code-operator-title">Code Operator</h2>
-        </div>
-        <strong>READ ONLY</strong>
-      </div>
-      <dl class="operator-grid">
-        <div><dt>State</dt><dd data-code-state>—</dd></div>
-        <div><dt>Next action</dt><dd data-code-next-action>—</dd></div>
-        <div class="operator-wide"><dt>Repository</dt><dd data-code-repository>—</dd></div>
-        <div><dt>Base</dt><dd data-code-base>—</dd></div>
-        <div><dt>Work branch</dt><dd data-code-work-branch>—</dd></div>
-        <div class="operator-wide"><dt>Head SHA</dt><dd data-code-head>—</dd></div>
-        <div><dt>Pull request</dt><dd data-code-pr>—</dd></div>
-        <div><dt>CI</dt><dd data-code-ci>—</dd></div>
-        <div><dt>Deploy</dt><dd data-code-deploy>—</dd></div>
-        <div><dt>Verification</dt><dd data-code-verification>—</dd></div>
-        <div class="operator-wide"><dt>Blocker / recovery</dt><dd data-code-blocker>—</dd></div>
-      </dl>
-    </section>
-    <section class="hub-panel" aria-labelledby="capabilities-title">
-      <h2 id="capabilities-title">Capabilities</h2>
-      <p data-hub-empty>No capabilities registered yet.</p>
-      <ul class="hub-capabilities" data-hub-capabilities></ul>
-    </section>
+    </dialog>
   </main>
   <script src="./go-hub-sw-bootstrap.js"></script>
-  <script type="module" src="./go-hub-shell.js"></script>
+  <script type="module" src="./go-hub-control-surface.js"></script>
 </body>
 </html>
