@@ -1302,13 +1302,15 @@ export function createAgentMissionService({
   }
 
   async function returnTablet(input = {}) {
-    const resolvedBefore = await resolveTabletContext(input);
-    const legacyResponse = await returnCardById({
+    const resolvedBefore = await ensurePickupState(await resolveTabletContext(input));
+    const returnedResponse = await returnCard({
       ...input,
-      cardId:legacyCardIdFromTabletId(resolvedBefore.tabletId),
+      workContext:resolvedBefore.workContext,
     });
-    const legacyBody = await payload(legacyResponse);
-    if (!okResponse(legacyResponse)) return legacyResponse;
+    const returnedBody = await payload(returnedResponse);
+    if (!okResponse(returnedResponse)) return returnedResponse;
+    await centre({ action:"v4_mission_card_update", ...resolvedBefore.workContext });
+    await centre({ action:"v4_mission_exit", ...resolvedBefore.workContext });
     const final = await resolveTabletContext({ tabletId:resolvedBefore.tabletId });
     const returned = {
       ...final,
@@ -1320,7 +1322,7 @@ export function createAgentMissionService({
       ...tabletPacket(returned),
       returned:true,
       exitMode:"RETURN",
-      readbackVerified:legacyBody.readbackVerified === true || legacyBody.idempotent === true,
+      readbackVerified:returnedBody.readbackVerified === true || returnedBody.idempotent === true,
       sessionClosed:true,
       retrievalCode:final.card?.snapshot_key || missionTicketSearchCode(final.workContext.workId),
       prompt:resolvedBefore.compatibility?.migrationRecommended
