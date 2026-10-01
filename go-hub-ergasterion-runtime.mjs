@@ -2,7 +2,7 @@ import {
   createErgasterionFactoryHandoff,
   verifyErgasterionFactoryReadback,
 } from './go-hub-ergasterion-bridge.mjs';
-import { sendErgasterionFactoryHandoff } from './go-hub-ergasterion-transport.mjs';
+import { sendErgasterionFactoryHandoff, readErgasterionFactoryReadback } from './go-hub-ergasterion-transport.mjs';
 
 const text = value => String(value ?? '').trim();
 
@@ -66,12 +66,24 @@ export function createErgasterionRuntime({ endpoint, secret, fetchImpl = fetch, 
           timeoutMs:input.timeoutMs,
           retries:input.retries,
         });
-        const proof = verifyErgasterionFactoryReadback({ handoff, readback:receipt });
+        const receiptProof = verifyErgasterionFactoryReadback({ handoff, readback:receipt });
+        const readback = await readErgasterionFactoryReadback({
+          endpoint:factoryEndpoint,
+          handoffId:handoff.handoffId,
+          fetchImpl:transportFetch,
+          timeoutMs:input.timeoutMs,
+          retries:input.retries,
+        });
+        const proof = verifyErgasterionFactoryReadback({ handoff, readback });
+        if (text(readback.readbackStatus) !== 'VERIFIED') throw new Error('ERGASTERION_READBACK_NOT_VERIFIED');
+        if (!Array.isArray(proof.evidenceRefs) || proof.evidenceRefs.length === 0) throw new Error('ERGASTERION_READBACK_EVIDENCE_REQUIRED');
         return json({
           ok:true,
-          status:proof.status,
+          status:'VERIFIED',
           handoff,
           receipt,
+          receiptVerified:receiptProof,
+          readback,
           verified:proof,
           transport:{ authenticated:true, mode:transportMode, endpoint:factoryEndpoint },
         });
