@@ -1,4 +1,4 @@
-export const TICKET_STORE_KEY = "go-hub:ticket-hub:v1";
+export const TICKET_STORE_KEY = "go-hub:ticket-hub:v2";
 
 const clean = value => String(value ?? "").trim();
 
