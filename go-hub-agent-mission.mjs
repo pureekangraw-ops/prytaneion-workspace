@@ -574,9 +574,10 @@ export function createAgentMissionService({
     const exactSnapshot = /^SNAP-\d{8}-[A-Z0-9]{6}$/i.test(mission)
       ? board.pins.filter(pin => text(pin.card?.snapshot_key || pin.snapshotKey).toUpperCase() === mission.toUpperCase())
       : [];
+    const currentPins = currentCardHistoryPins(board.pins, CARD_HISTORY_RESET);
     const indexedCandidates = exactSnapshot.length
       ? exactSnapshot.map(pin => ({ workId:text(pin.workId), checkpointId:text(pin.card?.checkpointId || pin.checkpointId) || null, cardId:text(pin.card?.cardId)||null, jobCode:text(pin.card?.jobCode||pin.jobCode)||null, title:text(pin.card?.title||pin.title)||null, detail:text(pin.card?.detail||pin.detail)||null, status:text(pin.card?.sourceStatus||pin.status)||null, snapshotKey:mission.toUpperCase(), toolAccess:unique(pin.card?.tool_access||pin.toolAccess), score:1, source:"SNAPSHOT_KEY" }))
-      : rankMissionCandidates(mission, board.pins, { limit:input.limit, threshold:input.threshold });
+      : rankMissionCandidates(mission, currentPins, { limit:input.limit, threshold:input.threshold });
     const candidates = await Promise.all(indexedCandidates.map(reconcileCandidate));
     return json({
       ok:true,
