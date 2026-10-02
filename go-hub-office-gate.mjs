@@ -172,7 +172,7 @@ function officeShell() {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YGGMETRO Office</title></head><body><main><h1>YGGMETRO OFFICE</h1><p>Office Gate active. Work read and Agent Mission command are server-wired; Eye remains read-only pending Phase 3.</p><form method="post" action="/office/logout"><button type="submit">Logout</button></form></main></body></html>`;
 }
 
-export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [] } = {}) {
+export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null } = {}) {
   return Object.freeze({
     owns(pathname) {
       return pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
@@ -284,7 +284,37 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
       }
 
       if (url.pathname === "/office/api/eye") {
-        return json({ code:"OFFICE_ROUTE_NOT_WIRED_PHASE_2" }, 501);
+        if (!factoryEye || typeof factoryEye.latest !== "function" || typeof factoryEye.screenshot !== "function") {
+          return json({ code:"OFFICE_EYE_UNAVAILABLE" }, 503);
+        }
+        try {
+          const screenshotRef = String(url.searchParams.get("screenshotRef") || "").trim();
+          if (screenshotRef) {
+            const shot = await factoryEye.screenshot({ screenshotRef });
+            if (!shot?.ok) return json({ code:String(shot?.code || "OFFICE_EYE_SCREENSHOT_UNAVAILABLE") }, 404);
+            return json({
+              ok:true,
+              source:"FACTORY_EYE",
+              mode:"READ_ONLY",
+              createsAuthority:false,
+              screenshot:shot.screenshot,
+            });
+          }
+
+          const latest = await factoryEye.latest();
+          if (!latest?.ok) {
+            const code = String(latest?.code || "OFFICE_EYE_UNAVAILABLE");
+            const status = code === "FACTORY_EYE_SESSION_INACTIVE" ? 404 : 503;
+            return json({ code }, status);
+          }
+          return json({
+            ...latest,
+            mode:"READ_ONLY",
+            createsAuthority:false,
+          });
+        } catch {
+          return json({ code:"OFFICE_EYE_READ_FAILED" }, 500);
+        }
       }
 
       return json({ code:"OFFICE_ROUTE_DENIED" }, 404);
