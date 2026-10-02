@@ -96,13 +96,28 @@ function sessionCookie(value, maxAge) {
 }
 
 function sameOrigin(request) {
-  const origin = String(request.headers.get("origin") || "");
-  if (!origin) return false;
-  try {
-    return new URL(origin).origin === new URL(request.url).origin;
-  } catch {
-    return false;
+  const requestOrigin = new URL(request.url).origin;
+  const origin = String(request.headers.get("origin") || "").trim();
+  if (origin) {
+    try {
+      return new URL(origin).origin === requestOrigin;
+    } catch {
+      return false;
+    }
   }
+
+  const referer = String(request.headers.get("referer") || "").trim();
+  if (referer) {
+    try {
+      return new URL(referer).origin === requestOrigin;
+    } catch {
+      return false;
+    }
+  }
+
+  const fetchSite = String(request.headers.get("sec-fetch-site") || "").toLowerCase();
+  const fetchMode = String(request.headers.get("sec-fetch-mode") || "").toLowerCase();
+  return fetchSite === "same-origin" && (!fetchMode || fetchMode === "navigate");
 }
 
 function configured(env) {
