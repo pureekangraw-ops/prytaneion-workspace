@@ -718,9 +718,12 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         token: env?.CLOUDFLARE_RUNTIME_API_TOKEN,
         accountId: env?.CLOUDFLARE_ACCOUNT_ID,
       });
+      const olympusFetch = env?.OLYMPUS_SERVICE?.fetch
+        ? (target, init) => env.OLYMPUS_SERVICE.fetch(new Request(target, init))
+        : fetchImpl;
       const olympusAion = createOlympusAionAdapter({
-        fetchImpl,
-        endpoint: env?.OLYMPUS_URL || "https://olympus.pureekangraw.workers.dev",
+        fetchImpl:olympusFetch,
+        endpoint: env?.OLYMPUS_URL || "https://olympus.yggmetro.com",
       });
       const ergasterion = createErgasterionRuntime({
         fetchImpl,

@@ -192,6 +192,10 @@
     {
       "binding": "ERGASTERION_FACTORY",
       "service": "ergasterion-factory"
+    },
+    {
+      "binding": "OLYMPUS_SERVICE",
+      "service": "olympus"
     }
   ]
 }
