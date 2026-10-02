@@ -67,7 +67,7 @@ test("Cloudflare worker inspection returns names and types but never secret valu
   assert.doesNotMatch(JSON.stringify(body), /visible-but-not-needed/);
 });
 
-test("registry publishes four Cloudflare read-only tools", async () => {
+test("registry publishes bounded Cloudflare tools", async () => {
   const { createMcpRegistry } = await import(registryUrl + "?registry=" + Date.now());
   const lifecycle = new Proxy({}, {
     get: (_, name) => async input => new Response(JSON.stringify({ operation:name, input }), {
@@ -81,8 +81,11 @@ test("registry publishes four Cloudflare read-only tools", async () => {
     "go_hub_cloudflare_health",
     "go_hub_cloudflare_list_workers",
     "go_hub_cloudflare_inspect_worker",
+    "go_hub_cloudflare_deploy_worker",
   ]);
-  assert.ok(tools.every(tool => tool.annotations.readOnlyHint === true));
+  const deployTool = tools.find(tool => tool.name === "go_hub_cloudflare_deploy_worker");
+  assert.equal(deployTool.annotations.readOnlyHint, false);
+  assert.ok(tools.filter(tool => tool !== deployTool).every(tool => tool.annotations.readOnlyHint === true));
 });
 
 test("Factory MCP Cloudflare health uses runtime token server-side", async () => {
@@ -134,4 +137,37 @@ test("Cloudflare inspection preserves bounded deployment version identity withou
   ]);
   assert.equal(body.deployments[0].sourceSha, undefined);
   assert.doesNotMatch(JSON.stringify(body), /must-not-leak/);
+});
+
+
+test("Cloudflare deploy is bounded to yggmetro-web and preserves sanitized readback", async () => {
+  const { createCloudflareService } = await import(serviceUrl + "?deploy=" + Date.now());
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url:String(url), method:init.method || "GET" });
+    const current = String(url);
+    if ((init.method || "GET") === "PUT") {
+      assert.match(current, /\/workers\/scripts\/yggmetro-web$/);
+      return new Response(JSON.stringify({ success:true, result:{ id:"yggmetro-web" } }), { status:200, headers:{ "content-type":"application/json" } });
+    }
+    if (current.endsWith("/settings")) {
+      return new Response(JSON.stringify({ success:true, result:{ compatibility_date:"2026-10-01", bindings:[{ name:"OPENAI_API_KEY", type:"secret_text", text:"never-return" }] } }), { status:200, headers:{ "content-type":"application/json" } });
+    }
+    if (current.endsWith("/deployments")) {
+      return new Response(JSON.stringify({ success:true, result:{ deployments:[{ id:"dep-1", created_on:"2026-10-02T00:00:00Z", source:"api", versions:[{ version_id:"v1", percentage:100 }] }] } }), { status:200, headers:{ "content-type":"application/json" } });
+    }
+    throw new Error("unexpected upstream");
+  };
+  const service = createCloudflareService({ fetchImpl, token:"runtime-token", accountId:"account-a" });
+  const denied = await service.deployWorker({ scriptName:"go-hub", source:"export default {}" });
+  assert.equal(denied.status, 403);
+  const response = await service.deployWorker({ scriptName:"yggmetro-web", source:"export default { fetch(){ return new Response('ok') } }", compatibilityDate:"2026-10-01" });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.scriptName, "yggmetro-web");
+  assert.deepEqual(body.worker.bindings, [{ name:"OPENAI_API_KEY", type:"secret_text" }]);
+  assert.equal(body.secretValuesExposed, false);
+  assert.doesNotMatch(JSON.stringify(body), /never-return/);
+  assert.equal(calls.filter(call => call.method === "PUT").length, 1);
 });
