@@ -211,6 +211,12 @@
       "/.well-known/*"
     ]
   },
+  "r2_buckets": [
+    {
+      "binding": "OFFICE_ASSETS",
+      "bucket_name": "ygg-office-assets"
+    }
+  ],
   "services": [
     {
       "binding": "ERGASTERION_FACTORY",
