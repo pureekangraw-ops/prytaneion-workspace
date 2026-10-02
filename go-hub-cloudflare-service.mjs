@@ -95,7 +95,7 @@ export function createCloudflareService({ fetchImpl = fetch, token, accountId } 
         tokenConfigured: Boolean(fixedToken),
         accountConfigured: Boolean(fixedAccountId),
         secretValuesExposed: false,
-        operations:["health","list_workers","inspect_worker"],
+        operations:["health","list_workers","inspect_worker","deploy_worker"],
         mutationMode:"FACTORY_ONLY",
       });
     },
@@ -119,6 +119,64 @@ export function createCloudflareService({ fetchImpl = fetch, token, accountId } 
       if (result.response) return result.response;
       const workers = Array.isArray(result.payload?.result) ? result.payload.result : [];
       return json({ workers: workers.map(sanitizeWorker) });
+    },
+
+    async deployWorker(input = {}) {
+      const scriptName = text(input.scriptName);
+      const source = typeof input.source === "string" ? input.source : "";
+      const compatibilityDate = text(input.compatibilityDate);
+      if (!scriptName || !source.trim()) return json({ code:"CLOUDFLARE_INVALID_INPUT" }, 400);
+      if (scriptName !== "yggmetro-web") return json({ code:"CLOUDFLARE_DEPLOY_SCOPE_DENIED" }, 403);
+      if (source.length > 500000) return json({ code:"CLOUDFLARE_SOURCE_TOO_LARGE" }, 413);
+      if (!configured(fixedToken, fixedAccountId)) return json({ code:"CLOUDFLARE_NOT_CONFIGURED" }, 503);
+
+      const metadata = { main_module:"worker.js" };
+      if (compatibilityDate) metadata.compatibility_date = compatibilityDate;
+      const form = new FormData();
+      form.set("metadata", new Blob([JSON.stringify(metadata)], { type:"application/json" }));
+      form.set("worker.js", new Blob([source], { type:"application/javascript+module" }), "worker.js");
+
+      let upstream;
+      try {
+        upstream = await fetchImpl(CLOUDFLARE_API_ROOT + accountPath("/workers/scripts/" + encodeURIComponent(scriptName)), {
+          method:"PUT",
+          headers:{
+            authorization:"Bearer " + fixedToken,
+            accept:"application/json",
+            "user-agent":"go-hub-cloudflare-bridge",
+          },
+          body:form,
+        });
+      } catch {
+        return json({ code:"CLOUDFLARE_UPSTREAM_ERROR", category:"NETWORK_ERROR" }, 502);
+      }
+      const payload = await upstream.json().catch(() => null);
+      if (!upstream.ok || !payload || payload.success === false) {
+        return json({
+          code:"CLOUDFLARE_UPSTREAM_ERROR",
+          category:errorCategory(payload, upstream.status),
+        }, 502);
+      }
+
+      const base = accountPath("/workers/scripts/" + encodeURIComponent(scriptName));
+      const settings = await request(base + "/settings");
+      if (settings.response) return settings.response;
+      const settingsPayload = settings.payload?.result || {};
+      const deploymentsResult = await request(base + "/deployments");
+      const raw = deploymentsResult.response ? [] : deploymentsResult.payload?.result;
+      const entries = Array.isArray(raw) ? raw : Array.isArray(raw?.deployments) ? raw.deployments : [];
+      return json({
+        ok:true,
+        scriptName,
+        deployed:true,
+        worker:{
+          name:scriptName,
+          bindings:Array.isArray(settingsPayload.bindings) ? settingsPayload.bindings.map(sanitizeBinding) : [],
+          compatibilityDate:text(settingsPayload.compatibility_date || settingsPayload.compatibilityDate) || null,
+        },
+        latestDeployment:entries.length ? sanitizeDeployment(entries[0]) : null,
+        secretValuesExposed:false,
+      });
     },
 
     async inspectWorker(input = {}) {
