@@ -16,6 +16,9 @@ const message=document.querySelector("[data-eye-message]");
 const refresh=document.querySelector("[data-eye-refresh]");
 const passkeyButton=document.querySelector("[data-passkey-register]");
 const passkeyStatus=document.querySelector("[data-passkey-status]");
+const assetForm=document.querySelector("[data-asset-upload]");
+const assetStatus=document.querySelector("[data-asset-status]");
+const assetList=document.querySelector("[data-asset-list]");
 
 async function readEye(){
   if(!eye)return;
@@ -102,6 +105,63 @@ async function registerPasskey(){
   }
 }
 
+async function readAssets(){
+  if(!assetList)return;
+  assetList.innerHTML="";
+  try{
+    const response=await fetch("/office/api/assets",{headers:{accept:"application/json"},cache:"no-store"});
+    const body=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(body.code||"OFFICE_ASSET_LIST_FAILED");
+    const assets=Array.isArray(body.assets)?body.assets:[];
+    if(!assets.length){
+      assetList.innerHTML="<li>ยังไม่มีไฟล์</li>";
+      return;
+    }
+    for(const asset of assets){
+      const item=document.createElement("li");
+      const link=document.createElement("a");
+      link.href="/office/api/assets?raw=1&key="+encodeURIComponent(asset.key||"");
+      link.target="_blank";
+      link.rel="noreferrer";
+      link.textContent=asset.customMetadata?.originalName||asset.key||"asset";
+      const meta=document.createElement("small");
+      meta.textContent=" · "+Math.max(1,Math.round(Number(asset.size||0)/1024))+" KB · "+(asset.customMetadata?.category||"uploads");
+      item.append(link,meta);
+      assetList.append(item);
+    }
+  }catch(error){
+    assetList.innerHTML="<li>"+String(error instanceof Error?error.message:error)+"</li>";
+  }
+}
+
+async function uploadAsset(event){
+  event.preventDefault();
+  if(!assetForm||!assetStatus)return;
+  const data=new FormData(assetForm);
+  const file=data.get("file");
+  if(!file||!file.size){
+    assetStatus.textContent="เลือกไฟล์ก่อน";
+    return;
+  }
+  assetStatus.textContent="กำลังอัปโหลด…";
+  const button=assetForm.querySelector("button[type=submit]");
+  if(button)button.disabled=true;
+  try{
+    const response=await fetch("/office/api/assets",{method:"POST",body:data});
+    const body=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(body.code||"OFFICE_ASSET_UPLOAD_FAILED");
+    const name=body.asset?.customMetadata?.originalName||"ไฟล์";
+    assetStatus.textContent=name+" อัปโหลดและอ่านกลับสำเร็จ";
+    assetForm.reset();
+    await readAssets();
+  }catch(error){
+    assetStatus.textContent=error instanceof Error?error.message:String(error);
+  }finally{
+    if(button)button.disabled=false;
+  }
+}
+
+assetForm?.addEventListener("submit",uploadAsset);
 refresh?.addEventListener("click",readEye);
 passkeyButton?.addEventListener("click",registerPasskey);
-await Promise.all([readEye(),readPasskeyStatus()]);
+await Promise.all([readEye(),readPasskeyStatus(),readAssets()]);
