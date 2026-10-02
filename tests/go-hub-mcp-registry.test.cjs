@@ -246,6 +246,38 @@ test("governed tools expose exactly two gate identity values and reject extras",
   assert.deepEqual(calls.at(-1).input.workContext, { workId:"WORK-A", checkpointId:"CENTRE-001" });
 });
 
+test("card access enforcement never rewrites tool contracts", async () => {
+  const { createMcpRegistry } = await import(registryUrl + "?no-schema-rewrite=" + Date.now());
+  let centreReads = 0;
+  const lifecycle = new Proxy({
+    centreInspect:async () => {
+      centreReads += 1;
+      return new Response(JSON.stringify({ ok:true }), { headers:{ "content-type":"application/json" } });
+    },
+  }, {
+    get(target, name) {
+      if (name in target) return target[name];
+      return async input => new Response(JSON.stringify({ ok:true, operation:name, input }), { headers:{ "content-type":"application/json" } });
+    },
+  });
+  const registry = createMcpRegistry({ lifecycle, enforceCardAccess:true });
+  const tools = registry.listTools();
+
+  for (const name of ["go_hub_agent_persona_room", "go_hub_agent_lens_room", "go_hub_agent_fitting_room"]) {
+    const tool = tools.find(current => current.name === name);
+    assert.equal(tool.inputSchema.properties.workContext, undefined);
+    assert.equal((tool.inputSchema.required || []).includes("workContext"), false);
+  }
+
+  const capability = await registry.callTool("go_hub_agent_persona_room", { action:"list", agentId:"GO" });
+  assert.equal(capability.structuredContent.ok, true);
+  assert.equal(centreReads, 0);
+
+  const workTool = tools.find(current => current.name === "go_hub_put_file");
+  assert.ok(workTool.inputSchema.properties.workContext);
+  assert.equal(workTool.inputSchema.required.includes("workContext"), true);
+});
+
 test("merge uses Work Tablet tool authority and adds no separate BIG approval gate", async () => {
   const { createMcpRegistry } = await import(registryUrl + "?merge-tablet=" + Date.now());
   let received = null;
