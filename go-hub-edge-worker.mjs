@@ -7,6 +7,7 @@ import { createDeploymentProvenanceReader } from "./go-hub-deployment-provenance
 import { createProjectStatusReadService } from "./go-hub-project-status-service.mjs";
 import { correlateControlRoomTruth } from "./go-hub-control-room.js";
 import { createAccessToken } from "./go-hub-oauth.mjs";
+import { createOfficeGate } from "./go-hub-office-gate.mjs";
 import { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
 import { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 import { createCentreLiveService } from "./go-hub-centre-live.mjs";
@@ -653,6 +654,10 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
+      const officeGate = createOfficeGate();
+      if (officeGate.owns(url.pathname)) {
+        return officeGate.fetch(request, env);
+      }
       if (url.pathname === LIGHT_MCP_OWNER_PATH) {
         if (request.method === "GET") return lightMcpOwnerPage();
         if (request.method !== "POST") return json({ code:"METHOD_NOT_ALLOWED" }, 405);
