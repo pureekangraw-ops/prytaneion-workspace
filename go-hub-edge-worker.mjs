@@ -19,6 +19,7 @@ import { createBroadcastService } from "./go-hub-broadcast-state.mjs";
 import { createNotionLightService } from "./go-hub-notion-light.mjs";
 import { createCounterService } from "./go-hub-counter.mjs";
 import { createCounterDispatchService } from "./go-hub-counter-dispatcher.mjs";
+import { createPrismControlPortService } from "./go-hub-prism-control-port.mjs";
 import { createGoHubV4, CUTOVER_CONTRACT } from "./go-hub-v4-cutover.mjs";
 import {
   createLighthouseControlPortHttpService,
@@ -882,6 +883,16 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         return createLighthouseControlPortHttpService({
           namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS,
           ownerPasscode:env?.GOHUB_OWNER_PASSCODE,
+          prismService:createPrismControlPortService({
+            centre:createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE}),
+            counter:createCounterService({namespace:env?.GO_HUB_COUNTER_STATE,inboxNamespace:env?.GO_HUB_COUNTER_INBOX}),
+            lifecycle:createCounterDispatchLifecycle({
+              counter:createCounterService({namespace:env?.GO_HUB_COUNTER_STATE,inboxNamespace:env?.GO_HUB_COUNTER_INBOX}),
+              dispatch:createCounterDispatchService({namespace:env?.GO_HUB_COUNTER_DISPATCH_STATE,hubOrigin:url.origin}),
+              notionLight:createNotionLightService({namespace:env?.GO_HUB_NOTION_LIGHT_STATE}),hubOrigin:url.origin,
+            }),
+            notionLight:createNotionLightService({namespace:env?.GO_HUB_NOTION_LIGHT_STATE}),
+          }),
         }).fetch(request);
       }
       if (request.method === "GET" && url.pathname === PROJECT_VIEWER_STATUS_PATH) {

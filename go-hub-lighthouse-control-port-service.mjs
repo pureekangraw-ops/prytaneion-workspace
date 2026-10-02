@@ -272,7 +272,7 @@ transfer.addEventListener('submit',async e=>{
   });
 }
 
-export function createLighthouseControlPortHttpService({ namespace, ownerPasscode } = {}) {
+export function createLighthouseControlPortHttpService({ namespace, ownerPasscode, prismService = null } = {}) {
   return Object.freeze({
     async fetch(request) {
       const url = new URL(request.url);
@@ -385,6 +385,19 @@ export function createLighthouseControlPortHttpService({ namespace, ownerPasscod
 
       const auth = credentials(request);
       if (!auth.sessionId || !auth.sessionToken) return json({ code:"SESSION_INACTIVE" }, 403, cors || {});
+
+      if (['ask','handoff','result'].some(action => url.pathname === `${LIGHTHOUSE_CONTROL_PORT_API_ROOT}/prism/${action}`)) {
+        try {
+          // Reuse the durable owner-paired session check, including expiry.
+          const authorized = await sessions.board(auth);
+          if (!authorized?.ok) return json({code:authorized?.code||'SESSION_INACTIVE'},statusFor(authorized?.code),cors||{});
+          if (!prismService?.handle) return json({code:'PRISM_RETURN_CHANNEL_UNAVAILABLE'},503,cors||{});
+          const body=await request.json().catch(()=>null);
+          if (!body||typeof body!=='object'||Array.isArray(body)) return json({code:'INVALID_JSON'},400,cors||{});
+          const response=await prismService.handle(url.pathname.split('/').pop(),body);
+          return new Response(response.body,{status:response.status,headers:{...Object.fromEntries(response.headers),...(cors||{})}});
+        } catch(error) {return json({code:clean(error?.message||'PRISM_RETURN_FAILED')},Number(error?.status)||503,cors||{});}
+      }
 
       if (url.pathname === `${LIGHTHOUSE_CONTROL_PORT_API_ROOT}/pull`) {
         const result = await sessions.pull(auth);
