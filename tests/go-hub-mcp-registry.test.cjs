@@ -60,6 +60,11 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_fitting_room").inputSchema.properties.tabletId, undefined);
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_lens_room").inputSchema.properties.workContext, undefined);
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_lens_room").inputSchema.properties.tabletId, undefined);
+  for (const name of ["go_hub_agent_persona_room", "go_hub_agent_lens_room", "go_hub_agent_fitting_room"]) {
+    const tool = tools.find(current => current.name === name);
+    assert.equal(tool.inputSchema.properties.workContext, undefined);
+    assert.equal((tool.inputSchema.required || []).includes("workContext"), false);
+  }
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.deepEqual(
     tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.action.enum,
@@ -132,7 +137,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
     assert.deepEqual(tool.inputSchema.properties.workContext.required, ["workId","checkpointId"], `${tool.name} gate must have exactly two identity values`);
     assert.deepEqual(Object.keys(tool.inputSchema.properties.workContext.properties), ["workId","checkpointId"], `${tool.name} gate must expose no extra identity fields`);
   }
-  assert.equal(tools.find(tool => tool.name === "go_hub_inspect_repository").inputSchema.required.includes("workContext"), false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_inspect_repository").inputSchema.required.includes("workContext"), true);
   assert.equal(tools.find(tool => tool.name === "go_hub_linear_list_projects").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_linear_get_issue").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_observer_latest").inputSchema.required.includes("workContext"), false);
@@ -144,7 +149,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_root").inputSchema.required.includes("workContext"), false);
 
-  await registry.callTool("go_hub_inspect_repository", { repository: "pureekangraw-ops/standard-", branch: "main" });
+  await registry.callTool("go_hub_inspect_repository", { repository: "pureekangraw-ops/standard-", branch: "main", workContext: factoryWorkContext });
   assert.equal(calls[0].name, "inspect");
 
   await registry.callTool("go_hub_counter_create", {
@@ -206,7 +211,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   await registry.callTool("go_hub_observer_screenshot", { screenshotRef: "shot:1" });
   assert.equal(calls.at(-2).name, "observerLatest");
   assert.equal(calls.at(-1).name, "observerScreenshot");
-  await registry.callTool("go_hub_list_workflow_artifacts", { repository: "pureekangraw-ops/ygph-metropolis", runId: 123 });
+  await registry.callTool("go_hub_list_workflow_artifacts", { repository: "pureekangraw-ops/ygph-metropolis", runId: 123, workContext: factoryWorkContext });
   assert.equal(calls.at(-1).name, "listWorkflowArtifacts");
   await registry.callTool("go_hub_archive_workflow_artifact", { repository: "pureekangraw-ops/ygph-metropolis", runId: 123, artifactId: 456, parentId: "folder-a", entrySuffix: "app.apk", destinationName: "app.apk", workContext: driveWorkContext });
   assert.equal(calls.at(-1).name, "archiveWorkflowArtifact");
@@ -239,6 +244,38 @@ test("governed tools expose exactly two gate identity values and reject extras",
   });
   assert.equal(calls.at(-1).name, "linearCreateIssue");
   assert.deepEqual(calls.at(-1).input.workContext, { workId:"WORK-A", checkpointId:"CENTRE-001" });
+});
+
+test("card access enforcement never rewrites tool contracts", async () => {
+  const { createMcpRegistry } = await import(registryUrl + "?no-schema-rewrite=" + Date.now());
+  let centreReads = 0;
+  const lifecycle = new Proxy({
+    centreInspect:async () => {
+      centreReads += 1;
+      return new Response(JSON.stringify({ ok:true }), { headers:{ "content-type":"application/json" } });
+    },
+  }, {
+    get(target, name) {
+      if (name in target) return target[name];
+      return async input => new Response(JSON.stringify({ ok:true, operation:name, input }), { headers:{ "content-type":"application/json" } });
+    },
+  });
+  const registry = createMcpRegistry({ lifecycle, enforceCardAccess:true });
+  const tools = registry.listTools();
+
+  for (const name of ["go_hub_agent_persona_room", "go_hub_agent_lens_room", "go_hub_agent_fitting_room"]) {
+    const tool = tools.find(current => current.name === name);
+    assert.equal(tool.inputSchema.properties.workContext, undefined);
+    assert.equal((tool.inputSchema.required || []).includes("workContext"), false);
+  }
+
+  const capability = await registry.callTool("go_hub_agent_persona_room", { action:"list", agentId:"GO" });
+  assert.equal(capability.structuredContent.ok, true);
+  assert.equal(centreReads, 0);
+
+  const workTool = tools.find(current => current.name === "go_hub_put_file");
+  assert.ok(workTool.inputSchema.properties.workContext);
+  assert.equal(workTool.inputSchema.required.includes("workContext"), true);
 });
 
 test("merge uses Work Tablet tool authority and adds no separate BIG approval gate", async () => {
