@@ -23,7 +23,8 @@ test("V4 deploy smoke outfits the existing Work with current HERMES card contrac
   assert.match(workflow, /action:"v4_mission_card_issue"/);
   assert.match(workflow, /accessScope:"WORK"/);
   assert.match(workflow, /accessScope:"MAINTENANCE"/);
-  assert.match(workflow, /action:"v4_inspect", workId, checkpointId, workContext:context\(\)/);
+  assert.match(workflow, /action:"v4_inspect", workId, checkpointId/);
+  assert.doesNotMatch(workflow, /go_hub_centre_live_action"[\s\S]{0,180}workContext:context\(\)/);
   assert.match(workflow, /kind:"MAINTENANCE"[\s\S]*destinations:\["maintenance"\]/);
   assert.doesNotMatch(workflow, /mcp\("\/mcp\/light"/);
 });

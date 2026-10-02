@@ -19,6 +19,9 @@ jobs:
       GOHUB_MASTER_KEY: ${{ secrets.GOHUB_MASTER_KEY }}
       GOHUB_OWNER_PASSCODE: ${{ secrets.GOHUB_OWNER_PASSCODE }}
       GOHUB_NOTION_CLIENT_SECRET: ${{ secrets.GOHUB_NOTION_CLIENT_SECRET }}
+      GOHUB_OFFICE_PASSCODE: ${{ secrets.GOHUB_OFFICE_PASSCODE }}
+      GOHUB_OFFICE_SESSION_KEY: ${{ secrets.GOHUB_OFFICE_SESSION_KEY }}
+      GOHUB_OFFICE_SESSION_EPOCH: ${{ vars.GOHUB_OFFICE_SESSION_EPOCH || '1' }}
 
     steps:
       - name: Check out repository
@@ -170,6 +173,13 @@ jobs:
           else
             echo "Notion OAuth client secret is absent; the Notion MCP client will remain disabled."
           fi
+          if [ -n "${GOHUB_OFFICE_PASSCODE}" ] && [ -n "${GOHUB_OFFICE_SESSION_KEY}" ]; then
+            printf 'GOHUB_OFFICE_PASSCODE=%s\n' "${GOHUB_OFFICE_PASSCODE}" >> "${secrets_file}"
+            printf 'GOHUB_OFFICE_SESSION_KEY=%s\n' "${GOHUB_OFFICE_SESSION_KEY}" >> "${secrets_file}"
+            printf 'GOHUB_OFFICE_SESSION_EPOCH=%s\n' "${GOHUB_OFFICE_SESSION_EPOCH:-1}" >> "${secrets_file}"
+          else
+            echo "Office secrets are absent; /office remains fail-closed with OFFICE_AUTH_NOT_CONFIGURED."
+          fi
           if [ -s "${secrets_file}" ]; then
             npx wrangler deploy --config wrangler.go-hub.jsonc --secrets-file "${secrets_file}"
           else
@@ -186,6 +196,79 @@ jobs:
           path: ${{ runner.temp }}/go-hub-deployment-receipt.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Verify deployed Office Gate runtime
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const cloudflareToken = process.env.CLOUDFLARE_API_TOKEN;
+          if (!accountId || !cloudflareToken) {
+            console.error("::error::Office runtime smoke prerequisites are missing.");
+            process.exit(1);
+          }
+
+          const subdomainResponse = await fetch(
+            "https://api.cloudflare.com/client/v4/accounts/" + accountId + "/workers/subdomain",
+            { headers:{ authorization:"Bearer " + cloudflareToken } },
+          );
+          const subdomainPayload = await subdomainResponse.json().catch(() => null);
+          const subdomain = String(subdomainPayload?.result?.subdomain || "").trim();
+          if (!subdomainResponse.ok || !subdomain) {
+            console.error("::error::Unable to resolve workers.dev subdomain for Office smoke.");
+            process.exit(1);
+          }
+
+          const origin = "https://go-hub." + subdomain + ".workers.dev";
+          const protectedResponse = await fetch(origin + "/office/api/eye", { redirect:"manual" });
+          const protectedBody = await protectedResponse.json().catch(() => null);
+
+          const configured = Boolean(process.env.GOHUB_OFFICE_PASSCODE && process.env.GOHUB_OFFICE_SESSION_KEY);
+          if (!configured) {
+            if (protectedResponse.status !== 503 || protectedBody?.code !== "OFFICE_AUTH_NOT_CONFIGURED") {
+              console.error("::error::Office fail-closed smoke failed: " + String(protectedBody?.code || protectedResponse.status));
+              process.exit(1);
+            }
+            console.log("Office Gate is deployed and fail-closed because Office secrets are not configured.");
+            process.exit(0);
+          }
+
+          if (protectedResponse.status !== 401 || protectedBody?.code !== "OFFICE_AUTH_REQUIRED") {
+            console.error("::error::Office unauthenticated guard failed: " + String(protectedBody?.code || protectedResponse.status));
+            process.exit(1);
+          }
+
+          const login = await fetch(origin + "/office/login", {
+            method:"POST",
+            redirect:"manual",
+            headers:{
+              origin,
+              "content-type":"application/x-www-form-urlencoded",
+            },
+            body:new URLSearchParams({ passcode:process.env.GOHUB_OFFICE_PASSCODE }),
+          });
+          const cookie = String(login.headers.get("set-cookie") || "").split(";")[0];
+          if (login.status !== 303 || !cookie.startsWith("__Host-ygg-office=")) {
+            console.error("::error::Office login smoke failed: " + login.status);
+            process.exit(1);
+          }
+
+          const session = await fetch(origin + "/office/session", { headers:{ cookie } });
+          const sessionBody = await session.json().catch(() => null);
+          if (!session.ok || sessionBody?.ok !== true || sessionBody?.subject !== "BIG") {
+            console.error("::error::Office authenticated session smoke failed.");
+            process.exit(1);
+          }
+
+          const denied = await fetch(origin + "/office/internal/debug", { headers:{ cookie } });
+          const deniedBody = await denied.json().catch(() => null);
+          if (denied.status !== 404 || deniedBody?.code !== "OFFICE_ROUTE_DENIED") {
+            console.error("::error::Office deny-by-default smoke failed.");
+            process.exit(1);
+          }
+
+          console.log("Office Gate runtime smoke passed on workers.dev.");
+          NODE
 
       - name: Verify deployed Cloudflare runtime bridge through MCP
         shell: bash
@@ -679,7 +762,7 @@ jobs:
           });
 
           let inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId, workContext:context(),
+            action:"v4_inspect", workId, checkpointId,
           });
           if (inspected.proof?.work?.status !== "OPEN" || inspected.proof?.work?.workId !== workId) {
             throw new Error("V4_INSPECT_LIVE_WORK_FAILED");
@@ -692,7 +775,7 @@ jobs:
             destinations:["factory"], workContext:context(),
           });
           inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId, workContext:context(),
+            action:"v4_inspect", workId, checkpointId,
           });
           if (inspected.proof?.work?.pass?.kind !== "WORK" || inspected.proof?.work?.pass?.state !== "ACTIVE") {
             throw new Error("WORK_PASS_RUNTIME_FAILED");
@@ -872,7 +955,7 @@ jobs:
             workContext:context(),
           });
           inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId, workContext:context(),
+            action:"v4_inspect", workId, checkpointId,
           });
           if (inspected.proof?.work?.pass?.kind !== "EMERGENCY" ||
               Date.parse(inspected.proof?.work?.pass?.expiresAt || "") <= Date.now()) {
