@@ -97,6 +97,7 @@ const definitions = [
   def("go_hub_cloudflare_health", "Verify Cloudflare account authentication and Workers API reachability without exposing credentials.", "cloudflareHealth", schema({}), ann(true)),
   def("go_hub_cloudflare_list_workers", "List sanitized Cloudflare Worker metadata for the configured account.", "cloudflareListWorkers", schema({}), ann(true)),
   def("go_hub_cloudflare_inspect_worker", "Read sanitized Worker bindings and deployment metadata without returning secret values.", "cloudflareInspectWorker", schema({ scriptName: str }, ["scriptName"]), ann(true)),
+  def("go_hub_cloudflare_deploy_worker", "Deploy source to the bounded yggmetro-web Cloudflare Worker through governed Factory mutation with sanitized readback.", "cloudflareDeployWorker", schema({ scriptName: str, source: { type:"string", minLength:1, maxLength:500000 }, compatibilityDate: str, workContext }, ["scriptName","source","workContext"]), ann(false)),
   def("go_hub_notion_status", "Read the current GO Hub Notion MCP connection state without exposing credentials.", "notionStatus", schema({}), ann(true)),
   def("go_hub_notion_connect", "Prepare the existing GO Hub to Notion MCP OAuth connection and return the owner authorization URL.", "notionConnect", schema({}), ann(false)),
   def("go_hub_notion_search", "Search the connected Notion workspace through the existing GO Hub Notion MCP bridge.", "notionSearch", schema({ query: str }, ["query"]), ann(true)),
