@@ -9,6 +9,7 @@ import { correlateControlRoomTruth, AGENT_MISSION_ACTIONS } from "./go-hub-contr
 import { createAccessToken } from "./go-hub-oauth.mjs";
 import { createOfficeGate } from "./go-hub-office-gate.mjs";
 import { createOfficeRateLimiter, OfficeRateLimitState } from "./go-hub-office-rate-limit.mjs";
+import { createOfficePasskeyService, OfficePasskeyState } from "./go-hub-office-passkey.mjs";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
 import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
@@ -34,6 +35,7 @@ export { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 export { GoHubCentreState } from "./go-hub-centre-live.mjs";
 export { GoHubGlobalAuditLog } from "./go-hub-global-audit.mjs";
 export { OfficeRateLimitState } from "./go-hub-office-rate-limit.mjs";
+export { OfficePasskeyState } from "./go-hub-office-passkey.mjs";
 export { GoHubCounterState, GoHubCounterInboxState } from "./go-hub-counter.mjs";
 export { GoHubCounterDispatchState } from "./go-hub-counter-dispatcher.mjs";
 export { GoHubNotionLightState } from "./go-hub-notion-light.mjs";
@@ -698,6 +700,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           agentMission,
           agentMissionActions:AGENT_MISSION_ACTIONS,
           factoryEye:factoryEyeSessionsFor(env),
+          passkey:createOfficePasskeyService({ namespace:env?.GO_HUB_OFFICE_PASSKEY }),
           rateLimiter:createOfficeRateLimiter({
             namespace:env?.GO_HUB_OFFICE_RATE_LIMIT,
             memory:officeRateLimitMemory,
