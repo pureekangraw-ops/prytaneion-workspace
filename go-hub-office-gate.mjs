@@ -96,10 +96,27 @@ function sessionCookie(value, maxAge) {
 }
 
 function sameOrigin(request) {
-  const origin = String(request.headers.get("origin") || "");
-  if (!origin) return false;
+  const requestOrigin = new URL(request.url).origin;
+  const origin = String(request.headers.get("origin") || "").trim();
+  if (origin) {
+    try {
+      return new URL(origin).origin === requestOrigin;
+    } catch {
+      return false;
+    }
+  }
+
+  // Some mobile browsers omit Origin on a same-origin HTML form POST.
+  // Keep the gate fail-closed: only accept browser metadata that still
+  // proves the navigation came from this exact origin.
+  const fetchSite = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
+  if (fetchSite === "same-origin") return true;
+  if (fetchSite && fetchSite !== "none") return false;
+
+  const referer = String(request.headers.get("referer") || "").trim();
+  if (!referer) return false;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    return new URL(referer).origin === requestOrigin;
   } catch {
     return false;
   }
