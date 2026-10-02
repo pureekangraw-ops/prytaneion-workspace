@@ -21,13 +21,14 @@
     "GO Control Room live cross-system correlation surface",
     "PIXIE Visual Workbench: IDEA/REFERENCE + BRIEF/PROMPT + MAIN WORKSPACE with local render-packet preparation",
     "GO Project Viewer: read-only Hub + Factory + Updates live surface",
-    "Ticket Hub: primary create/find/store Work entry backed by Centre owner truth"
+    "Ticket Hub: primary create/find/store Work entry backed by Centre owner truth",
+    "YGGMETRO CONTROL owner-first work surface"
   ],
   "serviceWorker": {
     "file": "go-hub-sw.js",
     "mode": "go-hub-exclusive",
     "cachePrefix": "go-hub-app-",
-    "cacheGeneration": "v12-go-hub-v4-cutover",
+    "cacheGeneration": "v13-control-owner-surface",
     "autoActivate": true
   },
   "validation": {
@@ -53,6 +54,15 @@
     },
     {
       "path": "go-hub.html"
+    },
+    {
+      "path": "control.html"
+    },
+    {
+      "path": "go-hub-control-surface.css"
+    },
+    {
+      "path": "go-hub-control-surface.js"
     },
     {
       "path": "go-hub.webmanifest"
