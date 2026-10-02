@@ -112,7 +112,8 @@ test("MCP registry exposes failure evidence as a read-only lifecycle tool", asyn
   assert.equal(tool.annotations.readOnlyHint, true);
   assert.equal(tool.annotations.destructiveHint, false);
 
-  const workContext = { workId:"WORK-FAILURE-EVIDENCE", checkpointId:"CP-FAILURE-EVIDENCE" };\n  const result = await registry.callTool("go_hub_get_failure_evidence", { repository, runId: 77, workContext });
+  const workContext = { workId:"WORK-FAILURE-EVIDENCE", checkpointId:"CP-FAILURE-EVIDENCE" };
+  const result = await registry.callTool("go_hub_get_failure_evidence", { repository, runId: 77, workContext });
   assert.deepEqual(result.structuredContent, { runId: 77, failedJobs: [] });
   assert.deepEqual(calls.at(-1), {
     name: "getFailureEvidence",
