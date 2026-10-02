@@ -5,6 +5,9 @@ const OFFICE_ROOT = "/office";
 const OFFICE_LOGIN = "/office/login";
 const OFFICE_LOGOUT = "/office/logout";
 const OFFICE_SESSION = "/office/session";
+const OFFICE_AUTH_WORK_ID = "WORK-GO-HUB-OFFICE-AUTH";
+const OFFICE_AUTH_CHECKPOINT_ID = "CP-GO-HUB-OFFICE-AUTH";
+
 const OFFICE_ALLOWED = new Map([
   ["/office", new Set(["GET"])],
   ["/office/", new Set(["GET"])],
@@ -113,6 +116,29 @@ function epoch(env) {
   return String(env?.GOHUB_OFFICE_SESSION_EPOCH || "1");
 }
 
+function requestRateKey(request) {
+  return String(request.headers.get("cf-connecting-ip") || "unknown").trim() || "unknown";
+}
+
+async function recordAudit(audit, type, details = {}) {
+  if (!audit) return;
+  const event = {
+    eventId: `EV-OFFICE-${crypto.randomUUID()}`,
+    type,
+    workId: OFFICE_AUTH_WORK_ID,
+    checkpointId: OFFICE_AUTH_CHECKPOINT_ID,
+    phase: "OFFICE_AUTH",
+    targetId: "GO_HUB_OFFICE",
+    details: { source: "office-login", ...details },
+  };
+  try {
+    if (typeof audit === "function") await audit(event);
+    else if (typeof audit.append === "function") await audit.append(event);
+  } catch {
+    // Authentication must not expose audit backend details to the caller.
+  }
+}
+
 function ttlSeconds(env) {
   const raw = Number(env?.GOHUB_OFFICE_SESSION_TTL_SECONDS || 8 * 60 * 60);
   if (!Number.isFinite(raw)) return 8 * 60 * 60;
@@ -172,7 +198,7 @@ function officeShell() {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YGGMETRO Office</title></head><body><main><h1>YGGMETRO OFFICE</h1><p>Office Gate active. Work read and Agent Mission command are server-wired; Eye remains read-only pending Phase 3.</p><form method="post" action="/office/logout"><button type="submit">Logout</button></form></main></body></html>`;
 }
 
-export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null } = {}) {
+export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, rateLimiter = null, audit = null } = {}) {
   return Object.freeze({
     owns(pathname) {
       return pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
@@ -189,17 +215,41 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         if (request.method === "GET") {
           return html(loginPage());
         }
-        if (!configured(env)) return json({ code:"OFFICE_AUTH_NOT_CONFIGURED" }, 503);
-        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        if (!configured(env)) {
+          await recordAudit(audit, "OFFICE_LOGIN_DENIED", { reason: "NOT_CONFIGURED" });
+          return json({ code:"OFFICE_AUTH_NOT_CONFIGURED" }, 503);
+        }
+        if (!sameOrigin(request)) {
+          await recordAudit(audit, "OFFICE_LOGIN_DENIED", { reason: "ORIGIN" });
+          return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        }
+        const rateKey = requestRateKey(request);
+        if (rateLimiter?.check) {
+          const checked = await rateLimiter.check(rateKey);
+          if (checked?.unavailable) return json({ code:checked.code || "OFFICE_RATE_LIMIT_UNAVAILABLE" }, 503);
+          if (checked?.limited === true) {
+            await recordAudit(audit, "OFFICE_LOGIN_RATE_LIMITED", { reason: "BLOCKED" });
+            return json({ code:"OFFICE_AUTH_RATE_LIMITED" }, 429, { "retry-after":String(checked.retryAfterSeconds || 1) });
+          }
+        }
+        const failed = async reason => {
+          const recorded = rateLimiter?.recordFailure ? await rateLimiter.recordFailure(rateKey) : { limited:false };
+          if (recorded?.unavailable) return json({ code:recorded.code || "OFFICE_RATE_LIMIT_UNAVAILABLE" }, 503);
+          await recordAudit(audit, recorded?.limited ? "OFFICE_LOGIN_RATE_LIMITED" : "OFFICE_LOGIN_FAILED", { reason });
+          if (recorded?.limited) {
+            return json({ code:"OFFICE_AUTH_RATE_LIMITED" }, 429, { "retry-after":String(recorded.retryAfterSeconds || 1) });
+          }
+          return html(loginPage("OFFICE_AUTH_FAILED"), 403);
+        };
         const form = await request.formData().catch(() => null);
         const supplied = String(form?.get("passcode") || "");
         const expected = String(env.GOHUB_OFFICE_PASSCODE || "");
-        if (!supplied || supplied.length !== expected.length) {
-          return html(loginPage("OFFICE_AUTH_FAILED"), 403);
-        }
+        if (!supplied || supplied.length !== expected.length) return failed("BAD_PASSCODE");
         let diff = 0;
         for (let i = 0; i < expected.length; i += 1) diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
-        if (diff !== 0) return html(loginPage("OFFICE_AUTH_FAILED"), 403);
+        if (diff !== 0) return failed("BAD_PASSCODE");
+        if (rateLimiter?.clear) await rateLimiter.clear(rateKey);
+        await recordAudit(audit, "OFFICE_LOGIN_SUCCESS", { subject: "BIG" });
         const session = await mintSession(env);
         return new Response(null, {
           status:303,
@@ -215,6 +265,7 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
 
       if (url.pathname === OFFICE_LOGOUT) {
         if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        await recordAudit(audit, "OFFICE_LOGOUT", { subject:auth.claims.sub });
         return new Response(null, {
           status:303,
           headers:baseHeaders({
