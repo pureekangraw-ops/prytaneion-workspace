@@ -68,6 +68,10 @@
       {
         "name": "GO_HUB_BROADCAST_STATE",
         "class_name": "GoHubBroadcastState"
+      },
+      {
+        "name": "GO_HUB_CLIENT_REGISTRY",
+        "class_name": "GoHubClientRegistryState"
       }
     ]
   },
@@ -161,6 +165,12 @@
       "new_sqlite_classes": [
         "OfficeRateLimitState"
       ]
+    },
+    {
+      "tag": "v16-go-hub-client-registry",
+      "new_sqlite_classes": [
+        "GoHubClientRegistryState"
+      ]
     }
   ],
   "vars": {
@@ -198,7 +208,8 @@
       "/mcp",
       "/mcp/*",
       "/oauth/*",
-      "/.well-known/*"
+      "/.well-known/*",
+      "/internal/client-registry"
     ]
   },
   "services": [

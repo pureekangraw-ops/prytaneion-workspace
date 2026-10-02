@@ -17,6 +17,7 @@ const OFFICE_ALLOWED = new Map([
   ["/office/api/work", new Set(["GET"])],
   ["/office/api/command", new Set(["POST"])],
   ["/office/api/eye", new Set(["GET"])],
+  ["/office/api/clients", new Set(["GET"])],
 ]);
 
 function baseHeaders(extra = {}) {
@@ -246,10 +247,10 @@ function loginPage(errorCode = "") {
 }
 
 function officeShell() {
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-shell"><header class="office-top"><div><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Build · Plan · Create · Together</p></div><form method="post" action="/office/logout"><button class="office-quiet" type="submit">Logout</button></form></header><section class="office-hero"><div class="office-hero-copy"><p class="office-kicker">CURRENT DESK</p><h2>Good work.<br>Brighter tomorrow.</h2><p>พื้นที่ทำงานของ GO และบิ๊ก — หน้าบ้านเรียบ แต่ต่อกับ Work truth และ Eye ด้านหลัง</p></div><div class="office-eye" data-office-eye><span class="office-dot"></span><div><strong data-eye-state>CHECKING</strong><small data-eye-detail>Factory Eye · read only</small></div></div></section><section class="office-grid"><article><span>01</span><h3>Projects</h3><p>งานและสถานะจาก owner truth</p></article><article><span>02</span><h3>Tasks</h3><p>สิ่งที่กำลังทำและรอตรวจ</p></article><article><span>03</span><h3>Notes</h3><p>บริบทสั้นที่ต้องหยิบใช้ตอนทำงาน</p></article><article><span>04</span><h3>Observer</h3><p>ตาของ GO · read-only ก่อนเสมอ</p></article></section><section class="office-panel"><div><p class="office-kicker">OBSERVER</p><h3>GO can see the current screen</h3><p class="office-muted" data-eye-message>กำลังอ่านสถานะ Factory Eye…</p></div><button type="button" data-eye-refresh>Refresh Eye</button></section></main><script type="module" src="/go-hub-office-surface.js"></script></body></html>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-shell"><header class="office-top"><div><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Build · Plan · Create · Together</p></div><form method="post" action="/office/logout"><button class="office-quiet" type="submit">Logout</button></form></header><section class="office-hero"><div class="office-hero-copy"><p class="office-kicker">CURRENT DESK</p><h2>Good work.<br>Brighter tomorrow.</h2><p>พื้นที่ทำงานของ GO และบิ๊ก — หน้าบ้านเรียบ แต่ต่อกับ Work truth และ Eye ด้านหลัง</p></div><div class="office-eye" data-office-eye><span class="office-dot"></span><div><strong data-eye-state>CHECKING</strong><small data-eye-detail>Factory Eye · read only</small></div></div></section><section class="office-grid"><article><span>01</span><h3>Projects</h3><p>งานและสถานะจาก owner truth</p></article><article><span>02</span><h3>Tasks</h3><p>สิ่งที่กำลังทำและรอตรวจ</p></article><article><span>03</span><h3>Notes</h3><p>บริบทสั้นที่ต้องหยิบใช้ตอนทำงาน</p></article><article><span>04</span><h3>Observer</h3><p>ตาของ GO · read-only ก่อนเสมอ</p></article><article><span>05</span><h3>Clients</h3><p><strong data-client-count>—</strong> คนจากหน้าร้าน · shared client truth</p></article></section><section class="office-panel office-clients"><div><p class="office-kicker">CLIENTS</p><h3>GO Client inbox</h3><p class="office-muted" data-client-message>กำลังอ่าน Client Registry…</p><div data-client-list></div></div><button type="button" data-client-refresh>Refresh Clients</button></section><section class="office-panel"><div><p class="office-kicker">OBSERVER</p><h3>GO can see the current screen</h3><p class="office-muted" data-eye-message>กำลังอ่านสถานะ Factory Eye…</p></div><button type="button" data-eye-refresh>Refresh Eye</button></section></main><script type="module" src="/go-hub-office-surface.js"></script></body></html>`;
 }
 
-export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, rateLimiter = null, audit = null } = {}) {
+export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, clientRegistry = null, rateLimiter = null, audit = null } = {}) {
   return Object.freeze({
     owns(pathname) {
       return pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
@@ -382,6 +383,26 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
           return json(payload, response.status);
         } catch {
           return json({ code:"OFFICE_COMMAND_FAILED" }, 500);
+        }
+      }
+
+      if (url.pathname === "/office/api/clients") {
+        if (!clientRegistry || typeof clientRegistry.list !== "function") {
+          return json({ code:"OFFICE_CLIENT_REGISTRY_UNAVAILABLE" }, 503);
+        }
+        try {
+          const response = await clientRegistry.list({ limit:50 });
+          const payload = await response.clone().json().catch(() => ({}));
+          if (!response.ok) return json({ code:String(payload?.code || "OFFICE_CLIENT_READ_REJECTED") }, response.status);
+          return json({
+            ok:true,
+            source:"CLIENT_REGISTRY",
+            mode:"READ_ONLY",
+            clients:Array.isArray(payload.clients) ? payload.clients : [],
+            count:Number(payload.count || 0),
+          });
+        } catch {
+          return json({ code:"OFFICE_CLIENT_READ_FAILED" }, 500);
         }
       }
 

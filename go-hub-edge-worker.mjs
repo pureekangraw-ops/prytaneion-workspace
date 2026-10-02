@@ -9,6 +9,7 @@ import { correlateControlRoomTruth, AGENT_MISSION_ACTIONS } from "./go-hub-contr
 import { createAccessToken } from "./go-hub-oauth.mjs";
 import { createOfficeGate } from "./go-hub-office-gate.mjs";
 import { createOfficeRateLimiter, OfficeRateLimitState } from "./go-hub-office-rate-limit.mjs";
+import { createClientRegistryService, GoHubClientRegistryState } from "./go-hub-client-registry.mjs";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
 import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
@@ -34,6 +35,7 @@ export { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 export { GoHubCentreState } from "./go-hub-centre-live.mjs";
 export { GoHubGlobalAuditLog } from "./go-hub-global-audit.mjs";
 export { OfficeRateLimitState } from "./go-hub-office-rate-limit.mjs";
+export { GoHubClientRegistryState } from "./go-hub-client-registry.mjs";
 export { GoHubCounterState, GoHubCounterInboxState } from "./go-hub-counter.mjs";
 export { GoHubCounterDispatchState } from "./go-hub-counter-dispatcher.mjs";
 export { GoHubNotionLightState } from "./go-hub-notion-light.mjs";
@@ -659,6 +661,12 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
+      if (url.hostname.toLowerCase() === "go-hub.internal" && url.pathname === "/internal/client-registry") {
+        if (request.method !== "POST") return json({ code:"METHOD_NOT_ALLOWED" }, 405);
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json({ code:"INVALID_JSON" }, 400);
+        return createClientRegistryService({ namespace:env?.GO_HUB_CLIENT_REGISTRY }).upsert(body);
+      }
       const officeHost = url.hostname.toLowerCase() === "office.yggmetro.com";
       if (officeHost && url.pathname === "/") {
         const hasOfficeSession = /(?:^|;\\s*)__Host-ygg-office=/.test(String(request.headers.get("cookie") || ""));
@@ -698,6 +706,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           agentMission,
           agentMissionActions:AGENT_MISSION_ACTIONS,
           factoryEye:factoryEyeSessionsFor(env),
+          clientRegistry:createClientRegistryService({ namespace:env?.GO_HUB_CLIENT_REGISTRY }),
           rateLimiter:createOfficeRateLimiter({
             namespace:env?.GO_HUB_OFFICE_RATE_LIMIT,
             memory:officeRateLimitMemory,
