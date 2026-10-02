@@ -58,3 +58,34 @@ test("observer screenshot routes Factory Eye refs to Factory Eye storage",async(
   assert.equal(body.source,"FACTORY_EYE");
   assert.equal(body.screenshot.dataUrl,"data:image/png;base64,AA==");
 });
+
+
+test("observer latest compatibility call can read Factory Eye without WorkContext",async()=>{
+  const{createObserverEvidenceService}=await load("compat-no-work");
+  const factoryEyeNamespace=namespace("ergasterion-factory-eye-v1",async request=>{
+    assert.equal(new URL(request.url).pathname,"/latest");
+    assert.deepEqual(await request.json(),{});
+    return new Response(JSON.stringify({
+      ok:true,state:"LIVE",latest:{observationId:"OBS-COMPAT",page:{title:"PRISM"}},createsAuthority:false,
+    }),{headers:{"content-type":"application/json"}});
+  });
+  const service=createObserverEvidenceService({namespace:null,factoryEyeNamespace});
+  const response=await service.latest({});
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.equal(body.source,"FACTORY_EYE");
+  assert.equal(body.workContextBound,false);
+  assert.equal(body.latest.page.title,"PRISM");
+});
+
+test("observer latest compatibility call does not widen legacy observer without WorkContext",async()=>{
+  const{createObserverEvidenceService}=await load("compat-legacy-closed");
+  const factoryEyeNamespace=namespace("ergasterion-factory-eye-v1",async()=>new Response(JSON.stringify({ok:false,code:"FACTORY_EYE_SESSION_INACTIVE"}),{headers:{"content-type":"application/json"}}));
+  let legacyCalls=0;
+  const legacyNamespace=namespace("go-browser-observer-v1",async()=>{legacyCalls+=1;return new Response(JSON.stringify({ok:true}),{headers:{"content-type":"application/json"}})});
+  const service=createObserverEvidenceService({namespace:legacyNamespace,factoryEyeNamespace});
+  const response=await service.latest({});
+  assert.equal(response.status,400);
+  assert.deepEqual(await response.json(),{code:"WORK_CONTEXT_REQUIRED"});
+  assert.equal(legacyCalls,0);
+});
