@@ -1,7 +1,6 @@
-"use strict";
-const test=require("node:test");
-const assert=require("node:assert/strict");
-const fs=require("node:fs");
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
 
 test("GO Hub binds OLYMPUS internally and keeps yggmetro fallback",()=>{
   const wrangler=fs.readFileSync(new URL("../wrangler.go-hub.jsonc", import.meta.url),"utf8");
