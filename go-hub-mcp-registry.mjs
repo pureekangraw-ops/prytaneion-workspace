@@ -36,17 +36,17 @@ const def = (name, description, operation, inputSchema, annotations) => ({
 const definitions = [
   def("go_hub_broadcast_read", "Read the single GO Hub current broadcast used by version-aware speakers.", "broadcastRead", schema({}), ann(true)),
   def("go_hub_broadcast_activate", "GO changes the current GO Hub broadcast plate atomically; no Heimdall Pass or Work approval is required.", "broadcastActivate", schema({ program: str, version: str, hash: str, sourceRef: str }, ["program","version","hash","sourceRef"]), ann(false)),
-  def("go_hub_inspect_repository", "Inspect repository truth and tree.", "inspect", schema({ repository: str, branch: str, workContext }, ["repository","workContext"]), ann(true)),
-  def("go_hub_list_repositories", "List visible owner repositories.", "listRepositories", schema({ workContext }, ["workContext"]), ann(true)),
-  def("go_hub_read_file", "Read one UTF-8 repository file.", "readFile", schema({ repository: str, path: str, ref: str, workContext }, ["repository", "path","workContext"]), ann(true)),
+  def("go_hub_inspect_repository", "Inspect repository truth and tree.", "inspect", schema({ repository: str, branch: str, workContext }, ["repository"]), ann(true)),
+  def("go_hub_list_repositories", "List visible owner repositories.", "listRepositories", schema({ workContext }), ann(true)),
+  def("go_hub_read_file", "Read one UTF-8 repository file.", "readFile", schema({ repository: str, path: str, ref: str, workContext }, ["repository", "path"]), ann(true)),
   def("go_hub_create_branch", "Create a non-default task branch.", "createBranch", schema({ repository: str, name: str, fromSha: str, workContext }, ["repository", "name", "fromSha", "workContext"]), ann(false)),
   def("go_hub_put_file", "Create or update one file on a task branch.", "putFile", schema({ repository: str, path: str, branch: str, expectedSha: str, content: { type: "string" }, workContext }, ["repository", "path", "branch", "content", "workContext"]), ann(false)),
   def("go_hub_delete_file", "Delete one file using exact blob SHA.", "deleteFile", schema({ repository: str, path: str, branch: str, expectedSha: str, workContext }, ["repository", "path", "branch", "expectedSha", "workContext"]), ann(false, true)),
-  def("go_hub_compare_refs", "Compare base and head refs.", "compare", schema({ repository: str, base: str, head: str, workContext }, ["repository", "base", "head","workContext"]), ann(true)),
+  def("go_hub_compare_refs", "Compare base and head refs.", "compare", schema({ repository: str, base: str, head: str, workContext }, ["repository", "base", "head"]), ann(true)),
   def("go_hub_open_pull_request", "Open or update a pull request.", "openPullRequest", schema({ repository: str, branch: str, base: str, title: str, body: { type: "string" }, workContext }, ["repository", "branch", "base", "title", "workContext"]), ann(false)),
-  def("go_hub_get_pull_request", "Read pull-request truth.", "getPullRequest", schema({ repository: str, number: int, workContext }, ["repository", "number","workContext"]), ann(true)),
-  def("go_hub_get_ci", "Read exact-head CI evidence.", "getCI", schema({ repository: str, sha: str, workContext }, ["repository", "sha","workContext"]), ann(true)),
-  def("go_hub_get_failure_evidence", "Read failed jobs and concise logs.", "getFailureEvidence", schema({ repository: str, runId: int, workContext }, ["repository", "runId","workContext"]), ann(true)),
+  def("go_hub_get_pull_request", "Read pull-request truth.", "getPullRequest", schema({ repository: str, number: int, workContext }, ["repository", "number"]), ann(true)),
+  def("go_hub_get_ci", "Read exact-head CI evidence.", "getCI", schema({ repository: str, sha: str, workContext }, ["repository", "sha"]), ann(true)),
+  def("go_hub_get_failure_evidence", "Read failed jobs and concise logs.", "getFailureEvidence", schema({ repository: str, runId: int, workContext }, ["repository", "runId"]), ann(true)),
   def("go_hub_rerun_failed_jobs", "Rerun failed workflow jobs.", "rerunFailed", schema({ repository: str, runId: int, workContext }, ["repository", "runId", "workContext"]), ann(false)),
   def("go_hub_factory_v4", "Operate the durable V4 Factory project for the same Centre Work. Work identity comes only from Work ID + Checkpoint ID.", "factoryV4", schema({ action: { type: "string", enum: ["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"] }, form: obj, reality: obj, inspection: obj, plan: str, result: obj, evidence: obj, checkId: str, status: str, reason: str, file: obj, ref: str, summary: str, workContext }, ["action", "workContext"]), ann(false)),
   def("go_hub_ergasterion_health", "Read ERGASTERION authenticated transport health from the deployed Factory Worker.", "ergasterionHealth", schema({}), ann(true)),
@@ -64,7 +64,7 @@ const definitions = [
   def("go_hub_light_centre_v4_action", "LIGHT may inspect, claim, wait, resume, or open a Factory-scoped Work Pass for an existing V4 Work it holds. This cannot create Work, widen destinations, or Return.", "lightCentreV4Action", schema({ action: { type: "string", enum: ["v4_inspect", "v4_claim", "v4_wait", "v4_resume", "v4_open_pass"] }, workId: str, checkpointId: str, reason: str, resumeFrom: str }, ["action", "workId", "checkpointId"]), ann(false)),
   def("go_hub_light_factory_v4_action", "LIGHT may operate Factory V4 only for the same LIGHT-held Work after a Factory-scoped active Pass. Merge/delete remain unavailable.", "lightFactoryV4Action", schema({ action: { type: "string", enum: ["start", "inspect", "record_reality", "set_inspection", "set_plan", "advance", "update_check", "safe_stop", "finish"] }, form: obj, reality: obj, inspection: obj, plan: str, result: obj, evidence: obj, checkId: str, status: str, reason: str, file: obj, ref: str, summary: str, workContext }, ["action", "workContext"]), ann(false)),
   def("go_hub_merge_pull_request", "Merge through GitHub owner truth after exact-head CI. Inside an active Work Tablet, merge availability is decided by backend policy; the Agent does not select or expand permissions.", "mergePullRequest", schema({ repository: str, number: int, expectedHeadSha: str, method: { type: "string", enum: ["merge", "squash", "rebase"] }, workContext }, ["repository", "number", "expectedHeadSha", "workContext"]), ann(false, true)),
-  def("go_hub_get_workflow_runs", "Observe workflow and deployment runs.", "getWorkflowRuns", schema({ repository: str, sha: str, workContext }, ["repository", "sha","workContext"]), ann(true)),
+  def("go_hub_get_workflow_runs", "Observe workflow and deployment runs.", "getWorkflowRuns", schema({ repository: str, sha: str, workContext }, ["repository", "sha"]), ann(true)),
   def("go_hub_list_workflow_artifacts", "List GitHub Actions artifacts for one workflow run, or inventory recent repository artifacts when runId is omitted.", "listWorkflowArtifacts", schema({ repository: str, runId: int, workContext }, ["repository","workContext"]), ann(true)),
   def("go_hub_archive_workflow_artifact", "Download one GitHub Actions artifact server-side, optionally extract one entry, and archive it to governed Google Drive with hash metadata and readback.", "archiveWorkflowArtifact", schema({ repository: str, runId: int, artifactId: int, parentId: str, entrySuffix: str, destinationName: str, mimeType: str, workContext }, ["repository", "runId", "artifactId", "workContext"]), ann(false)),
   def("go_hub_audit_history", "Read immutable global GO Hub audit events, optionally filtered by Work ID.", "auditHistory", schema({ workId: str, afterSequence: revision, limit: { type: "integer", minimum: 1, maximum: 200 } }), ann(true)),
@@ -214,12 +214,8 @@ function speakerError(result) {
   return new Response(JSON.stringify(result), { status: 409, headers: { "content-type": "application/json; charset=utf-8" } });
 }
 
-function definitionRequiresWorkContext(definition) {
-  return Boolean(
-    definition?.inputSchema?.properties?.workContext &&
-    Array.isArray(definition?.inputSchema?.required) &&
-    definition.inputSchema.required.includes("workContext")
-  );
+function definitionUsesWorkContext(definition) {
+  return Boolean(definition?.inputSchema?.properties?.workContext);
 }
 
 export function createMcpRegistry({ lifecycle, speaker = null, currentTools = null, enforceCardAccess = false, cardAccessBypass = null } = {}) {
@@ -237,7 +233,7 @@ export function createMcpRegistry({ lifecycle, speaker = null, currentTools = nu
       assertLifecycle(name, args);
       const bypassCardAccess = typeof cardAccessBypass === "function" &&
         cardAccessBypass({ name, args, definition }) === true;
-      if (enforceCardAccess && definitionRequiresWorkContext(definition) && !bypassCardAccess) {
+      if (enforceCardAccess && definitionUsesWorkContext(definition) && !bypassCardAccess) {
         await assertCardAccess(lifecycle, name, args);
       }
       let broadcastReadback = null;
