@@ -61,7 +61,7 @@ test("GO Hub dedicated service worker is active from the root and legacy-free", 
 
 test("GO Hub runtime assets cannot stay stale across a shell contract deploy", () => {
   const source = read("go-hub-sw.js");
-  assert.match(source, /v11-heimdall-authority-boundary/);
+  assert.match(source, /v13-control-owner-surface/);
   assert.match(source, /await fetch\(event\.request\)/);
   assert.match(source, /cache\.put\(event\.request, response\.clone\(\)\)/);
   assert.match(source, /const cached = await caches\.match\(event\.request\)/);
