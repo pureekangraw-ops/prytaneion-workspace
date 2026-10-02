@@ -762,7 +762,7 @@ jobs:
           });
 
           let inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId, workContext:context(),
+            action:"v4_inspect", workId, checkpointId,
           });
           if (inspected.proof?.work?.status !== "OPEN" || inspected.proof?.work?.workId !== workId) {
             throw new Error("V4_INSPECT_LIVE_WORK_FAILED");
@@ -775,7 +775,7 @@ jobs:
             destinations:["factory"], workContext:context(),
           });
           inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId, workContext:context(),
+            action:"v4_inspect", workId, checkpointId,
           });
           if (inspected.proof?.work?.pass?.kind !== "WORK" || inspected.proof?.work?.pass?.state !== "ACTIVE") {
             throw new Error("WORK_PASS_RUNTIME_FAILED");
@@ -955,7 +955,7 @@ jobs:
             workContext:context(),
           });
           inspected = await mcp("/mcp", ownerToken, "go_hub_centre_live_action", {
-            action:"v4_inspect", workId, checkpointId, workContext:context(),
+            action:"v4_inspect", workId, checkpointId,
           });
           if (inspected.proof?.work?.pass?.kind !== "EMERGENCY" ||
               Date.parse(inspected.proof?.work?.pass?.expiresAt || "") <= Date.now()) {
