@@ -665,6 +665,9 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         url.pathname = hasOfficeSession ? "/office" : "/office/login";
         request = new Request(url.toString(), request);
       }
+      if (!officeHost && url.pathname === "/" && env?.ASSETS?.fetch) {
+        return env.ASSETS.fetch(request);
+      }
       if (url.pathname === "/office" || url.pathname.startsWith("/office/")) {
         const centreLive = createCentreLiveService({ namespace:env?.GO_HUB_CENTRE_STATE });
         const counter = createCounterService({
