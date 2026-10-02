@@ -19,6 +19,7 @@ test("GO Hub API routes run the edge Worker before SPA asset fallback", () => {
     requireOwnerPasscode: true,
   });
   assert.deepEqual(config.assets?.run_worker_first, [
+    "/",
     "/office",
     "/office/*",
     "/hub/api/centre/*",
