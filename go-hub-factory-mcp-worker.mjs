@@ -1064,6 +1064,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           cloudflareHealth: () => cloudflare.health(),
           cloudflareListWorkers: () => cloudflare.listWorkers(),
           cloudflareInspectWorker: input => cloudflare.inspectWorker(input),
+          cloudflareDeployWorker: input => runMutation("cloudflare.deploy_worker", input, () => cloudflare.deployWorker(input)),
           notionStatus: () => notionLight.status(),
           notionConnect: () => notionLight.prepare({ hubOrigin:url.origin }),
           notionSearch: input => notionLight.search(input),
