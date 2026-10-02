@@ -122,6 +122,40 @@ function sameOrigin(request) {
   }
 }
 
+function originDiagnostics(request) {
+  const requestOrigin = new URL(request.url).origin;
+  const origin = String(request.headers.get("origin") || "").trim();
+  let originClass = "ABSENT";
+  if (origin) {
+    if (origin.toLowerCase() === "null") {
+      originClass = "NULL";
+    } else {
+      try {
+        originClass = new URL(origin).origin === requestOrigin ? "SAME" : "OTHER";
+      } catch {
+        originClass = "INVALID";
+      }
+    }
+  }
+
+  const fetchSiteRaw = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
+  const fetchSite = ["same-origin", "same-site", "cross-site", "none"].includes(fetchSiteRaw)
+    ? fetchSiteRaw
+    : (fetchSiteRaw ? "other" : "absent");
+
+  const referer = String(request.headers.get("referer") || "").trim();
+  let refererClass = "ABSENT";
+  if (referer) {
+    try {
+      refererClass = new URL(referer).origin === requestOrigin ? "SAME" : "OTHER";
+    } catch {
+      refererClass = "INVALID";
+    }
+  }
+
+  return { originClass, fetchSite, refererClass };
+}
+
 function configured(env) {
   return Boolean(
     String(env?.GOHUB_OFFICE_PASSCODE || "").trim() &&
@@ -237,7 +271,7 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
           return json({ code:"OFFICE_AUTH_NOT_CONFIGURED" }, 503);
         }
         if (!sameOrigin(request)) {
-          await recordAudit(audit, "OFFICE_LOGIN_DENIED", { reason: "ORIGIN" });
+          await recordAudit(audit, "OFFICE_LOGIN_DENIED", { reason: "ORIGIN", ...originDiagnostics(request) });
           return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
         }
         const rateKey = requestRateKey(request);
