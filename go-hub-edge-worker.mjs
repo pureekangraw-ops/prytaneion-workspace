@@ -5,9 +5,10 @@ import { createFactoryActionService, createFactoryV4Service } from "./go-hub-fac
 import { createCloudflareService } from "./go-hub-cloudflare-service.mjs";
 import { createDeploymentProvenanceReader } from "./go-hub-deployment-provenance.mjs";
 import { createProjectStatusReadService } from "./go-hub-project-status-service.mjs";
-import { correlateControlRoomTruth } from "./go-hub-control-room.js";
+import { correlateControlRoomTruth, AGENT_MISSION_ACTIONS } from "./go-hub-control-room.js";
 import { createAccessToken } from "./go-hub-oauth.mjs";
 import { createOfficeGate } from "./go-hub-office-gate.mjs";
+import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
 import { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 import { createCentreLiveService } from "./go-hub-centre-live.mjs";
@@ -654,8 +655,36 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
-      const officeGate = createOfficeGate();
-      if (officeGate.owns(url.pathname)) {
+      if (url.pathname === "/office" || url.pathname.startsWith("/office/")) {
+        const centreLive = createCentreLiveService({ namespace:env?.GO_HUB_CENTRE_STATE });
+        const counter = createCounterService({
+          namespace:env?.GO_HUB_COUNTER_STATE,
+          inboxNamespace:env?.GO_HUB_COUNTER_INBOX,
+        });
+        const dispatch = createCounterDispatchService({
+          namespace:env?.GO_HUB_COUNTER_DISPATCH_STATE,
+          hubOrigin:url.origin,
+        });
+        const notionLight = createNotionLightService({ namespace:env?.GO_HUB_NOTION_LIGHT_STATE });
+        const counterDispatch = createCounterDispatchLifecycle({
+          counter,
+          dispatch,
+          notionLight,
+          hubOrigin:url.origin,
+        });
+        const lighthouseControlPort = createLighthouseControlPortMcpService({
+          namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS,
+        });
+        const agentMission = createAgentMissionService({
+          centreLive,
+          counterDispatch,
+          boardRead:() => lighthouseControlPort.boardRead(),
+        });
+        const officeGate = createOfficeGate({
+          centreLive,
+          agentMission,
+          agentMissionActions:AGENT_MISSION_ACTIONS,
+        });
         return officeGate.fetch(request, env);
       }
       if (url.pathname === LIGHT_MCP_OWNER_PATH) {
