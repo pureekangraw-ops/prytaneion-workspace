@@ -1100,7 +1100,7 @@ jobs:
               jsonrpc: "2.0",
               id: 1,
               method: "tools/call",
-              params: { name: "go_hub_drive_health", arguments: { workContext } },
+              params: { name: "go_hub_drive_health", arguments: {} },
             }),
           });
           const payload = await response.json().catch(() => null);
