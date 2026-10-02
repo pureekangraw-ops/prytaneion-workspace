@@ -8,6 +8,8 @@ import { createProjectStatusReadService } from "./go-hub-project-status-service.
 import { correlateControlRoomTruth, AGENT_MISSION_ACTIONS } from "./go-hub-control-room.js";
 import { createAccessToken } from "./go-hub-oauth.mjs";
 import { createOfficeGate } from "./go-hub-office-gate.mjs";
+import { createOfficeRateLimiter, OfficeRateLimitState } from "./go-hub-office-rate-limit.mjs";
+import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
 import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
 import { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
@@ -31,6 +33,7 @@ export { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
 export { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 export { GoHubCentreState } from "./go-hub-centre-live.mjs";
 export { GoHubGlobalAuditLog } from "./go-hub-global-audit.mjs";
+export { OfficeRateLimitState } from "./go-hub-office-rate-limit.mjs";
 export { GoHubCounterState, GoHubCounterInboxState } from "./go-hub-counter.mjs";
 export { GoHubCounterDispatchState } from "./go-hub-counter-dispatcher.mjs";
 export { GoHubNotionLightState } from "./go-hub-notion-light.mjs";
@@ -49,6 +52,7 @@ const PROJECT_VIEWER_STATUS_PATH = "/hub/api/centre/project-viewer-status";
 const LIGHT_MCP_OWNER_PATH = "/hub/light-mcp";
 const LIGHT_MCP_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const encoder = new TextEncoder();
+const officeRateLimitMemory = new Map();
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -182,7 +186,7 @@ function observerSessionsFor(injected, env) {
       grantScreenshot:input => call("grant-screenshot", input),
       consumeScreenshot:input => call("consume-screenshot", input),
       storeScreenshot:input => call("store-screenshot", input),
-      latest:() => call("latest"),
+      latest:input => call("latest", input),
       screenshot:input => call("screenshot", input),
     });
   }
@@ -218,7 +222,7 @@ function factoryEyeSessionsFor(env) {
       receipt:input => call("receipt", input),
       pullCommands:input => call("commands", input),
       stop:input => call("stop", input),
-      latest:() => call("latest"),
+      latest:input => call("latest", input),
       screenshot:input => call("screenshot", input),
     });
   }
@@ -685,6 +689,11 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           agentMission,
           agentMissionActions:AGENT_MISSION_ACTIONS,
           factoryEye:factoryEyeSessionsFor(env),
+          rateLimiter:createOfficeRateLimiter({
+            namespace:env?.GO_HUB_OFFICE_RATE_LIMIT,
+            memory:officeRateLimitMemory,
+          }),
+          audit:createGlobalAuditService({ namespace:env?.GO_HUB_GLOBAL_AUDIT }),
         });
         return officeGate.fetch(request, env);
       }
