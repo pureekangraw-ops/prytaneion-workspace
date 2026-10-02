@@ -43,3 +43,23 @@ test("Unknown /office route is denied before delegate", async () => {
   assert.deepEqual(await response.json(), { code:"OFFICE_ROUTE_DENIED" });
   assert.equal(delegated, 0);
 });
+
+
+test("office.yggmetro.com root enters Office Gate instead of delegating GO Hub index", async () => {
+  let delegated = 0;
+  const delegate = { async fetch() { delegated += 1; return new Response("delegate"); } };
+  const factoryMcp = { async fetch() { return new Response("mcp"); } };
+  const { createEdgeWorkerHandler } = await import(workerUrl + "?office-host-root=" + Date.now());
+  const handler = createEdgeWorkerHandler({ delegate, factoryMcp });
+  const response = await handler.fetch(
+    new Request("https://office.yggmetro.com/"),
+    {
+      GOHUB_OFFICE_PASSCODE:"office-secret",
+      GOHUB_OFFICE_SESSION_KEY:"0123456789abcdef0123456789abcdef",
+      GOHUB_OFFICE_SESSION_EPOCH:"1",
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /YGG METRO/);
+  assert.equal(delegated, 0);
+});
