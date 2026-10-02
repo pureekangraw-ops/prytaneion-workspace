@@ -30,16 +30,15 @@ test("V4 deploy smoke outfits the existing Work with current HERMES card contrac
 });
 
 
-test("all post-deploy governed smoke calls stay bound to one WorkContext", () => {
+test("post-deploy smoke respects each tool's declared contract instead of injecting WorkContext", () => {
   const workflow = fs.readFileSync(".github/workflows/go-hub-deploy.yml", "utf8");
-  assert.match(workflow, /const governedArgs = \{/);
-  assert.match(workflow, /workContext:args\?\.workContext \|\| context\(\)/);
+  assert.match(workflow, /const governedArgs = \{ \.\.\.\(args \|\| \{\}\) \};/);
+  assert.doesNotMatch(workflow, /workContext:args\?\.workContext \|\| context\(\)/);
   assert.match(workflow, /params:\{ name, arguments:governedArgs \}/);
-  assert.match(workflow, /"go_hub_observer_latest",[\s\S]*"go_hub_drive_health"/);
-  assert.match(workflow, /name: "go_hub_observer_latest", arguments: \{ workContext \}/);
-  assert.match(workflow, /name: "go_hub_drive_health", arguments: \{ workContext \}/);
-  assert.doesNotMatch(workflow, /name: "go_hub_observer_latest", arguments: \{\}/);
-  assert.doesNotMatch(workflow, /name: "go_hub_drive_health", arguments: \{\}/);
+  assert.match(workflow, /go_hub_maintenance"[\s\S]{0,1400}workContext:context\(\)/);
+  assert.match(workflow, /go_hub_factory_v4"[\s\S]{0,300}workContext:context\(\)/);
+  assert.match(workflow, /go_hub_heimdall_pass"[\s\S]{0,300}workContext:context\(\)/);
+  assert.doesNotMatch(workflow, /go_hub_centre_live_action"[\s\S]{0,180}workContext:context\(\)/);
 });
 
 
