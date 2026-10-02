@@ -74,6 +74,36 @@ test("Office login creates an HttpOnly Secure SameSite session and private respo
   assert.doesNotMatch(await office.text(), /GOHUB_OFFICE_SESSION_KEY|office-secret/);
 });
 
+test("Office login accepts a same-origin mobile form POST when Origin is omitted", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?mobile-origin=" + Date.now());
+  const gate = createOfficeGate();
+  const response = await gate.fetch(request("/office/login", {
+    method:"POST",
+    headers:{
+      "sec-fetch-site":"same-origin",
+      "content-type":"application/x-www-form-urlencoded",
+    },
+    body:new URLSearchParams({ passcode:"office-secret" }),
+  }), env());
+  assert.equal(response.status, 303);
+  assert.match(response.headers.get("set-cookie") || "", /__Host-ygg-office=/);
+});
+
+test("Office login still rejects a cross-site POST when Origin is omitted", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?mobile-cross-site=" + Date.now());
+  const gate = createOfficeGate();
+  const response = await gate.fetch(request("/office/login", {
+    method:"POST",
+    headers:{
+      "sec-fetch-site":"cross-site",
+      "content-type":"application/x-www-form-urlencoded",
+    },
+    body:new URLSearchParams({ passcode:"office-secret" }),
+  }), env());
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { code:"OFFICE_ORIGIN_DENIED" });
+});
+
 test("Office login rejects cross-origin and wrong credentials without leaking secrets", async () => {
   const { createOfficeGate } = await import(gateUrl + "?loginfail=" + Date.now());
   const gate = createOfficeGate();
