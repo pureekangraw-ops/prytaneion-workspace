@@ -7,6 +7,10 @@ const OFFICE_LOGOUT = "/office/logout";
 const OFFICE_SESSION = "/office/session";
 const OFFICE_AUTH_WORK_ID = "WORK-GO-HUB-OFFICE-AUTH";
 const OFFICE_AUTH_CHECKPOINT_ID = "CP-GO-HUB-OFFICE-AUTH";
+const OFFICE_ASSET_ROOT = "/office/api/assets";
+const OFFICE_ASSET_PREFIX = "office/";
+const OFFICE_ASSET_MAX_BYTES = 10 * 1024 * 1024;
+const OFFICE_ASSET_TYPES = new Set(["image/png","image/jpeg","image/webp"]);
 
 const OFFICE_ALLOWED = new Map([
   ["/office", new Set(["GET"])],
@@ -17,6 +21,7 @@ const OFFICE_ALLOWED = new Map([
   ["/office/api/work", new Set(["GET"])],
   ["/office/api/command", new Set(["POST"])],
   ["/office/api/eye", new Set(["GET"])],
+  [OFFICE_ASSET_ROOT, new Set(["GET","POST"])],
   ["/office/passkey/status", new Set(["GET"])],
   ["/office/passkey/register/options", new Set(["POST"])],
   ["/office/passkey/register/verify", new Set(["POST"])],
@@ -180,6 +185,32 @@ function requestRateKey(request) {
   return String(request.headers.get("cf-connecting-ip") || "unknown").trim() || "unknown";
 }
 
+function safeAssetName(value) {
+  const cleaned = String(value || "asset").trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return cleaned.slice(0, 120) || "asset";
+}
+
+function assetKeyAllowed(key) {
+  const value = String(key || "");
+  return value.startsWith(OFFICE_ASSET_PREFIX) && !value.includes("..") && !value.includes("\\");
+}
+
+async function sha256Hex(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function officeAssetSummary(object) {
+  return {
+    key:String(object?.key || ""),
+    size:Number(object?.size || 0),
+    etag:String(object?.etag || ""),
+    uploaded:object?.uploaded ? new Date(object.uploaded).toISOString() : null,
+    httpMetadata:object?.httpMetadata || null,
+    customMetadata:object?.customMetadata || null,
+  };
+}
+
 async function recordAudit(audit, type, details = {}) {
   if (!audit) return;
   const event = {
@@ -255,7 +286,7 @@ function loginPage(errorCode = "") {
 }
 
 function officeShell() {
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-shell"><header class="office-top"><div><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Build · Plan · Create · Together</p></div><form method="post" action="/office/logout"><button class="office-quiet" type="submit">Logout</button></form></header><section class="office-hero"><div class="office-hero-copy"><p class="office-kicker">CURRENT DESK</p><h2>Good work.<br>Brighter tomorrow.</h2><p>พื้นที่ทำงานของ GO และบิ๊ก — หน้าบ้านเรียบ แต่ต่อกับ Work truth และ Eye ด้านหลัง</p></div><div class="office-eye" data-office-eye><span class="office-dot"></span><div><strong data-eye-state>CHECKING</strong><small data-eye-detail>Factory Eye · read only</small></div></div></section><section class="office-grid"><article><span>01</span><h3>Projects</h3><p>งานและสถานะจาก owner truth</p></article><article><span>02</span><h3>Tasks</h3><p>สิ่งที่กำลังทำและรอตรวจ</p></article><article><span>03</span><h3>Notes</h3><p>บริบทสั้นที่ต้องหยิบใช้ตอนทำงาน</p></article><article><span>04</span><h3>Observer</h3><p>ตาของ GO · read-only ก่อนเสมอ</p></article></section><section class="office-panel"><div><p class="office-kicker">SECURITY</p><h3>Passkey</h3><p class="office-muted" data-passkey-status>ตรวจสถานะ Passkey…</p></div><button type="button" data-passkey-register>Create Passkey</button></section><section class="office-panel"><div><p class="office-kicker">OBSERVER</p><h3>GO can see the current screen</h3><p class="office-muted" data-eye-message>กำลังอ่านสถานะ Factory Eye…</p></div><button type="button" data-eye-refresh>Refresh Eye</button></section></main><script type="module" src="/go-hub-office-surface.js"></script></body></html>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-shell"><header class="office-top"><div><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Build · Plan · Create · Together</p></div><form method="post" action="/office/logout"><button class="office-quiet" type="submit">Logout</button></form></header><section class="office-hero"><div class="office-hero-copy"><p class="office-kicker">CURRENT DESK</p><h2>Good work.<br>Brighter tomorrow.</h2><p>พื้นที่ทำงานของ GO และบิ๊ก — หน้าบ้านเรียบ แต่ต่อกับ Work truth และ Eye ด้านหลัง</p></div><div class="office-eye" data-office-eye><span class="office-dot"></span><div><strong data-eye-state>CHECKING</strong><small data-eye-detail>Factory Eye · read only</small></div></div></section><section class="office-grid"><article><span>01</span><h3>Projects</h3><p>งานและสถานะจาก owner truth</p></article><article><span>02</span><h3>Tasks</h3><p>สิ่งที่กำลังทำและรอตรวจ</p></article><article><span>03</span><h3>Notes</h3><p>บริบทสั้นที่ต้องหยิบใช้ตอนทำงาน</p></article><article><span>04</span><h3>Observer</h3><p>ตาของ GO · read-only ก่อนเสมอ</p></article></section><section class="office-panel office-assets" data-office-assets><div><p class="office-kicker">ASSETS</p><h3>Office files</h3><p class="office-muted">เก็บภาพและไฟล์ใช้งานใน R2 · private ผ่าน Office session</p><form data-asset-upload><input type="file" name="file" accept="image/png,image/jpeg,image/webp" required><select name="category"><option value="uploads">Uploads</option><option value="visuals">Visuals</option><option value="projects">Projects</option><option value="references">References</option></select><button type="submit">Upload</button></form><p class="office-muted" data-asset-status>พร้อมรับไฟล์</p><ul class="office-asset-list" data-asset-list></ul></div></section><section class="office-panel"><div><p class="office-kicker">SECURITY</p><h3>Passkey</h3><p class="office-muted" data-passkey-status>ตรวจสถานะ Passkey…</p></div><button type="button" data-passkey-register>Create Passkey</button></section><section class="office-panel"><div><p class="office-kicker">OBSERVER</p><h3>GO can see the current screen</h3><p class="office-muted" data-eye-message>กำลังอ่านสถานะ Factory Eye…</p></div><button type="button" data-eye-refresh>Refresh Eye</button></section></main><script type="module" src="/go-hub-office-surface.js"></script></body></html>`;
 }
 
 export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, passkey = null, rateLimiter = null, audit = null } = {}) {
@@ -385,6 +416,73 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
           subject:auth.claims.sub,
           expiresAt:new Date(auth.claims.exp * 1000).toISOString(),
         });
+      }
+
+      if (url.pathname === OFFICE_ASSET_ROOT) {
+        if (!env?.OFFICE_ASSETS || typeof env.OFFICE_ASSETS.get !== "function") {
+          return json({ code:"OFFICE_ASSETS_NOT_CONFIGURED" }, 503);
+        }
+        if (request.method === "GET") {
+          const key = String(url.searchParams.get("key") || "").trim();
+          if (key) {
+            if (!assetKeyAllowed(key)) return json({ code:"OFFICE_ASSET_KEY_DENIED" }, 400);
+            const object = await env.OFFICE_ASSETS.get(key);
+            if (!object) return json({ code:"OFFICE_ASSET_NOT_FOUND" }, 404);
+            if (url.searchParams.get("raw") === "1") {
+              return new Response(object.body, {
+                status:200,
+                headers:baseHeaders({
+                  "content-type":String(object.httpMetadata?.contentType || "application/octet-stream"),
+                  "content-length":String(object.size || ""),
+                  "etag":String(object.etag || ""),
+                }),
+              });
+            }
+            return json({ ok:true, asset:officeAssetSummary(object) });
+          }
+          const listed = await env.OFFICE_ASSETS.list({ prefix:OFFICE_ASSET_PREFIX, limit:100, include:["httpMetadata","customMetadata"] });
+          return json({ ok:true, assets:(listed?.objects || []).map(officeAssetSummary), truncated:listed?.truncated === true });
+        }
+
+        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        const form = await request.formData().catch(() => null);
+        const file = form?.get("file");
+        if (!file || typeof file.arrayBuffer !== "function") return json({ code:"OFFICE_ASSET_FILE_REQUIRED" }, 400);
+        const type = String(file.type || "").toLowerCase();
+        if (!OFFICE_ASSET_TYPES.has(type)) return json({ code:"OFFICE_ASSET_TYPE_DENIED" }, 415);
+        const size = Number(file.size || 0);
+        if (!Number.isFinite(size) || size <= 0 || size > OFFICE_ASSET_MAX_BYTES) {
+          return json({ code:"OFFICE_ASSET_SIZE_DENIED", maxBytes:OFFICE_ASSET_MAX_BYTES }, 413);
+        }
+        const categoryRaw = String(form.get("category") || "uploads").trim().toLowerCase();
+        const category = new Set(["uploads","visuals","projects","references"]).has(categoryRaw) ? categoryRaw : "uploads";
+        const originalName = safeAssetName(file.name || "asset");
+        const bytes = await file.arrayBuffer();
+        const hash = await sha256Hex(bytes);
+        const now = new Date().toISOString();
+        const day = now.slice(0, 10).replace(/-/g, "/");
+        const key = `office/${category}/${day}/${crypto.randomUUID()}-${originalName}`;
+        const assetId = `ASSET-${hash.slice(0, 16)}`;
+        await env.OFFICE_ASSETS.put(key, bytes, {
+          httpMetadata:{ contentType:type },
+          customMetadata:{
+            assetId,
+            originalName,
+            source:"OFFICE",
+            category,
+            uploadedAt:now,
+            sha256:hash,
+            subject:String(auth.claims.sub || "BIG"),
+          },
+        });
+        const readback = typeof env.OFFICE_ASSETS.head === "function"
+          ? await env.OFFICE_ASSETS.head(key)
+          : await env.OFFICE_ASSETS.get(key);
+        if (!readback || Number(readback.size || 0) !== size || String(readback.customMetadata?.sha256 || "") !== hash) {
+          return json({ code:"OFFICE_ASSET_READBACK_MISMATCH" }, 502);
+        }
+        await recordAudit(audit, "OFFICE_ASSET_UPLOADED", { assetId, key, size, type, sha256:hash });
+        return json({ ok:true, asset:officeAssetSummary(readback) }, 201);
       }
 
       if (url.pathname === OFFICE_ROOT || url.pathname === OFFICE_ROOT + "/") {
