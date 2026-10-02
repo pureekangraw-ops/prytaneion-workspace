@@ -12,6 +12,9 @@ const release = JSON.parse(read("RELEASE_MANIFEST.json"));
 const activeHubFiles = [
   "index.html",
   "go-hub.html",
+  "control.html",
+  "go-hub-control-surface.css",
+  "go-hub-control-surface.js",
   "go-hub.webmanifest",
   "project-viewer.html",
   "project-viewer.css",
