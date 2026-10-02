@@ -1100,13 +1100,6 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         : null;
       registry = createMcpRegistry({
         enforceCardAccess: String(env?.GO_HUB_CARD_ACCESS_V2 || "").trim() === "1",
-        workContextOptionalTools: [
-          "go_hub_cloudflare_health",
-          "go_hub_ergasterion_health",
-          "go_hub_agent_persona_room",
-          "go_hub_agent_lens_room",
-          "go_hub_agent_fitting_room",
-        ],
         cardAccessBypass: ({ name }) =>
           authenticatedActor === "LIGHT" && LIGHT_REPOSITORY_READ_TOOLS.has(name),
         lifecycle: registryLifecycle,
