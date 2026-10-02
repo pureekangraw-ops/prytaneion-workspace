@@ -1,10 +1,82 @@
-const q=s=>document.querySelector(s);const put=(s,v)=>{const n=q(s);if(n)n.textContent=v==null||v===""?"UNKNOWN":String(v)};let work=null;
-async function json(url,init){const r=await fetch(url,init);const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b.code||b.error||"REQUEST_FAILED");return b}
-function statusOf(p={}){return p.observations?.overall||p.overall||p.status||"UNKNOWN"}
-function render(p={}){const o=p.observations||{};put("[data-control-room-status]",statusOf(p));put("[data-control-room-work]",p.workId||p.work?.workId||work?.workId);put("[data-control-room-checkpoint]",p.checkpointId||p.work?.checkpointId||work?.checkpointId);put("[data-control-room-centre]",o.sourceStatus?.centre||p.work?.status);put("[data-control-room-project]",o.sourceStatus?.project);put("[data-control-room-factory]",o.sourceStatus?.factory);put("[data-control-room-board]",o.board?.status);put("[data-control-room-cloudflare]",o.sourceStatus?.cloudflare);put("[data-control-room-provenance]",o.deploymentProvenance?.status);put("[data-control-room-updated]",p.observedAt||p.checkedAt||new Date().toLocaleTimeString("th-TH"));const holder=p.work?.holder||p.holder||"LIGHT";put("[data-holder]",holder);put("[data-work-title]",p.work?.name||p.work?.task||"งานปัจจุบัน");put("[data-work-now]",holder?holder+" กำลังถือ Work นี้":"พร้อมรับงานต่อ");put("[data-count-active]",["ACTIVE","ON PROCESS","DOING","PROCESSING","LIVE"].includes(String(p.work?.status||o.sourceStatus?.centre||"").toUpperCase())?1:0);put("[data-count-complete]",String(p.work?.status||"").toUpperCase()==="COMPLETE"?1:0);const attention=["CONFLICT","MISMATCH","BLOCKED","UNKNOWN"].includes(String(statusOf(p)).toUpperCase())?1:0;put("[data-count-decision]",attention)}
-async function restore(){try{const b=await json("/hub/api/centre/restore");work=b.work||b;if(work?.workId){await refresh()}else render(b)}catch(e){put("[data-control-room-status]","UNKNOWN");q("[data-control-room-error]").textContent=e.message}}
-async function refresh(){if(!work?.workId)return;try{const x=new URLSearchParams({workId:work.workId,checkpointId:work.checkpointId||""});const b=await json("/hub/api/centre/control-room?"+x);b.work=b.work||work;render(b);q("[data-control-room-error]").textContent=""}catch(e){q("[data-control-room-error]").textContent=e.message}}
-q("[data-control-room-refresh]")?.addEventListener("click",refresh);q("[data-details-toggle]")?.addEventListener("click",()=>{const d=q("[data-technical]");d.hidden=!d.hidden;q("[data-details-toggle]").textContent=d.hidden?"ดูรายละเอียด":"ซ่อนรายละเอียด"});
-const dialog=q("[data-command-dialog]");q("[data-command-open]")?.addEventListener("click",()=>dialog?.showModal());
-q("[data-command-submit]")?.addEventListener("click",async()=>{const task=q("[data-command-task]").value.trim(),requestedResult=q("[data-command-result]").value.trim()||task,error=q("[data-command-error]");if(!task){error.textContent="พิมพ์งานก่อน";return}error.textContent="";try{const b=await json("/hub/api/agent-mission",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"create_tablet",task,requestedResult,agentId:"GO"})});work=b.work||b.tablet?.work||work;dialog.close();await restore()}catch(e){error.textContent=e.message}});
-restore();setInterval(refresh,30000);
+import { createCentreLiveClient } from "./go-hub-centre-client.js";
+
+const q=s=>document.querySelector(s);
+const put=(s,v)=>{const n=q(s);if(n)n.textContent=v==null||v===""?"UNKNOWN":String(v)};
+const centreLive=createCentreLiveClient({fetchImpl:globalThis.fetch.bind(globalThis),storage:globalThis.localStorage});
+let work=null;
+
+function renderWork(w={}) {
+  work=w;
+  put("[data-control-room-work]",w.workId);
+  put("[data-control-room-checkpoint]",w.checkpointId);
+  put("[data-control-room-centre]",w.status);
+  put("[data-control-room-status]",w.status||"UNKNOWN");
+  put("[data-work-title]",w.task||"งานปัจจุบัน");
+  const holder=w.holder||"GO";
+  put("[data-holder]",holder);
+  put("[data-work-now]",holder+" กำลังถือ Work นี้");
+  const s=String(w.status||"").toUpperCase();
+  put("[data-count-active]",["ACTIVE","ON PROCESS","DOING","PROCESSING","ARRIVED","REVIEWED"].includes(s)?1:0);
+  put("[data-count-complete]",["COMPLETE","COMPLETED","VERIFIED"].includes(s)?1:0);
+  put("[data-count-decision]",["BLOCKED","UNKNOWN","WAIT VERIFY","WAIT_VERIFY"].includes(s)?1:0);
+}
+async function refreshWork(){
+  try{
+    work=work?.workId?await centreLive.inspect(work.workId,work.checkpointId):await centreLive.restoreOrStart();
+    renderWork(work);
+    q("[data-control-room-error]").textContent="";
+  }catch(e){
+    put("[data-control-room-status]","UNKNOWN");
+    q("[data-control-room-error]").textContent=e instanceof Error?e.message:String(e);
+  }
+}
+async function refreshReality(){
+  if(!work?.workId)return refreshWork();
+  try{
+    const p=new URLSearchParams({workId:work.workId,checkpointId:work.checkpointId||""});
+    const r=await fetch("/hub/api/centre/control-room?"+p);
+    const b=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(b.code||"CONTROL_ROOM_READ_FAILED");
+    const o=b.observations||{};
+    put("[data-control-room-status]",o.overall||b.overall||work.status);
+    put("[data-control-room-project]",o.sourceStatus?.project);
+    put("[data-control-room-factory]",o.sourceStatus?.factory);
+    put("[data-control-room-board]",o.board?.status);
+    put("[data-control-room-cloudflare]",o.sourceStatus?.cloudflare);
+    put("[data-control-room-provenance]",o.deploymentProvenance?.status);
+    put("[data-control-room-updated]",b.observedAt||b.checkedAt||"UNKNOWN");
+    q("[data-control-room-error]").textContent="";
+  }catch(e){
+    await refreshWork();
+    q("[data-control-room-error]").textContent="Reality detail: "+(e instanceof Error?e.message:String(e));
+  }
+}
+q("[data-control-room-refresh]")?.addEventListener("click",refreshReality);
+q("[data-details-toggle]")?.addEventListener("click",()=>{
+  const d=q("[data-technical]");d.hidden=!d.hidden;
+  q("[data-details-toggle]").textContent=d.hidden?"ดูรายละเอียด":"ซ่อนรายละเอียด";
+});
+const dialog=q("[data-command-dialog]");
+q("[data-command-open]")?.addEventListener("click",()=>dialog?.showModal());
+q("[data-command-submit]")?.addEventListener("click",async()=>{
+  const task=q("[data-command-task]").value.trim();
+  const requestedResult=q("[data-command-result]").value.trim()||task;
+  const error=q("[data-command-error]");
+  if(!task){error.textContent="พิมพ์งานก่อน";return}
+  error.textContent="";
+  try{
+    const fresh=await centreLive.startNew();
+    const created=await centreLive.command({
+      action:"review",workId:fresh.workId,checkpointId:fresh.checkpointId,
+      returnAddress:fresh.checkpointId,task,requestedResult,authority:"BIG",targetId:"standard"
+    });
+    renderWork(created);
+    q("[data-command-task]").value="";
+    q("[data-command-result]").value="";
+    dialog.close();
+    await refreshReality();
+  }catch(e){error.textContent=e instanceof Error?e.message:String(e)}
+});
+await refreshWork();
+await refreshReality();
+setInterval(refreshReality,30000);
