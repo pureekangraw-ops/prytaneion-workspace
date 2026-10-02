@@ -43,6 +43,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     { name: "GO_HUB_NOTION_LIGHT_STATE", class_name: "GoHubNotionLightState" },
     { name: "GO_HUB_MAINTENANCE_STATE", class_name: "GoHubMaintenanceState" },
     { name: "GO_HUB_BROADCAST_STATE", class_name: "GoHubBroadcastState" },
+    { name: "GO_HUB_OFFICE_PASSKEY", class_name: "OfficePasskeyState" },
   ]);
   assert.ok(wrangler.migrations?.some(item =>
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("HephaestusForeman")));
@@ -74,6 +75,8 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("GoHubMaintenanceState")));
   assert.ok(wrangler.migrations?.some(item =>
     Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("GoHubBroadcastState")));
+  assert.ok(wrangler.migrations?.some(item =>
+    Array.isArray(item.new_sqlite_classes) && item.new_sqlite_classes.includes("OfficePasskeyState")));
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   for (const file of [
@@ -90,6 +93,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     "go-hub-pixie-monitor.mjs",
     "go-hub-centre-live.mjs",
     "go-hub-global-audit.mjs",
+    "go-hub-office-passkey.mjs",
     "go-hub-counter.mjs",
     "go-hub-counter-dispatcher.mjs",
     "go-hub-notion-light.mjs",
