@@ -215,6 +215,50 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Verify deployed Office static assets
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const cloudflareToken = process.env.CLOUDFLARE_API_TOKEN;
+          if (!accountId || !cloudflareToken) {
+            console.error("::error::Office asset smoke prerequisites are missing.");
+            process.exit(1);
+          }
+
+          const subdomainResponse = await fetch(
+            "https://api.cloudflare.com/client/v4/accounts/" + accountId + "/workers/subdomain",
+            { headers:{ authorization:"Bearer " + cloudflareToken } },
+          );
+          const subdomainPayload = await subdomainResponse.json().catch(() => null);
+          const subdomain = String(subdomainPayload?.result?.subdomain || "").trim();
+          if (!subdomainResponse.ok || !subdomain) {
+            console.error("::error::Unable to resolve workers.dev subdomain for Office asset smoke.");
+            process.exit(1);
+          }
+
+          const origin = "https://go-hub." + subdomain + ".workers.dev";
+          const expected = [
+            ["/go-hub-office-surface.css", "text/css"],
+            ["/go-hub-office-surface.js", "javascript"],
+            ["/go-hub-office-login.js", "javascript"],
+          ];
+
+          for (const [path, expectedType] of expected) {
+            const response = await fetch(origin + path, { redirect:"manual" });
+            const body = await response.text();
+            const type = String(response.headers.get("content-type") || "").toLowerCase();
+            const looksHtml = /^\s*(?:<!doctype\s+html|<html\b)/i.test(body);
+            if (!response.ok || !type.includes(expectedType) || looksHtml || !body.trim()) {
+              console.error("::error::Office asset smoke failed for " + path +
+                " status=" + response.status + " content-type=" + type +
+                " htmlFallback=" + looksHtml);
+              process.exit(1);
+            }
+            console.log("Office asset passed: " + path + " [" + type + "]");
+          }
+          NODE
+
       - name: Verify deployed Office Gate runtime
         shell: bash
         run: |
