@@ -60,6 +60,11 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_fitting_room").inputSchema.properties.tabletId, undefined);
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_lens_room").inputSchema.properties.workContext, undefined);
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_lens_room").inputSchema.properties.tabletId, undefined);
+  for (const name of ["go_hub_agent_persona_room", "go_hub_agent_lens_room", "go_hub_agent_fitting_room"]) {
+    const tool = tools.find(current => current.name === name);
+    assert.equal(tool.inputSchema.properties.workContext, undefined);
+    assert.equal((tool.inputSchema.required || []).includes("workContext"), false);
+  }
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").annotations.readOnlyHint, false);
   assert.deepEqual(
     tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.properties.action.enum,
