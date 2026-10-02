@@ -3,7 +3,7 @@ import { createCentreLiveClient } from "./go-hub-centre-client.js";
 const q=s=>document.querySelector(s);
 const put=(s,v)=>{const n=q(s);if(n)n.textContent=v==null||v===""?"UNKNOWN":String(v)};
 const centreLive=createCentreLiveClient({fetchImpl:globalThis.fetch.bind(globalThis),storage:globalThis.localStorage});
-let work=null;
+const POINTER_KEY="go-hub-centre-live-pointer-v1";let work=null;function pointer(){try{const p=JSON.parse(localStorage.getItem(POINTER_KEY)||"null");return p?.workId&&p?.checkpointId?p:null}catch{return null}}function save(w){if(w?.workId&&w?.checkpointId)localStorage.setItem(POINTER_KEY,JSON.stringify({workId:w.workId,checkpointId:w.checkpointId}))}
 
 function renderWork(w={}) {
   work=w;
