@@ -659,6 +659,12 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
+      const officeHost = url.hostname.toLowerCase() === "office.yggmetro.com";
+      if (officeHost && url.pathname === "/") {
+        const hasOfficeSession = /(?:^|;\\s*)__Host-ygg-office=/.test(String(request.headers.get("cookie") || ""));
+        url.pathname = hasOfficeSession ? "/office" : "/office/login";
+        request = new Request(url.toString(), request);
+      }
       if (url.pathname === "/office" || url.pathname.startsWith("/office/")) {
         const centreLive = createCentreLiveService({ namespace:env?.GO_HUB_CENTRE_STATE });
         const counter = createCounterService({
