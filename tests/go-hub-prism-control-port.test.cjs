@@ -16,10 +16,10 @@ test('invalid session cannot dispatch through PRISM return channel',async()=>{co
 test('expired session cannot dispatch through PRISM return channel',async()=>{const h=await harness();h.expire();assert.equal((await h.request()).status,410);assert.equal(h.called(),0);});
 test('foreign browser origin cannot dispatch through PRISM return channel',async()=>{const h=await harness();assert.equal((await h.request(undefined,'https://evil.example')).status,403);assert.equal(h.called(),0);});
 
-async function returnService({dispatchCode=null}={}){
+async function returnService({dispatchCode=null,workStatus='ON PROCESS'}={}){
   const {createPrismControlPortService}=await import('../go-hub-prism-control-port.mjs');
   const {createCounterCore}=await import('../go-hub-counter.mjs');const core=createCounterCore();const tickets=new Map();
-  const service=createPrismControlPortService({centre:{action:async()=>Response.json({work:{workId:'W1',checkpointId:'C1',status:'ON PROCESS'}})},counter:{get:async input=>Response.json(core.get(input,tickets.get(input.counterId)))},lifecycle:{create:async input=>{const result=core.create(input,tickets.get(input.counterId));tickets.set(input.counterId,result.counter);return Response.json({...result,dispatchCode});}}});
+  const service=createPrismControlPortService({centre:{action:async()=>Response.json({work:{workId:'W1',checkpointId:'C1',status:workStatus}})},counter:{get:async input=>Response.json(core.get(input,tickets.get(input.counterId)))},lifecycle:{create:async input=>{const result=core.create(input,tickets.get(input.counterId));tickets.set(input.counterId,result.counter);return Response.json({...result,dispatchCode});}}});
   return {service,tickets,core};
 }
 test('owner Work identity is checked before creating an actual durable Counter handoff',async()=>{
@@ -35,4 +35,12 @@ test('same owner handoff reuses one Counter and exposes the answer from that Cou
 });
 test('known dispatcher failure is shown as BLOCKED rather than a delivered handoff',async()=>{
   const h=await returnService({dispatchCode:'LIGHT_OFFLINE'});const r=await (await h.service.handle('handoff',{workId:'W1',checkpointId:'C1',destination:'LIGHT',requestedResult:'Inspect'})).json();assert.equal(r.status,'BLOCKED');assert.match(r.summary,/LIGHT_OFFLINE/);
+});
+
+test('completed Work still permits Counter answer readback but rejects new handoffs',async()=>{
+  const h=await returnService({workStatus:'COMPLETE'}),body={workId:'W1',checkpointId:'C1',destination:'LIGHT',requestedResult:'Inspect'};
+  await assert.rejects(h.service.handle('handoff',body),/WORK_TERMINAL/);
+  const counterId='COUNTER-PRISM-'+'a'.repeat(64);
+  h.tickets.set(counterId,h.core.create({counterId,mode:'HANDOFF',fromActor:'GO',toActor:'LIGHT',request:'Inspect',requestedResult:'Inspect',workContext:body,context:{source:'PRISM_OWNER'}},null).counter);
+  const result=await (await h.service.handle('result',{...body,counterId})).json();assert.equal(result.ok,true);assert.match(result.summary,/LIGHT/);
 });
