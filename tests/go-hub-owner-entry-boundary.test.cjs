@@ -23,7 +23,7 @@ function request({ method = "POST", pathname = "/hub/api/browser/read", passcode
   return new Request(`https://hub.example${pathname}`, {
     method,
     headers,
-    body: method === "GET" ? undefined : JSON.stringify(body),
+    body: method === "GET" ? undefined : typeof body === "string" ? body : JSON.stringify(body),
   });
 }
 
