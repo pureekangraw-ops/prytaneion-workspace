@@ -5,8 +5,14 @@ const fs=require("node:fs");
 const path=require("node:path");
 const source=fs.readFileSync(path.resolve(__dirname,"..","go-hub-mcp-registry.mjs"),"utf8");
 
-test("read-only reality sensors stay outside Work Tablet enforcement",()=>{
-  assert.match(source,/enforceCardAccess && !optionalWorkContext\.has\(name\)/);
+test("registry does not rewrite capability contracts while Work contracts remain gate-aware",()=>{
+  assert.doesNotMatch(source,/optionalWorkContext/);
+  assert.doesNotMatch(source,/inputSchema\.properties\.workContext\s*=\s*workContext/);
+  assert.doesNotMatch(source,/required\.push\("workContext"\)/);
+  assert.match(source,/definitionUsesWorkContext\(definition\)/);
+  assert.match(source,/go_hub_agent_persona_room[^\n]+schema\(\{ action:[^\n]+\}, \["action"\]\)/);
+  assert.match(source,/go_hub_agent_lens_room[^\n]+schema\(\{ action:[^\n]+\}, \["action"\]\)/);
+  assert.match(source,/go_hub_agent_fitting_room[^\n]+schema\(\{ action:[^\n]+\}, \["action"\]\)/);
 });
 
 test("backend policy reads Centre truth and keeps Maintenance as the scope exception",()=>{
