@@ -32,7 +32,7 @@ test("observer latest prefers Factory Eye evidence over legacy observer",async()
   });
 
   const service=createObserverEvidenceService({namespace:legacyNamespace,factoryEyeNamespace});
-  const response=await service.latest();
+  const response=await service.latest({workContext:{workId:"WORK-FACTORY-EYE",checkpointId:"CP-FACTORY-EYE"}});
   assert.equal(response.status,200);
   const body=await response.json();
   assert.equal(body.source,"FACTORY_EYE");
