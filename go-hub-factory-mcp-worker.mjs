@@ -883,7 +883,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           mergePullRequest: input => runMutation("github.merge_pull_request", input, () => lifecycle.mergePullRequest(input)),
           ergasterionHealth: () => ergasterion.health(),
           ergasterionHandoff: input => runMutation("factory.ergasterion_handoff", input, () => ergasterion.handoff(input)),
-          aionResolve: input => json(await olympusAion.resolve(input)),
+          aionResolve: async input => json(await olympusAion.resolve(input)),
           aionRegistry: async () => json(await olympusAion.registry()),
           factoryV4: async input => {
             const routed = { ...input, workId:input?.workContext?.workId };
