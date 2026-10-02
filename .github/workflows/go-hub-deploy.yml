@@ -628,10 +628,7 @@ jobs:
               accept:"application/json, text/event-stream",
             };
             if (notionOrigin) headers.origin = "https://app.notion.com";
-            const governedArgs = {
-              ...(args || {}),
-              workContext:args?.workContext || context(),
-            };
+            const governedArgs = { ...(args || {}) };
             const response = await fetch(origin + path, {
               method:"POST",
               headers,
