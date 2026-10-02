@@ -56,6 +56,33 @@ test("Office Gate is deny-by-default and does not delegate unknown Office routes
   assert.deepEqual(await denied.json(), { code:"OFFICE_ROUTE_DENIED" });
 });
 
+test("Office origin denial audit records only safe request-origin diagnostics", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?origin-diagnostics=" + Date.now());
+  const audit = [];
+  const gate = createOfficeGate({ audit:event => audit.push(event) });
+  const response = await gate.fetch(request("/office/login", {
+    method:"POST",
+    headers:{
+      origin:"null",
+      "sec-fetch-site":"cross-site",
+      referer:"https://evil.example/path?secret=do-not-log",
+      "content-type":"application/x-www-form-urlencoded",
+    },
+    body:new URLSearchParams({ passcode:"office-secret" }),
+  }), env());
+  assert.equal(response.status, 403);
+  assert.equal(audit.length, 1);
+  assert.deepEqual(audit[0].details, {
+    source:"office-login",
+    reason:"ORIGIN",
+    originClass:"NULL",
+    fetchSite:"cross-site",
+    refererClass:"OTHER",
+  });
+  assert.equal(JSON.stringify(audit).includes("office-secret"), false);
+  assert.equal(JSON.stringify(audit).includes("do-not-log"), false);
+});
+
 test("Office login creates an HttpOnly Secure SameSite session and private responses", async () => {
   const { createOfficeGate } = await import(gateUrl + "?login=" + Date.now());
   const gate = createOfficeGate();
