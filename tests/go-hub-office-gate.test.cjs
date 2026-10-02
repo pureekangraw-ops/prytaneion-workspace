@@ -101,6 +101,22 @@ test("Office login creates an HttpOnly Secure SameSite session and private respo
   assert.doesNotMatch(await office.text(), /GOHUB_OFFICE_SESSION_KEY|office-secret/);
 });
 
+test("Office login accepts mobile same-origin POST when Origin is null", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?mobile-null-origin=" + Date.now());
+  const gate = createOfficeGate();
+  const response = await gate.fetch(request("/office/login", {
+    method:"POST",
+    headers:{
+      origin:"null",
+      "sec-fetch-site":"same-origin",
+      "content-type":"application/x-www-form-urlencoded",
+    },
+    body:new URLSearchParams({ passcode:"office-secret" }),
+  }), env());
+  assert.equal(response.status, 303);
+  assert.match(response.headers.get("set-cookie") || "", /__Host-ygg-office=/);
+});
+
 test("Office login accepts a same-origin mobile form POST when Origin is omitted", async () => {
   const { createOfficeGate } = await import(gateUrl + "?mobile-origin=" + Date.now());
   const gate = createOfficeGate();

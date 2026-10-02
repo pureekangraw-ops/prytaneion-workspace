@@ -98,7 +98,7 @@ function sessionCookie(value, maxAge) {
 function sameOrigin(request) {
   const requestOrigin = new URL(request.url).origin;
   const origin = String(request.headers.get("origin") || "").trim();
-  if (origin) {
+  if (origin && origin.toLowerCase() !== "null") {
     try {
       return new URL(origin).origin === requestOrigin;
     } catch {
@@ -106,9 +106,9 @@ function sameOrigin(request) {
     }
   }
 
-  // Some mobile browsers omit Origin on a same-origin HTML form POST.
-  // Keep the gate fail-closed: only accept browser metadata that still
-  // proves the navigation came from this exact origin.
+  // Some mobile browsers either omit Origin or send the opaque value
+  // "null" on a same-origin HTML form POST. In those cases, require
+  // browser fetch metadata that still proves same-origin.
   const fetchSite = String(request.headers.get("sec-fetch-site") || "").trim().toLowerCase();
   if (fetchSite === "same-origin") return true;
   if (fetchSite && fetchSite !== "none") return false;
