@@ -202,12 +202,94 @@ test("Office command requires same-origin even with a valid session", async () =
   assert.equal(calls, 0);
 });
 
-test("Office Eye remains intentionally unwired in Phase 2", async () => {
-  const { createOfficeGate } = await import(gateUrl + "?phase2-eye=" + Date.now());
-  const gate = createOfficeGate();
+test("Office Eye reads Factory Eye latest evidence without credentials or mutation", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?phase3-eye=" + Date.now());
+  let latestCalls = 0;
+  let screenshotCalls = 0;
+  const factoryEye = {
+    async latest() {
+      latestCalls += 1;
+      return {
+        ok:true,
+        source:"FACTORY_EYE",
+        state:"STALE",
+        freshness:{ state:"STALE", transportState:"STALE", evidenceLive:false },
+        tabs:[{ tabId:7, active:true, url:"https://example.com/", title:"Example" }],
+        latest:{
+          observationId:"OBS-7",
+          observedAt:"2026-10-02T06:00:00.000Z",
+          receivedAt:"2026-10-02T06:00:01.000Z",
+          tab:{ tabId:7, active:true, url:"https://example.com/", title:"Example" },
+          page:{ title:"Example", capturesInputValues:false, createsAuthority:false },
+          screenshotRef:"factory-eye-shot:session:OBS-7",
+          source:"FACTORY_EYE",
+          createsAuthority:false,
+        },
+        comparison:{ ready:false },
+        createsAuthority:false,
+      };
+    },
+    async screenshot({ screenshotRef }) {
+      screenshotCalls += 1;
+      return {
+        ok:true,
+        source:"FACTORY_EYE",
+        screenshot:{ ref:screenshotRef, capturedAt:"2026-10-02T06:00:00.000Z", dataUrl:"data:image/png;base64,AA==" },
+      };
+    },
+  };
+  const gate = createOfficeGate({ factoryEye });
   const loggedIn = await login(gate);
   const cookie = cookieFrom(loggedIn);
-  const response = await gate.fetch(request("/office/api/eye", { headers:{ cookie } }), env());
-  assert.equal(response.status, 501);
-  assert.deepEqual(await response.json(), { code:"OFFICE_ROUTE_NOT_WIRED_PHASE_2" });
+
+  const latest = await gate.fetch(request("/office/api/eye", { headers:{ cookie } }), env());
+  assert.equal(latest.status, 200);
+  const payload = await latest.json();
+  assert.equal(payload.source, "FACTORY_EYE");
+  assert.equal(payload.mode, "READ_ONLY");
+  assert.equal(payload.state, "STALE");
+  assert.equal(payload.freshness.evidenceLive, false);
+  assert.equal(payload.latest.tab.url, "https://example.com/");
+  assert.equal(payload.latest.screenshotRef, "factory-eye-shot:session:OBS-7");
+  assert.equal(payload.createsAuthority, false);
+  assert.equal(latestCalls, 1);
+  assert.equal(screenshotCalls, 0);
+  assert.equal(latest.headers.get("cache-control"), "no-store, max-age=0");
+
+  const shot = await gate.fetch(request("/office/api/eye?screenshotRef=factory-eye-shot%3Asession%3AOBS-7", { headers:{ cookie } }), env());
+  assert.equal(shot.status, 200);
+  const shotPayload = await shot.json();
+  assert.equal(shotPayload.mode, "READ_ONLY");
+  assert.equal(shotPayload.screenshot.ref, "factory-eye-shot:session:OBS-7");
+  assert.equal(shotPayload.screenshot.dataUrl, "data:image/png;base64,AA==");
+  assert.equal(screenshotCalls, 1);
+});
+
+test("Office Eye preserves WARMING_UP/STALE truth and never upgrades evidence to LIVE", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?phase3-freshness=" + Date.now());
+  for (const state of ["WARMING_UP","STALE"]) {
+    const factoryEye = {
+      async latest() {
+        return {
+          ok:true,
+          source:"FACTORY_EYE",
+          state,
+          freshness:{ state, transportState:state === "WARMING_UP" ? "LIVE" : "STALE", evidenceLive:false },
+          tabs:[],
+          latest:null,
+          comparison:{ ready:false },
+          createsAuthority:false,
+        };
+      },
+      async screenshot() { return { ok:false, code:"FACTORY_EYE_SCREENSHOT_NOT_FOUND" }; },
+    };
+    const gate = createOfficeGate({ factoryEye });
+    const loggedIn = await login(gate);
+    const cookie = cookieFrom(loggedIn);
+    const response = await gate.fetch(request("/office/api/eye", { headers:{ cookie } }), env());
+    const payload = await response.json();
+    assert.equal(payload.state, state);
+    assert.equal(payload.freshness.evidenceLive, false);
+    assert.notEqual(payload.state, "LIVE");
+  }
 });

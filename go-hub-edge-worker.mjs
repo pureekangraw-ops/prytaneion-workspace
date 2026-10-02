@@ -684,6 +684,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           centreLive,
           agentMission,
           agentMissionActions:AGENT_MISSION_ACTIONS,
+          factoryEye:factoryEyeSessionsFor(env),
         });
         return officeGate.fetch(request, env);
       }
