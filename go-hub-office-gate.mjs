@@ -161,10 +161,14 @@ function originDiagnostics(request) {
   return { originClass, fetchSite, refererClass };
 }
 
-function configured(env) {
+function sessionConfigured(env) {
+  return Boolean(String(env?.GOHUB_OFFICE_SESSION_KEY || "").trim());
+}
+
+function passcodeConfigured(env) {
   return Boolean(
     String(env?.GOHUB_OFFICE_PASSCODE || "").trim() &&
-    String(env?.GOHUB_OFFICE_SESSION_KEY || "").trim()
+    sessionConfigured(env)
   );
 }
 
@@ -217,7 +221,7 @@ async function mintSession(env, nowMs = Date.now()) {
 }
 
 async function verifySession(request, env, nowMs = Date.now()) {
-  if (!configured(env)) return { ok:false, code:"OFFICE_AUTH_NOT_CONFIGURED", status:503 };
+  if (!sessionConfigured(env)) return { ok:false, code:"OFFICE_AUTH_NOT_CONFIGURED", status:503 };
   const token = parseCookies(request)[OFFICE_COOKIE];
   if (!token) return { ok:false, code:"OFFICE_AUTH_REQUIRED", status:401 };
   const [payload, signature, extra] = String(token).split(".");
@@ -297,7 +301,7 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         if (request.method === "GET") {
           return html(loginPage());
         }
-        if (!configured(env)) {
+        if (!passcodeConfigured(env)) {
           await recordAudit(audit, "OFFICE_LOGIN_DENIED", { reason: "NOT_CONFIGURED" });
           return json({ code:"OFFICE_AUTH_NOT_CONFIGURED" }, 503);
         }
