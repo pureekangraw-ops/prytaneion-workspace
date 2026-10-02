@@ -63,3 +63,23 @@ test("office.yggmetro.com root enters Office Gate instead of delegating GO Hub i
   assert.match(await response.text(), /YGG METRO/);
   assert.equal(delegated, 0);
 });
+
+
+test("non-Office root still serves the existing asset surface when root is worker-first", async () => {
+  let delegated = 0;
+  let assets = 0;
+  const delegate = { async fetch() { delegated += 1; return new Response("delegate"); } };
+  const factoryMcp = { async fetch() { return new Response("mcp"); } };
+  const { createEdgeWorkerHandler } = await import(workerUrl + "?non-office-root=" + Date.now());
+  const handler = createEdgeWorkerHandler({ delegate, factoryMcp });
+  const response = await handler.fetch(
+    new Request("https://go-hub.example/"),
+    {
+      ASSETS:{ async fetch() { assets += 1; return new Response("GO Hub asset"); } },
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "GO Hub asset");
+  assert.equal(assets, 1);
+  assert.equal(delegated, 0);
+});
