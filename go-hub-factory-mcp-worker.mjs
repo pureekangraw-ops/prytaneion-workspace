@@ -511,24 +511,35 @@ export function createObserverEvidenceService({ namespace, factoryEyeNamespace }
     async latest({ workContext } = {}) {
       const workId = String(workContext?.workId || "").trim();
       const checkpointId = String(workContext?.checkpointId || "").trim();
-      if (!workId || !checkpointId) return json({ code:"WORK_CONTEXT_REQUIRED" }, 400);
-      const context = { workContext:{ workId, checkpointId } };
+      const context = workId && checkpointId
+        ? { workContext:{ workId, checkpointId } }
+        : {};
+
+      // Factory Eye is the current read-only evidence source and does not create
+      // Work authority. Allow the compatibility call shape with no WorkContext
+      // so older MCP clients can still read CURRENT evidence while their cached
+      // tool schema catches up with the registry.
       const eye = await callFactoryEye("latest", context);
       if (eye?.ok) {
         return json({
           ...eye,
           source:"FACTORY_EYE",
           legacyBrowserPolicyUsed:false,
+          workContextBound:Boolean(workId && checkpointId),
         }, 200);
       }
 
+      // Legacy Browser Observer remains Work-bound. Never widen that older lane.
+      if (!workId || !checkpointId) {
+        return json({ code:"WORK_CONTEXT_REQUIRED" }, 400);
+      }
       const result = await callLegacy("latest", context);
       if (!result?.ok) {
         return json({
           code:result?.code || eye?.code || "HUB_UNAVAILABLE",
         }, observerStatus(result?.code));
       }
-      return json({ ...result, source:"LEGACY_BROWSER_OBSERVER" }, 200);
+      return json({ ...result, source:"LEGACY_BROWSER_OBSERVER", workContextBound:true }, 200);
     },
 
     async screenshot({ screenshotRef } = {}) {
