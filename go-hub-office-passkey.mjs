@@ -25,7 +25,7 @@ function derToRaw(sig,size=32){
   const b=sig instanceof Uint8Array?sig:new Uint8Array(sig);
   if(b[0]!==0x30)throw new Error("PASSKEY_SIGNATURE_FORMAT");
   let i=1;
-  let seqLen=b[i++]; if(seqLen&0x80){const n=seqLen&0x7f;seqLen=0;while(n--){seqLen=(seqLen<<8)|b[i++]}}
+  let seqLen=b[i++]; if(seqLen&0x80){let n=seqLen&0x7f;seqLen=0;while(n--){seqLen=(seqLen<<8)|b[i++]}}
   if(b[i++]!==0x02)throw new Error("PASSKEY_SIGNATURE_FORMAT");
   let rLen=b[i++],r=b.slice(i,i+rLen);i+=rLen;
   if(b[i++]!==0x02)throw new Error("PASSKEY_SIGNATURE_FORMAT");
