@@ -169,10 +169,10 @@ function loginPage(errorCode = "") {
 }
 
 function officeShell() {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YGGMETRO Office</title></head><body><main><h1>YGGMETRO OFFICE</h1><p>Office Gate active. Work/Centre and Eye wiring are intentionally not enabled in Phase 1.</p><form method="post" action="/office/logout"><button type="submit">Logout</button></form></main></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YGGMETRO Office</title></head><body><main><h1>YGGMETRO OFFICE</h1><p>Office Gate active. Work read and Agent Mission command are server-wired; Eye remains read-only pending Phase 3.</p><form method="post" action="/office/logout"><button type="submit">Logout</button></form></main></body></html>`;
 }
 
-export function createOfficeGate() {
+export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [] } = {}) {
   return Object.freeze({
     owns(pathname) {
       return pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
@@ -236,13 +236,55 @@ export function createOfficeGate() {
         return html(officeShell());
       }
 
-      if (url.pathname === "/office/api/work" ||
-          url.pathname === "/office/api/command" ||
-          url.pathname === "/office/api/eye") {
-        if (request.method === "POST" && !sameOrigin(request)) {
-          return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+      if (url.pathname === "/office/api/work") {
+        if (!centreLive || typeof centreLive.action !== "function") {
+          return json({ code:"OFFICE_CENTRE_UNAVAILABLE" }, 503);
         }
-        return json({ code:"OFFICE_ROUTE_NOT_WIRED_PHASE_1" }, 501);
+        const workId = String(url.searchParams.get("workId") || "").trim();
+        const checkpointId = String(url.searchParams.get("checkpointId") || "").trim();
+        if (!workId || !checkpointId) return json({ code:"OFFICE_WORK_IDENTITY_REQUIRED" }, 400);
+        try {
+          const response = await centreLive.action({ action:"v4_inspect", workId, checkpointId });
+          const payload = await response.clone().json().catch(() => ({}));
+          if (!response.ok) return json({ code:String(payload?.code || "OFFICE_WORK_READ_REJECTED") }, response.status);
+          if (!payload?.work || String(payload.work.workId || "") !== workId ||
+              String(payload.work.checkpointId || "") !== checkpointId) {
+            return json({ code:"OFFICE_WORK_IDENTITY_MISMATCH" }, 409);
+          }
+          return json(payload, 200);
+        } catch {
+          return json({ code:"OFFICE_WORK_READ_FAILED" }, 500);
+        }
+      }
+
+      if (url.pathname === "/office/api/command") {
+        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        if (!agentMission || typeof agentMission.action !== "function") {
+          return json({ code:"OFFICE_AGENT_MISSION_UNAVAILABLE" }, 503);
+        }
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+          return json({ code:"OFFICE_COMMAND_INVALID_JSON" }, 400);
+        }
+        const action = String(body.action || "").trim();
+        const allowed = new Set(Array.isArray(agentMissionActions) ? agentMissionActions.map(String) : []);
+        if (!action || !allowed.has(action)) {
+          return json({ code:"OFFICE_AGENT_MISSION_ACTION_DENIED" }, 403);
+        }
+        try {
+          const response = await agentMission.action(body);
+          const payload = await response.clone().json().catch(() => ({}));
+          if (!response.ok) {
+            return json({ code:String(payload?.code || "OFFICE_COMMAND_REJECTED") }, response.status);
+          }
+          return json(payload, response.status);
+        } catch {
+          return json({ code:"OFFICE_COMMAND_FAILED" }, 500);
+        }
+      }
+
+      if (url.pathname === "/office/api/eye") {
+        return json({ code:"OFFICE_ROUTE_NOT_WIRED_PHASE_2" }, 501);
       }
 
       return json({ code:"OFFICE_ROUTE_DENIED" }, 404);
