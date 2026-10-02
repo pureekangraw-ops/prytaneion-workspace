@@ -28,7 +28,7 @@
     "file": "go-hub-sw.js",
     "mode": "go-hub-exclusive",
     "cachePrefix": "go-hub-app-",
-    "cacheGeneration": "v13-control-owner-surface",
+    "cacheGeneration": "v14-office-assets",
     "autoActivate": true
   },
   "validation": {
@@ -210,6 +210,15 @@
     },
     {
       "path": "project-viewer-icon.svg"
+    },
+    {
+      "path": "go-hub-office-surface.css"
+    },
+    {
+      "path": "go-hub-office-surface.js"
+    },
+    {
+      "path": "go-hub-office-login.js"
     }
   ],
   "serverRuntimeFiles": [
