@@ -11,23 +11,26 @@ async function body(response) {
   return response instanceof Response ? response.clone().json().catch(() => ({})) : response || {};
 }
 
-export function createAgentFittingRoom(options = {}) {
+export function createAgentFittingRoom() {
   const personaRoom = createAgentPersonaRoom();
-  const lensRoom = createAgentLensRoom(options);
+  const lensRoom = createAgentLensRoom();
   return Object.freeze({
     async action(input = {}) {
       const action = text(input.action).toLowerCase();
       if (action === "list") {
         const [personaResponse, lensResponse] = await Promise.all([
           personaRoom.action({ action:"list" }),
-          lensRoom.action({ action:"list", workContext:input.workContext }),
+          lensRoom.action({ action:"list" }),
         ]);
         return json({
           ok:true,
           room:"AGENT_FITTING_ROOM",
+          lane:"AGENT_CAPABILITY",
           optional:true,
           personas:(await body(personaResponse)).personas || [],
           lenses:(await body(lensResponse)).lenses || [],
+          workRequired:false,
+          tabletRequired:false,
           authorityCreated:false,
           routeChanged:false,
           workChanged:false,
@@ -38,24 +41,19 @@ export function createAgentFittingRoom(options = {}) {
 
       const personaResponse = await personaRoom.action({ action:"equip", agentId:input.agentId, personaId:input.personaId });
       if (!personaResponse.ok) return personaResponse;
-      const lensResponse = await lensRoom.action({
-        action:"select",
-        agentId:input.agentId,
-        lensId:input.lensId,
-        tabletId:input.tabletId,
-        accessScope:input.accessScope,
-        workContext:input.workContext,
-      });
+      const lensResponse = await lensRoom.action({ action:"select", agentId:input.agentId, lensId:input.lensId });
       if (!lensResponse.ok) return lensResponse;
 
       return json({
         ok:true,
         room:"AGENT_FITTING_ROOM",
+        lane:"AGENT_CAPABILITY",
         persona:(await body(personaResponse)).persona || null,
         lens:(await body(lensResponse)).lens || null,
-        tabletId:input.tabletId || null,
-        workContext:input.workContext || null,
         confirmation:"FITTING_ACTIVE",
+        persistence:"SESSION_RESPONSE_ONLY",
+        workRequired:false,
+        tabletRequired:false,
         exited:true,
         authorityCreated:false,
         routeChanged:false,

@@ -747,12 +747,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
       const counterDispatch = createCounterDispatchLifecycle({ counter, dispatch, notionLight, hubOrigin:url.origin });
       const lighthouseControlPort = createLighthouseControlPortMcpService({ namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS });
       const agentMission = createAgentMissionService({ centreLive, counterDispatch, boardRead:() => lighthouseControlPort.boardRead() });
-      const fittingDependencies = {
-        readTablet: input => agentMission.action({ action:"pickup_tablet", ...input }),
-        updateTablet: input => agentMission.action({ action:"update_tablet", ...input }),
-      };
-      const agentLensRoom = createAgentLensRoom(fittingDependencies);
-      const agentFittingRoom = createAgentFittingRoom(fittingDependencies);
+      const agentLensRoom = createAgentLensRoom();
+      const agentFittingRoom = createAgentFittingRoom();
       const projectStatus = createProjectStatusReadService({ lifecycle, factoryBinding:env?.GO_HUB_FACTORY_STATE });
       const boardPinRoute = createBoardPinRouteReadService();
       const pixie = createPixieCommandService({ fetchImpl, token:env.GITHUB_TOKEN });
