@@ -1,4 +1,5 @@
 import { verifyAccessToken } from "./go-hub-oauth.mjs";
+import { createOlympusAionAdapter } from "./go-hub-aion-olympus-adapter.mjs";
 import { createMcpRegistry } from "./go-hub-mcp-registry.mjs";
 import { createMcpHandler } from "./go-hub-mcp.mjs";
 import { createLinearService } from "./go-hub-linear-service.mjs";
@@ -717,6 +718,10 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         token: env?.CLOUDFLARE_RUNTIME_API_TOKEN,
         accountId: env?.CLOUDFLARE_ACCOUNT_ID,
       });
+      const olympusAion = createOlympusAionAdapter({
+        fetchImpl,
+        endpoint: env?.OLYMPUS_URL || "https://olympus.pureekangraw.workers.dev",
+      });
       const ergasterion = createErgasterionRuntime({
         fetchImpl,
         endpoint: env?.ERGASTERION_FACTORY_URL,
@@ -878,6 +883,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           mergePullRequest: input => runMutation("github.merge_pull_request", input, () => lifecycle.mergePullRequest(input)),
           ergasterionHealth: () => ergasterion.health(),
           ergasterionHandoff: input => runMutation("factory.ergasterion_handoff", input, () => ergasterion.handoff(input)),
+          aionResolve: async input => json(await olympusAion.resolve(input)),
+          aionRegistry: async () => json(await olympusAion.registry()),
           factoryV4: async input => {
             const routed = { ...input, workId:input?.workContext?.workId };
             if (input.action === "inspect") return factoryV4(routed);
