@@ -134,6 +134,7 @@ function hubBoardPin(view = {}, previous = null, at = new Date().toISOString()) 
     pinId:("PIN:" + workId).slice(0, 128),
     workId,
     canonicalWorkId:canonicalWorkId && canonicalWorkId !== workId ? canonicalWorkId : null,
+    checkpointId:clean(view.work?.checkpointId)||null,
     card:workCard,
     jobCode:workCard.jobCode,
     destinations:[...workCard.destinations],
