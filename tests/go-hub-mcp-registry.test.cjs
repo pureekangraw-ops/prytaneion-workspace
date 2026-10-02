@@ -137,7 +137,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
     assert.deepEqual(tool.inputSchema.properties.workContext.required, ["workId","checkpointId"], `${tool.name} gate must have exactly two identity values`);
     assert.deepEqual(Object.keys(tool.inputSchema.properties.workContext.properties), ["workId","checkpointId"], `${tool.name} gate must expose no extra identity fields`);
   }
-  assert.equal(tools.find(tool => tool.name === "go_hub_inspect_repository").inputSchema.required.includes("workContext"), false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_inspect_repository").inputSchema.required.includes("workContext"), true);
   assert.equal(tools.find(tool => tool.name === "go_hub_linear_list_projects").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_linear_get_issue").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_observer_latest").inputSchema.required.includes("workContext"), false);
@@ -149,7 +149,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_agent_mission").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_drive_root").inputSchema.required.includes("workContext"), false);
 
-  await registry.callTool("go_hub_inspect_repository", { repository: "pureekangraw-ops/standard-", branch: "main" });
+  await registry.callTool("go_hub_inspect_repository", { repository: "pureekangraw-ops/standard-", branch: "main", workContext: factoryWorkContext });
   assert.equal(calls[0].name, "inspect");
 
   await registry.callTool("go_hub_counter_create", {
