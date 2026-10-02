@@ -140,7 +140,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(tools.find(tool => tool.name === "go_hub_inspect_repository").inputSchema.required.includes("workContext"), true);
   assert.equal(tools.find(tool => tool.name === "go_hub_linear_list_projects").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_linear_get_issue").inputSchema.required.includes("workContext"), false);
-  assert.equal(tools.find(tool => tool.name === "go_hub_observer_latest").inputSchema.required.includes("workContext"), false);
+  assert.equal(tools.find(tool => tool.name === "go_hub_observer_latest").inputSchema.required.includes("workContext"), true);
   assert.equal(tools.find(tool => tool.name === "go_hub_observer_screenshot").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_cloudflare_health").inputSchema.required.includes("workContext"), false);
   assert.equal(tools.find(tool => tool.name === "go_hub_cloudflare_inspect_worker").inputSchema.required.includes("workContext"), false);
@@ -207,9 +207,10 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(calls.at(-1).name, "pixieDebugFactoryAction");
   await registry.callTool("go_hub_pixie_result", { requestId:"PIXIE-REQ-1" });
   assert.equal(calls.at(-1).name, "pixieResult");
-  await registry.callTool("go_hub_observer_latest", {});
+  await registry.callTool("go_hub_observer_latest", { workContext: counterWorkContext });
   await registry.callTool("go_hub_observer_screenshot", { screenshotRef: "shot:1" });
   assert.equal(calls.at(-2).name, "observerLatest");
+  assert.deepEqual(calls.at(-2).input, { workContext: counterWorkContext });
   assert.equal(calls.at(-1).name, "observerScreenshot");
   await registry.callTool("go_hub_list_workflow_artifacts", { repository: "pureekangraw-ops/ygph-metropolis", runId: 123, workContext: factoryWorkContext });
   assert.equal(calls.at(-1).name, "listWorkflowArtifacts");

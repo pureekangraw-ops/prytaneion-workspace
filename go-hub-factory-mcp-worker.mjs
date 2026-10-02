@@ -508,8 +508,12 @@ export function createObserverEvidenceService({ namespace, factoryEyeNamespace }
     callStub(factoryEyeStub(), "https://factory-eye.internal/", method, input);
 
   return Object.freeze({
-    async latest() {
-      const eye = await callFactoryEye("latest");
+    async latest({ workContext } = {}) {
+      const workId = String(workContext?.workId || "").trim();
+      const checkpointId = String(workContext?.checkpointId || "").trim();
+      if (!workId || !checkpointId) return json({ code:"WORK_CONTEXT_REQUIRED" }, 400);
+      const context = { workContext:{ workId, checkpointId } };
+      const eye = await callFactoryEye("latest", context);
       if (eye?.ok) {
         return json({
           ...eye,
@@ -518,7 +522,7 @@ export function createObserverEvidenceService({ namespace, factoryEyeNamespace }
         }, 200);
       }
 
-      const result = await callLegacy("latest");
+      const result = await callLegacy("latest", context);
       if (!result?.ok) {
         return json({
           code:result?.code || eye?.code || "HUB_UNAVAILABLE",
@@ -989,7 +993,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
               return factoryV4(resolvedInput);
             });
           },
-          observerLatest: () => observer.latest(),
+          observerLatest: input => observer.latest(input),
           observerScreenshot: input => observer.screenshot(input),
           auditHistory: input => globalAudit.history(input),
           centreInspect: input => inspectCentreCompat(centreLive, input),

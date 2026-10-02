@@ -57,3 +57,10 @@ test("post-V4 Observer and Drive remain on the exact smoke Work card", () => {
   assert.match(match[1], /"go_hub_observer_latest"/);
   assert.match(match[1], /"go_hub_drive_health"/);
 });
+
+
+test("Drive health smoke uses its empty-input contract and does not inject stale WorkContext", () => {
+  const workflow = fs.readFileSync(".github/workflows/go-hub-deploy.yml", "utf8");
+  assert.match(workflow, /name: "go_hub_drive_health", arguments: \{\}/);
+  assert.doesNotMatch(workflow, /name: "go_hub_drive_health", arguments: \{ workContext \}/);
+});

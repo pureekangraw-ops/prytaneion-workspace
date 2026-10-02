@@ -25,13 +25,17 @@ export function createObserverSessionService({ storage, now = () => Date.now(), 
     return { ok: true, session };
   }
   return Object.freeze({
-    async start({ allowedOrigin, ttlMs = DEFAULT_TTL_MS } = {}) {
+    async start(input = {}) {
+      const { allowedOrigin, ttlMs = DEFAULT_TTL_MS } = input;
       const ttl = Number(ttlMs);
       if (!isGumroadOrigin(allowedOrigin)) return { ok: false, code: "HOST_BLOCKED" };
       if (!Number.isFinite(ttl) || ttl <= 0 || ttl > DEFAULT_TTL_MS) return { ok: false, code: "SCHEMA_REJECTED" };
       const sessionId = clean(randomUUID()); const token = clean(randomToken()); const startedAt = Number(now());
+      const workId = clean(input.workContext?.workId);
+      const checkpointId = clean(input.workContext?.checkpointId);
+      if ((workId && !checkpointId) || (!workId && checkpointId)) return { ok: false, code: "WORK_CONTEXT_REQUIRED" };
       if (!sessionId || !token || !Number.isFinite(startedAt)) return { ok: false, code: "HUB_UNAVAILABLE" };
-      const session = { sessionId, tokenHash: await sha256(token), active: true, allowedOrigin, origin: null, pageFingerprint: null, startedAt, expiresAt: startedAt + ttl, screenshotConsent: false, pendingScreenshotRef: null, latestScreenshotRef: null };
+      const session = { sessionId, tokenHash: await sha256(token), active: true, allowedOrigin, workContext: workId ? { workId, checkpointId } : null, origin: null, pageFingerprint: null, startedAt, expiresAt: startedAt + ttl, screenshotConsent: false, pendingScreenshotRef: null, latestScreenshotRef: null };
       await storage.put(`session:${sessionId}`, session);
       return { ok: true, session_id: sessionId, session_token: token, expires_at: session.expiresAt, allowed_origin: allowedOrigin };
     },
@@ -84,11 +88,18 @@ export function createObserverSessionService({ storage, now = () => Date.now(), 
       await storage.put(`session:${auth.session.sessionId}`, { ...auth.session, screenshotConsent: false, pendingScreenshotRef: ref });
       return { ok: true, code: null, screenshot_ref: ref };
     },
-    async latest() {
+    async latest({ workContext } = {}) {
+      const workId = clean(workContext?.workId);
+      const checkpointId = clean(workContext?.checkpointId);
+      if (!workId || !checkpointId) return { ok: false, code: "WORK_CONTEXT_REQUIRED" };
       const sessionId = await storage.get("latest-session-id");
       if (!sessionId) return { ok: false, code: "SESSION_INACTIVE" };
       const session = await load(sessionId); const latest = await storage.get(`latest:${sessionId}`) || null;
       if (!session || session.active !== true || Number(now()) >= Number(session.expiresAt)) return { ok: false, code: session ? "SESSION_EXPIRED" : "SESSION_INACTIVE" };
+      if (!session.workContext) return { ok: false, code: "WORK_CONTEXT_UNBOUND" };
+      if (session.workContext.workId !== workId || session.workContext.checkpointId !== checkpointId) {
+        return { ok: false, code: "WORK_CONTEXT_MISMATCH" };
+      }
       return { ok: true, session: publicSession(session), latest };
     },
     async screenshot({ screenshotRef } = {}) {
@@ -108,7 +119,7 @@ export class ObserverSessionRegistry {
   async grantScreenshot(input) { return this.service().grantScreenshot(input); }
   async consumeScreenshot(input) { return this.service().consumeScreenshot(input); }
   async storeScreenshot(input) { return this.service().storeScreenshot(input); }
-  async latest() { return this.service().latest(); }
+  async latest(input) { return this.service().latest(input); }
   async screenshot(input) { return this.service().screenshot(input); }
   async fetch(request) {
     const url = new URL(request.url);
@@ -122,7 +133,7 @@ export class ObserverSessionRegistry {
       "/grant-screenshot": value => this.grantScreenshot(value),
       "/consume-screenshot": value => this.consumeScreenshot(value),
       "/store-screenshot": value => this.storeScreenshot(value),
-      "/latest": () => this.latest(),
+      "/latest": value => this.latest(value),
       "/screenshot": value => this.screenshot(value),
     };
     const run = routes[url.pathname];
