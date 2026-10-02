@@ -17,6 +17,11 @@ const OFFICE_ALLOWED = new Map([
   ["/office/api/work", new Set(["GET"])],
   ["/office/api/command", new Set(["POST"])],
   ["/office/api/eye", new Set(["GET"])],
+  ["/office/passkey/status", new Set(["GET"])],
+  ["/office/passkey/register/options", new Set(["POST"])],
+  ["/office/passkey/register/verify", new Set(["POST"])],
+  ["/office/passkey/auth/options", new Set(["POST"])],
+  ["/office/passkey/auth/verify", new Set(["POST"])],
 ]);
 
 function baseHeaders(extra = {}) {
@@ -242,14 +247,14 @@ async function verifySession(request, env, nowMs = Date.now()) {
 
 function loginPage(errorCode = "") {
   const error = errorCode ? `<p class="office-alert" role="alert">Authentication failed.</p>` : "";
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-login"><section class="office-login-card"><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Owner workspace · secure entry</p>${error}<form method="post" action="/office/login"><label>Passcode<input name="passcode" type="password" autocomplete="current-password" required autofocus></label><button type="submit">Enter Office</button></form></section></main></body></html>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-login"><section class="office-login-card"><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Owner workspace · secure entry</p>${error}<button type="button" data-passkey-login hidden>Use Passkey</button><p class="office-muted" data-passkey-login-status></p><details><summary>Use bootstrap passcode</summary><form method="post" action="/office/login"><label>Passcode<input name="passcode" type="password" autocomplete="current-password" required></label><button type="submit">Enter Office</button></form></details></section></main><script type="module" src="/go-hub-office-login.js"></script></body></html>`;
 }
 
 function officeShell() {
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-shell"><header class="office-top"><div><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Build · Plan · Create · Together</p></div><form method="post" action="/office/logout"><button class="office-quiet" type="submit">Logout</button></form></header><section class="office-hero"><div class="office-hero-copy"><p class="office-kicker">CURRENT DESK</p><h2>Good work.<br>Brighter tomorrow.</h2><p>พื้นที่ทำงานของ GO และบิ๊ก — หน้าบ้านเรียบ แต่ต่อกับ Work truth และ Eye ด้านหลัง</p></div><div class="office-eye" data-office-eye><span class="office-dot"></span><div><strong data-eye-state>CHECKING</strong><small data-eye-detail>Factory Eye · read only</small></div></div></section><section class="office-grid"><article><span>01</span><h3>Projects</h3><p>งานและสถานะจาก owner truth</p></article><article><span>02</span><h3>Tasks</h3><p>สิ่งที่กำลังทำและรอตรวจ</p></article><article><span>03</span><h3>Notes</h3><p>บริบทสั้นที่ต้องหยิบใช้ตอนทำงาน</p></article><article><span>04</span><h3>Observer</h3><p>ตาของ GO · read-only ก่อนเสมอ</p></article></section><section class="office-panel"><div><p class="office-kicker">OBSERVER</p><h3>GO can see the current screen</h3><p class="office-muted" data-eye-message>กำลังอ่านสถานะ Factory Eye…</p></div><button type="button" data-eye-refresh>Refresh Eye</button></section></main><script type="module" src="/go-hub-office-surface.js"></script></body></html>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-shell"><header class="office-top"><div><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Build · Plan · Create · Together</p></div><form method="post" action="/office/logout"><button class="office-quiet" type="submit">Logout</button></form></header><section class="office-hero"><div class="office-hero-copy"><p class="office-kicker">CURRENT DESK</p><h2>Good work.<br>Brighter tomorrow.</h2><p>พื้นที่ทำงานของ GO และบิ๊ก — หน้าบ้านเรียบ แต่ต่อกับ Work truth และ Eye ด้านหลัง</p></div><div class="office-eye" data-office-eye><span class="office-dot"></span><div><strong data-eye-state>CHECKING</strong><small data-eye-detail>Factory Eye · read only</small></div></div></section><section class="office-grid"><article><span>01</span><h3>Projects</h3><p>งานและสถานะจาก owner truth</p></article><article><span>02</span><h3>Tasks</h3><p>สิ่งที่กำลังทำและรอตรวจ</p></article><article><span>03</span><h3>Notes</h3><p>บริบทสั้นที่ต้องหยิบใช้ตอนทำงาน</p></article><article><span>04</span><h3>Observer</h3><p>ตาของ GO · read-only ก่อนเสมอ</p></article></section><section class="office-panel"><div><p class="office-kicker">SECURITY</p><h3>Passkey</h3><p class="office-muted" data-passkey-status>ตรวจสถานะ Passkey…</p></div><button type="button" data-passkey-register>Create Passkey</button></section><section class="office-panel"><div><p class="office-kicker">OBSERVER</p><h3>GO can see the current screen</h3><p class="office-muted" data-eye-message>กำลังอ่านสถานะ Factory Eye…</p></div><button type="button" data-eye-refresh>Refresh Eye</button></section></main><script type="module" src="/go-hub-office-surface.js"></script></body></html>`;
 }
 
-export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, rateLimiter = null, audit = null } = {}) {
+export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, passkey = null, rateLimiter = null, audit = null } = {}) {
   return Object.freeze({
     owns(pathname) {
       return pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
@@ -260,6 +265,32 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
       const methods = OFFICE_ALLOWED.get(url.pathname);
       if (!methods || !methods.has(request.method)) {
         return json({ code:"OFFICE_ROUTE_DENIED" }, 404);
+      }
+
+      if (url.pathname === "/office/passkey/status") {
+        if (!passkey || typeof passkey.status !== "function") return json({ code:"OFFICE_PASSKEY_UNAVAILABLE" }, 503);
+        return passkey.status(url.origin);
+      }
+
+      if (url.pathname === "/office/passkey/auth/options") {
+        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        if (!passkey || typeof passkey.authOptions !== "function") return json({ code:"OFFICE_PASSKEY_UNAVAILABLE" }, 503);
+        return passkey.authOptions(url.origin);
+      }
+
+      if (url.pathname === "/office/passkey/auth/verify") {
+        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        if (!passkey || typeof passkey.verifyAuthentication !== "function") return json({ code:"OFFICE_PASSKEY_UNAVAILABLE" }, 503);
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json({ code:"INVALID_JSON" }, 400);
+        const verified = await passkey.verifyAuthentication(url.origin, body);
+        const payload = await verified.clone().json().catch(() => ({}));
+        if (!verified.ok || payload?.ok !== true) return json({ code:String(payload?.code || "OFFICE_PASSKEY_AUTH_FAILED") }, verified.status || 403);
+        if (!String(env?.GOHUB_OFFICE_SESSION_KEY || "").trim()) return json({ code:"OFFICE_AUTH_NOT_CONFIGURED" }, 503);
+        if (rateLimiter?.clear) await rateLimiter.clear(requestRateKey(request));
+        await recordAudit(audit, "OFFICE_LOGIN_SUCCESS", { subject:"BIG", method:"PASSKEY" });
+        const session = await mintSession(env);
+        return json({ ok:true, redirect:"/office" }, 200, { "set-cookie":sessionCookie(session.token, ttlSeconds(env)) });
       }
 
       if (url.pathname === OFFICE_LOGIN) {
@@ -313,6 +344,24 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
 
       const auth = await verifySession(request, env);
       if (!auth.ok) return json({ code:auth.code }, auth.status);
+
+      if (url.pathname === "/office/passkey/register/options") {
+        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        if (!passkey || typeof passkey.registerOptions !== "function") return json({ code:"OFFICE_PASSKEY_UNAVAILABLE" }, 503);
+        return passkey.registerOptions(url.origin);
+      }
+
+      if (url.pathname === "/office/passkey/register/verify") {
+        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        if (!passkey || typeof passkey.verifyRegistration !== "function") return json({ code:"OFFICE_PASSKEY_UNAVAILABLE" }, 503);
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json({ code:"INVALID_JSON" }, 400);
+        const verified = await passkey.verifyRegistration(url.origin, body);
+        const payload = await verified.clone().json().catch(() => ({}));
+        if (!verified.ok || payload?.ok !== true) return json({ code:String(payload?.code || "OFFICE_PASSKEY_REGISTER_FAILED") }, verified.status || 400);
+        await recordAudit(audit, "OFFICE_PASSKEY_REGISTERED", { subject:"BIG" });
+        return json({ ok:true, registered:true });
+      }
 
       if (url.pathname === OFFICE_LOGOUT) {
         if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
