@@ -18,7 +18,7 @@ function unknown(reason, details = {}) {
 
 export function createOlympusAionAdapter({
   fetchImpl = fetch,
-  endpoint = "https://olympus.pureekangraw.workers.dev",
+  endpoint = "https://olympus.yggmetro.com",
 } = {}) {
   const base = text(endpoint).replace(/\/+$/, "");
   if (!base) throw new Error("OLYMPUS_AION_ENDPOINT_REQUIRED");
