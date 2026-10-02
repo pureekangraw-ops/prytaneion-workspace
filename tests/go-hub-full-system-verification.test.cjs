@@ -35,7 +35,13 @@ const realityMap = {
 class MemoryStorage {
   constructor() { this.map = new Map(); }
   async get(key) { return this.map.get(key); }
-  async put(key, value) { this.map.set(key, structuredClone(value)); }
+  async put(key, value) {
+    if (key && typeof key === "object" && value === undefined) {
+      for (const [name, current] of Object.entries(key)) this.map.set(name, structuredClone(current));
+      return;
+    }
+    this.map.set(key, structuredClone(value));
+  }
   async list({ prefix } = {}) {
     return new Map([...this.map.entries()].filter(([key]) => !prefix || key.startsWith(prefix)));
   }
@@ -48,13 +54,22 @@ test("full-system verification reads a verified registry record", async () => {
       return [{
         "Registry ID": "MIR-101",
         "ชื่อ": "GO Hub Factory",
+        "ประเภท": "Service",
         "Purpose": "Build and verify code product work packages",
+        "Capability": "Design Production Piece QC Ready Gate Assembly Build Product QC",
+        "Location": "GO Hub → Factory",
         "Route": "GO → GO Catalog → GO Hub Factory",
+        "Owner": "GO",
+        "Permission": "Allowed",
         "Operational Status": "Active",
-        "Verification State": "Verified",
+        "Callable": "No",
         "Source ID": "factory-source-id",
         "Source URL": "https://source.test/factory",
+        "Verification State": "Verified",
+        "date:Verified Date:start": "2026-10-02",
         "Evidence": "repository checked",
+        "Aliases": "Factory / GO Factory",
+        "Tags": "factory, build, code, product",
         url: "https://notion.test/factory-record",
       }];
     },
@@ -110,13 +125,13 @@ test("full-system verification accepts only exact deployment provenance", async 
 test("full-system verification keeps audit evidence append-only and Work-bound", async () => {
   const { GoHubGlobalAuditLog } = await import(moduleUrl("go-hub-global-audit.mjs") + "?full-audit=" + Date.now());
   const audit = new GoHubGlobalAuditLog({ storage: new MemoryStorage() }, {});
-  const request = event => audit.fetch(new Request("https://audit.test", {
+  const append = event => audit.fetch(new Request("https://audit.test", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "append", event }),
   }));
   for (const type of ["LOGIN_SUCCESS", "REGISTRY_READ", "MAINTENANCE_CHECK"]) {
-    const response = await request({ eventId: "EV-" + type, type, workId: work.workId, checkpointId: "CP-FULL", phase: type, details: {} });
+    const response = await append({ eventId: "EV-" + type, type, workId: work.workId, checkpointId: "CP-FULL", phase: type, details: {} });
     assert.equal(response.status, 200);
   }
   const historyResponse = await audit.fetch(new Request("https://audit.test", {
