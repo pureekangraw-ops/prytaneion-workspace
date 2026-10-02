@@ -7,6 +7,9 @@ node_modules/**
 *
 !/index.html
 !/go-hub.html
+!/control.html
+!/go-hub-control-surface.css
+!/go-hub-control-surface.js
 !/go-hub.webmanifest
 !/go-hub-shell.css
 !/go-hub-shell.js

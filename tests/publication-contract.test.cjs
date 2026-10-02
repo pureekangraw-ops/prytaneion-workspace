@@ -36,7 +36,7 @@ test("active publication metadata follows the GO Hub hard cutover", () => {
   assert.equal(manifest.serviceWorker.file, "go-hub-sw.js");
   assert.equal(manifest.serviceWorker.mode, "go-hub-exclusive");
   assert.equal(manifest.serviceWorker.cachePrefix, "go-hub-app-");
-  assert.equal(manifest.serviceWorker.cacheGeneration, "v12-go-hub-v4-cutover");
+  assert.equal(manifest.serviceWorker.cacheGeneration, "v13-control-owner-surface");
   assert.equal(manifest.serviceWorker.autoActivate, true);
 });
 
