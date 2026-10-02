@@ -8,16 +8,7 @@ const { pathToFileURL } = require("node:url");
 const roomUrl = pathToFileURL(path.resolve(__dirname, "../go-hub-agent-lens-room.mjs")).href;
 async function body(response) { return response.json(); }
 
-const workContext = {
-  workId:"WORK-LENS-FITTING-ROOM-20260930-001",
-  checkpointId:"CP-WORK-LENS-FITTING-ROOM-20260930-001",
-};
-
-function response(payload, status = 200) {
-  return new Response(JSON.stringify(payload), { status, headers:{ "content-type":"application/json" } });
-}
-
-test("Lens Fitting Room exposes the eight canonical lenses as an optional Persona sibling", async () => {
+test("Lens Fitting Room exposes the eight canonical lenses on the Agent Capability Lane", async () => {
   const { createAgentLensRoom } = await import(roomUrl + "?list=" + Date.now());
   const result = await body(await createAgentLensRoom().action({ action:"list" }));
   assert.equal(result.ok, true);
@@ -28,6 +19,13 @@ test("Lens Fitting Room exposes the eight canonical lenses as an optional Person
   assert.equal(result.lenses.length, 8);
   assert.deepEqual(result.lenses.map(x => x.name), ["EVIDENCE", "CURRENT", "SYSTEM", "ESSENCE", "FRICTION", "FORM", "CONSEQUENCE", "ACTION"]);
   assert.equal(result.source.type, "USER_ATTACHED_SPEC");
+  assert.equal(result.capabilityBoundary.lane, "AGENT_CAPABILITY");
+  assert.equal(result.capabilityBoundary.workRequired, false);
+  assert.equal(result.capabilityBoundary.tabletRequired, false);
+  assert.equal(result.capabilityBoundary.evidenceSource, "FACTORY_EYE");
+  assert.equal(result.capabilityBoundary.evidenceMode, "READ_ONLY");
+  assert.equal(result.capabilityBoundary.browserMutation, false);
+  assert.equal(result.capabilityBoundary.credentialsExposed, false);
 });
 
 test("Lens comparison is read-only and never auto-selects", async () => {
@@ -41,41 +39,23 @@ test("Lens comparison is read-only and never auto-selects", async () => {
   assert.equal(result.workChanged, false);
 });
 
-test("Lens selection is explicit, persists only in Work Tablet data, and preserves Work identity", async () => {
-  let tabletData = { existing:"keep", personaSelection:{ personaId:"PERSONA-DETECTIVE" }, lensSelection:{ lensId:"LENS-CURRENT" } };
-  let updateInput = null;
+test("Lens selection is explicit and session-scoped without Work Tablet or Work identity", async () => {
   const { createAgentLensRoom } = await import(roomUrl + "?select=" + Date.now());
-  const room = createAgentLensRoom({
-    readTablet: async input => response({ ok:true, action:"pickup_tablet", tabletId:input.tabletId, data:tabletData }),
-    updateTablet: async input => {
-      updateInput = input;
-      tabletData = input.data;
-      return response({ ok:true, action:"update_tablet", tabletId:input.tabletId, data:tabletData, tablet:{ data:tabletData } });
-    },
-  });
-
-  const first = await body(await room.action({ action:"select", agentId:"GO", lensId:"LENS-EVIDENCE", tabletId:"TABLET:3009-B86I", workContext }));
-  assert.equal(first.ok, true);
-  assert.equal(first.confirmation, "LENS_SELECTED");
-  assert.equal(first.persisted, true);
-  assert.equal(first.selectedAutomatically, false);
-  assert.equal(first.exited, true);
-  assert.equal(first.authorityCreated, false);
-  assert.equal(first.routeChanged, false);
-  assert.equal(first.workChanged, false);
-  assert.equal(first.workIdentityUnchanged, true);
-  assert.equal(first.passOpened, false);
-  assert.equal(first.toolAccessChanged, false);
-  assert.equal(updateInput.data.existing, "keep");
-  assert.equal(updateInput.data.personaSelection.personaId, "PERSONA-DETECTIVE");
-  assert.equal(updateInput.data.lensSelection.lensId, "LENS-EVIDENCE");
-
-  const second = await body(await room.action({ action:"select", agentId:"GO", lensId:"LENS-FRICTION", tabletId:"TABLET:3009-B86I", workContext }));
-  assert.equal(second.ok, true);
-  assert.equal(second.data.existing, "keep");
-  assert.equal(second.data.personaSelection.personaId, "PERSONA-DETECTIVE");
-  assert.equal(second.data.lensSelection.lensId, "LENS-FRICTION");
-  assert.deepEqual(second.workContext, workContext);
+  const selected = await body(await createAgentLensRoom().action({ action:"select", agentId:"GO", lensId:"LENS-EVIDENCE" }));
+  assert.equal(selected.ok, true);
+  assert.equal(selected.confirmation, "LENS_SELECTED");
+  assert.equal(selected.persisted, false);
+  assert.equal(selected.persistence, "SESSION_RESPONSE_ONLY");
+  assert.equal(selected.selectedAutomatically, false);
+  assert.equal(selected.exited, true);
+  assert.equal(selected.authorityCreated, false);
+  assert.equal(selected.routeChanged, false);
+  assert.equal(selected.workChanged, false);
+  assert.equal(selected.passOpened, false);
+  assert.equal(selected.toolAccessChanged, false);
+  assert.equal(selected.lens.lensId, "LENS-EVIDENCE");
+  assert.equal(Object.hasOwn(selected, "tabletId"), false);
+  assert.equal(Object.hasOwn(selected, "workContext"), false);
 });
 
 test("Lens Room rejects implicit entry and invented lenses", async () => {
@@ -84,12 +64,12 @@ test("Lens Room rejects implicit entry and invented lenses", async () => {
   const implicit = await room.action({ action:"enter", agentId:"GO" });
   assert.equal(implicit.status, 400);
   assert.equal((await body(implicit)).code, "LENS_ROOM_EXPLICIT_SELECT_REQUIRED");
-  const unknown = await room.action({ action:"select", agentId:"GO", lensId:"LENS-MADE-UP", tabletId:"TABLET:3009-B86I", workContext });
+  const unknown = await room.action({ action:"select", agentId:"GO", lensId:"LENS-MADE-UP" });
   assert.equal(unknown.status, 404);
   assert.equal((await body(unknown)).code, "LENS_ROOM_LENS_UNKNOWN");
 });
 
-test("Lens Room has a direct sibling door and does not become a Work Tablet gate", () => {
+test("Lens Room discovery stays outside Work Tablet and Door/Gate wiring", () => {
   const root = path.resolve(__dirname, "..");
   const registrySource = fs.readFileSync(path.join(root, "go-hub-mcp-registry.mjs"), "utf8");
   const workerSource = fs.readFileSync(path.join(root, "go-hub-factory-mcp-worker.mjs"), "utf8");
@@ -97,5 +77,6 @@ test("Lens Room has a direct sibling door and does not become a Work Tablet gate
   assert.match(registrySource, /agentLensRoom/);
   assert.match(workerSource, /agentLensRoom: input => agentLensRoom\.action\(input\)/);
   assert.match(workerSource, /agentMission: input => agentMission\.action\(input\)/);
-  assert.doesNotMatch(workerSource, /agentMission\.action\([^\n]*agentLensRoom/);
+  assert.doesNotMatch(workerSource, /readTablet:\s*input\s*=>\s*agentMission\.action/);
+  assert.doesNotMatch(workerSource, /updateTablet:\s*input\s*=>\s*agentMission\.action/);
 });
