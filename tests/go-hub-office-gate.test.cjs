@@ -293,3 +293,37 @@ test("Office Eye preserves WARMING_UP/STALE truth and never upgrades evidence to
     assert.notEqual(payload.state, "LIVE");
   }
 });
+
+
+test("Office login accepts same-origin mobile form navigation when Origin is omitted", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?mobile-origin=" + Date.now());
+  const gate = createOfficeGate();
+  const response = await gate.fetch(request("/office/login", {
+    method:"POST",
+    headers:{
+      referer:"https://office.example/office/login",
+      "sec-fetch-site":"same-origin",
+      "sec-fetch-mode":"navigate",
+      "content-type":"application/x-www-form-urlencoded",
+    },
+    body:"passcode=correct-passcode",
+  }), env());
+  assert.equal(response.status, 303);
+});
+
+test("Office login still rejects omitted Origin with cross-origin Referer", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?mobile-cross=" + Date.now());
+  const gate = createOfficeGate();
+  const response = await gate.fetch(request("/office/login", {
+    method:"POST",
+    headers:{
+      referer:"https://evil.example/phish",
+      "sec-fetch-site":"cross-site",
+      "sec-fetch-mode":"navigate",
+      "content-type":"application/x-www-form-urlencoded",
+    },
+    body:"passcode=correct-passcode",
+  }), env());
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { code:"OFFICE_ORIGIN_DENIED" });
+});
