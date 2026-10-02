@@ -113,18 +113,101 @@ test("Office session can be revoked by epoch rotation and logout clears the cook
   assert.match(logout.headers.get("set-cookie"), /Max-Age=0/);
 });
 
-test("Office allowlisted Work/command/Eye seams stay unwired in Phase 1 after authentication", async () => {
-  const { createOfficeGate } = await import(gateUrl + "?phase1=" + Date.now());
+test("Office Work read delegates exact identity to Centre V4 and preserves Centre as truth owner", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?phase2-read=" + Date.now());
+  const calls = [];
+  const centreLive = {
+    async action(input) {
+      calls.push(input);
+      return new Response(JSON.stringify({
+        ok:true,
+        v4:true,
+        work:{ workId:"WORK-1", checkpointId:"CP-1", status:"ON PROCESS", ownership:{ ownerId:"GO" } },
+      }), { headers:{ "content-type":"application/json" } });
+    },
+  };
+  const gate = createOfficeGate({ centreLive });
+  const loggedIn = await login(gate);
+  const cookie = cookieFrom(loggedIn);
+  const response = await gate.fetch(request("/office/api/work?workId=WORK-1&checkpointId=CP-1", { headers:{ cookie } }), env());
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.work.workId, "WORK-1");
+  assert.equal(payload.work.checkpointId, "CP-1");
+  assert.deepEqual(calls, [{ action:"v4_inspect", workId:"WORK-1", checkpointId:"CP-1" }]);
+  assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
+});
+
+test("Office command forwards the canonical Agent Mission payload unchanged and denies non-canonical actions", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?phase2-command=" + Date.now());
+  const received = [];
+  const agentMission = {
+    async action(input) {
+      received.push(input);
+      return new Response(JSON.stringify({
+        ok:true,
+        action:input.action,
+        tabletId:"TABLET:0001-TEST",
+        workContext:{ workId:"WORK-NEW", checkpointId:"CP-NEW" },
+      }), { status:201, headers:{ "content-type":"application/json" } });
+    },
+  };
+  const gate = createOfficeGate({
+    agentMission,
+    agentMissionActions:["create_tablet","pickup_tablet","emergency_enter","help_choose","update_tablet","return_tablet"],
+  });
+  const loggedIn = await login(gate);
+  const cookie = cookieFrom(loggedIn);
+  const command = {
+    action:"create_tablet",
+    agentId:"GO",
+    mission:"Office-created mission",
+    requestedResult:"Use current Agent Mission contract",
+    workKey:"OFFICE-MISSION",
+    workType:"NORMAL",
+    initialContext:{ source:"OFFICE" },
+  };
+  const response = await gate.fetch(request("/office/api/command", {
+    method:"POST",
+    headers:{ cookie, origin:"https://office.example", "content-type":"application/json" },
+    body:JSON.stringify(command),
+  }), env());
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, [command]);
+
+  const legacy = await gate.fetch(request("/office/api/command", {
+    method:"POST",
+    headers:{ cookie, origin:"https://office.example", "content-type":"application/json" },
+    body:JSON.stringify({ action:"review", workId:"WORK-X" }),
+  }), env());
+  assert.equal(legacy.status, 403);
+  assert.deepEqual(await legacy.json(), { code:"OFFICE_AGENT_MISSION_ACTION_DENIED" });
+});
+
+test("Office command requires same-origin even with a valid session", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?phase2-origin=" + Date.now());
+  let calls = 0;
+  const gate = createOfficeGate({
+    agentMission:{ async action() { calls += 1; return new Response("{}"); } },
+    agentMissionActions:["create_tablet"],
+  });
+  const loggedIn = await login(gate);
+  const cookie = cookieFrom(loggedIn);
+  const response = await gate.fetch(request("/office/api/command", {
+    method:"POST",
+    headers:{ cookie, origin:"https://evil.example", "content-type":"application/json" },
+    body:JSON.stringify({ action:"create_tablet" }),
+  }), env());
+  assert.equal(response.status, 403);
+  assert.equal(calls, 0);
+});
+
+test("Office Eye remains intentionally unwired in Phase 2", async () => {
+  const { createOfficeGate } = await import(gateUrl + "?phase2-eye=" + Date.now());
   const gate = createOfficeGate();
   const loggedIn = await login(gate);
   const cookie = cookieFrom(loggedIn);
-
-  for (const [pathname, method] of [["/office/api/work","GET"],["/office/api/eye","GET"],["/office/api/command","POST"]]) {
-    const response = await gate.fetch(request(pathname, {
-      method,
-      headers:{ cookie, ...(method === "POST" ? { origin:"https://office.example" } : {}) },
-    }), env());
-    assert.equal(response.status, 501);
-    assert.deepEqual(await response.json(), { code:"OFFICE_ROUTE_NOT_WIRED_PHASE_1" });
-  }
+  const response = await gate.fetch(request("/office/api/eye", { headers:{ cookie } }), env());
+  assert.equal(response.status, 501);
+  assert.deepEqual(await response.json(), { code:"OFFICE_ROUTE_NOT_WIRED_PHASE_2" });
 });
