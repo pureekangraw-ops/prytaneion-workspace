@@ -211,7 +211,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   await registry.callTool("go_hub_observer_screenshot", { screenshotRef: "shot:1" });
   assert.equal(calls.at(-2).name, "observerLatest");
   assert.equal(calls.at(-1).name, "observerScreenshot");
-  await registry.callTool("go_hub_list_workflow_artifacts", { repository: "pureekangraw-ops/ygph-metropolis", runId: 123 });
+  await registry.callTool("go_hub_list_workflow_artifacts", { repository: "pureekangraw-ops/ygph-metropolis", runId: 123, workContext: factoryWorkContext });
   assert.equal(calls.at(-1).name, "listWorkflowArtifacts");
   await registry.callTool("go_hub_archive_workflow_artifact", { repository: "pureekangraw-ops/ygph-metropolis", runId: 123, artifactId: 456, parentId: "folder-a", entrySuffix: "app.apk", destinationName: "app.apk", workContext: driveWorkContext });
   assert.equal(calls.at(-1).name, "archiveWorkflowArtifact");
