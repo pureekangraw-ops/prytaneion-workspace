@@ -15,6 +15,7 @@ import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { ObserverSessionRegistry } from "./go-hub-browser-observer-session.js";
 import { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 import { createCentreLiveService } from "./go-hub-centre-live.mjs";
+import { createCentreObjectStore } from "./go-hub-centre-object-store.mjs";
 import { createBroadcastService } from "./go-hub-broadcast-state.mjs";
 import { createNotionLightService } from "./go-hub-notion-light.mjs";
 import { createCounterService } from "./go-hub-counter.mjs";
@@ -153,6 +154,14 @@ function corsFor(request) {
     "access-control-max-age": "600",
     "vary": "Origin",
   };
+}
+
+function centreObjectOwnerAuthFailure(request, env) {
+  const expected = String(env?.GOHUB_OWNER_PASSCODE || "");
+  if (!expected) return json({ code:"CENTRE_OBJECT_OWNER_AUTH_NOT_CONFIGURED" }, 503);
+  const supplied = String(request.headers.get("x-go-owner-passcode") || "");
+  if (!timingSafeEqual(supplied, expected)) return json({ code:"CENTRE_OBJECT_OWNER_AUTH_FAILED" }, 403);
+  return null;
 }
 
 function ownerAuthFailure(request, env, policy) {
@@ -901,6 +910,52 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
       if (request.method === "GET" && url.pathname === CONTROL_ROOM_PATH) {
         return controlRoomReadBounded({ request, env, fetchImpl });
       }
+      if (url.pathname === `${CENTRE_API_ROOT}/object`) {
+        const authFailure = centreObjectOwnerAuthFailure(request, env);
+        if (authFailure) return authFailure;
+        const store = createCentreObjectStore({ bucket:env?.GO_HUB_CENTRE_OBJECTS });
+        const workId = String(request.headers.get("x-centre-work-id") || url.searchParams.get("workId") || "").trim();
+        const checkpointId = String(request.headers.get("x-centre-checkpoint-id") || url.searchParams.get("checkpointId") || "").trim();
+        const objectId = String(request.headers.get("x-centre-object-id") || url.searchParams.get("objectId") || "").trim();
+        try {
+          if (request.method === "PUT") {
+            const body = await request.arrayBuffer();
+            const result = await store.put({
+              workId, checkpointId, objectId, body,
+              contentType:request.headers.get("content-type") || "application/octet-stream",
+            });
+            return json(result, 201);
+          }
+          if (request.method === "HEAD") {
+            const result = await store.head({ workId, checkpointId, objectId });
+            if (!result) return new Response(null, { status:404 });
+            return new Response(null, {
+              status:200,
+              headers:{
+                "x-centre-object-key":result.objectKey,
+                "x-centre-sha256":result.sha256 || "",
+                "x-centre-size":String(result.size || 0),
+                "content-type":result.contentType || "application/octet-stream",
+              },
+            });
+          }
+          if (request.method === "GET") {
+            const result = await store.get({ workId, checkpointId, objectId });
+            if (!result) return json({ code:"CENTRE_OBJECT_NOT_FOUND" }, 404);
+            const headers = {
+              "content-type":result.head?.contentType || "application/octet-stream",
+              "cache-control":"private, no-store",
+              "x-centre-object-key":result.head?.objectKey || "",
+              "x-centre-sha256":result.head?.sha256 || "",
+            };
+            return new Response(result.body, { status:200, headers });
+          }
+          return json({ code:"METHOD_NOT_ALLOWED" }, 405);
+        } catch (error) {
+          return json({ code:String(error?.message || "CENTRE_OBJECT_STORE_ERROR") }, Number(error?.status) || 500);
+        }
+      }
+
       if (url.pathname === `${CENTRE_API_ROOT}/action`) {
         if (request.method !== "POST") return json({ code: "METHOD_NOT_ALLOWED" }, 405);
         const body = await request.json().catch(() => null);
