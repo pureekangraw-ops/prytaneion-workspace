@@ -37,6 +37,7 @@ const activeHubFiles = [
   "go-hub-dashboard-model.js",
   "go-hub-station-monitors.js",
   "go-hub-centre.js",
+  "go-hub-mimir-logic-v1.mjs",
   "go-hub-centre-client.js",
   "go-hub-authority-map.js",
   "go-hub-heimdall.js",
