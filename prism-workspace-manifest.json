@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "prism-workspace-manifest-v1",
+  "workspaceId": "PRISM",
+  "recoveryPolicy": {
+    "mode": "LOCAL_FIRST_RECOVERABLE",
+    "secrets": "REISSUE_NOT_RESTORE",
+    "missingDevice": "REVOKE_AND_REPAIR",
+    "governedTruth": "CENTRAL_ONLY"
+  },
+  "tools": [
+    {
+      "id": "browser-reader",
+      "source": "go-browser-local-reader.js",
+      "class": "LOCAL",
+      "recover": "REINSTALL"
+    },
+    {
+      "id": "safe-fill",
+      "source": "go-browser-safe-fill.js",
+      "class": "LOCAL",
+      "recover": "REINSTALL"
+    },
+    {
+      "id": "site-profiles",
+      "source": "go-browser-site-profiles.js",
+      "class": "LOCAL",
+      "recover": "RESTORE_CONFIG"
+    },
+    {
+      "id": "observer",
+      "source": "go-browser-local-observer.js",
+      "class": "LOCAL",
+      "recover": "REINSTALL"
+    },
+    {
+      "id": "observer-extension",
+      "source": "browser-extension/go-browser-local-observer-v1",
+      "class": "LOCAL",
+      "recover": "REINSTALL"
+    },
+    {
+      "id": "browser-extension",
+      "source": "browser-extension/go-browser-local-v1",
+      "class": "LOCAL",
+      "recover": "REINSTALL"
+    },
+    {
+      "id": "pixie-visual",
+      "class": "REMOTE_CAPABILITY",
+      "recover": "RESTORE_CONNECTOR_AND_PRESETS"
+    },
+    {
+      "id": "factory-eye",
+      "class": "REMOTE_READ",
+      "recover": "REPAIR_PAIRING"
+    },
+    {
+      "id": "centre-work",
+      "class": "GOVERNED_TRUTH",
+      "recover": "READ_FROM_CENTRAL"
+    },
+    {
+      "id": "merge-deploy",
+      "class": "GOVERNED_ACTION",
+      "recover": "REAUTHORIZE"
+    }
+  ],
+  "sync": {
+    "include": [
+      "workspace.notes",
+      "workspace.trackedWork",
+      "workspace.context",
+      "evidence.index",
+      "toolManifest",
+      "toolPresets",
+      "outbox.metadata"
+    ],
+    "exclude": [
+      "sessionToken",
+      "passkeyPrivateMaterial",
+      "rawCredential",
+      "cookie",
+      "apiKey",
+      "accessToken",
+      "refreshToken"
+    ]
+  }
+}

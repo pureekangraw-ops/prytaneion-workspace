@@ -40,3 +40,14 @@ test("Office tracker styles live status lanes for mobile and desktop",()=>{
   assert.match(css,/\.office-work-card\[data-status="done"\]/);
   assert.match(css,/\.office-work-form/);
 });
+
+
+test("Office degraded mode preserves cached reads without PRISM bypass",()=>{
+  const surface=read("go-hub-office-surface.js");
+  assert.match(surface,/ygg-office-work-cache-v1/);
+  assert.match(surface,/ygg-office-eye-cache-v1/);
+  assert.match(surface,/DEGRADED MODE/);
+  assert.match(surface,/CACHED READ ONLY/);
+  assert.match(surface,/NOT EXECUTED/);
+  assert.doesNotMatch(surface,/office\/api\/prism|prism-control-port|PRISM_WORK_CONTEXT_REQUIRED/i);
+});
