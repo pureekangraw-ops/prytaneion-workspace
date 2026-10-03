@@ -42,3 +42,33 @@ test("MCP exposes pre-Work Centre resolve without WorkContext",async()=>{
   await registry.callTool("go_hub_centre_resolve",{query:"Spectrum"});
   assert.equal(calls.at(-1).name,"centreResolve");
 });
+
+
+test("Centre Work success is preserved when global index projection needs reconciliation",async()=>{
+  const {createCentreLiveService}=await mod("go-hub-centre-live.mjs");
+  const workId="WORK-PROJECTION-001";
+  const namespace={
+    getByName(name){
+      if(name===workId){
+        return {async fetch(){
+          return new Response(JSON.stringify({
+            ok:true,v4:true,
+            work:{workId,checkpointId:"CP-WORK-PROJECTION-001",name:"Projection proof",command:"prove",expectedResult:"success",status:"OPEN"}
+          }),{status:201,headers:{"content-type":"application/json"}});
+        }};
+      }
+      return {async fetch(){
+        return new Response(JSON.stringify({code:"INDEX_TEMPORARILY_UNAVAILABLE"}),{
+          status:503,headers:{"content-type":"application/json"}
+        });
+      }};
+    },
+  };
+  const service=createCentreLiveService({namespace});
+  const response=await service.action({action:"v4_create",workId,work:{name:"Projection proof",command:"prove",expectedResult:"success"}});
+  assert.equal(response.status,201);
+  assert.equal(response.headers.get("x-go-centre-index-sync"),"RECONCILE_REQUIRED");
+  const body=await response.json();
+  assert.equal(body.ok,true);
+  assert.equal(body.work.workId,workId);
+});
