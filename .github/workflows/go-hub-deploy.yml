@@ -420,6 +420,21 @@ jobs:
           }
 
           const origin = "https://go-hub." + subdomain + ".workers.dev";
+          const pairingPage = await fetch(origin + "/hub/prism/pairing", { redirect:"manual" });
+          const pairingHtml = await pairingPage.text();
+          if (pairingPage.status !== 200 || !pairingPage.headers.get("content-type")?.includes("text/html") ||
+              pairingPage.headers.get("cache-control") !== "no-store" || !pairingHtml.includes('id="passcode"') ||
+              !pairingHtml.includes('id="bootstrap"')) {
+            throw new Error("PRISM_PAIRING_PAGE_SMOKE_FAILED");
+          }
+          const pairingDenied = await fetch(origin + "/hub/api/lighthouse-control-port/session/start", {
+            method:"POST", headers:{"content-type":"application/json"}, body:"{}",
+          });
+          const pairingDenyBody = await pairingDenied.json().catch(() => null);
+          if (pairingDenied.status !== 403 || pairingDenyBody?.code !== "OWNER_AUTH_FAILED") {
+            throw new Error("PRISM_PAIRING_AUTH_SMOKE_FAILED");
+          }
+          console.log("PRISM pairing page is reachable without a Centre Pass; unauthenticated session creation denied.");
           const workId = "SMOKE-LIGHTHOUSE-" + process.env.GITHUB_RUN_ID + "-" + process.env.GITHUB_RUN_ATTEMPT;
           const actor = "GO";
           const retryableStatus = status => status === 409 || status === 425 || status === 429 || status >= 500;
