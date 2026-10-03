@@ -888,7 +888,11 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         });
       }
       if (request.method === "GET" && url.pathname === "/hub/observer") {
-        return observerOwnerPage();
+        return json({
+          code:"LEGACY_OBSERVER_RETIRED",
+          canonical:"FACTORY_EYE",
+          canonicalPath:FACTORY_EYE_API_ROOT,
+        }, 410);
       }
       if (url.pathname === PRISM_PAIRING_PATH || url.pathname === LIGHTHOUSE_CONTROL_PORT_OWNER_PATH ||
           url.pathname.startsWith(LIGHTHOUSE_CONTROL_PORT_API_ROOT + "/")) {
@@ -1045,6 +1049,14 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
 
       if (!isBrowserApiPath(url.pathname)) {
         return delegate.fetch(request, env);
+      }
+
+      if (isObserverApiPath(url.pathname)) {
+        return json({
+          code:"LEGACY_OBSERVER_RETIRED",
+          canonical:"FACTORY_EYE",
+          canonicalPath:FACTORY_EYE_API_ROOT,
+        }, 410);
       }
 
       if (isObserverApiPath(url.pathname)) {
