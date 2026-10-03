@@ -30,10 +30,6 @@
         "class_name": "LighthouseControlPortSessionRegistry"
       },
       {
-        "name": "OBSERVER_SESSIONS",
-        "class_name": "ObserverSessionRegistry"
-      },
-      {
         "name": "FACTORY_EYE_SESSIONS",
         "class_name": "FactoryEyeSessionRegistry"
       },
@@ -209,18 +205,13 @@
       "/mcp",
       "/mcp/*",
       "/oauth/*",
-      "/.well-known/*",
-      "/internal/*"
+      "/.well-known/*"
     ]
   },
   "r2_buckets": [
     {
       "binding": "OFFICE_ASSETS",
       "bucket_name": "ygg-office-assets"
-    },
-    {
-      "binding": "GO_HUB_CENTRE_OBJECTS",
-      "bucket_name": "hubcentre"
     }
   ],
   "services": [
@@ -231,6 +222,12 @@
     {
       "binding": "OLYMPUS_SERVICE",
       "service": "olympus"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "GO_HUB_CENTRE_OBJECTS",
+      "bucket_name": "hubcentre"
     }
   ]
 }
