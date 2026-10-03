@@ -7,6 +7,7 @@ import {
 
 export const LIGHTHOUSE_CONTROL_PORT_API_ROOT = "/hub/api/lighthouse-control-port";
 export const LIGHTHOUSE_CONTROL_PORT_OWNER_PATH = "/hub/lighthouse";
+export const PRISM_PAIRING_PATH = "/hub/prism/pairing";
 const SESSION_NAME = "lighthouse-control-port-v1";
 const encoder = new TextEncoder();
 
@@ -87,6 +88,37 @@ function nativeCors(request) {
     "access-control-max-age":"600",
     "vary":"Origin",
   };
+}
+
+export function prismPairingPage() {
+  return new Response(`<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PRISM · เชื่อม GO Hub</title>
+<style>:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101218;color:#f0f2f7}body{margin:0}main{max-width:560px;margin:auto;padding:28px 20px}form,label{display:grid;gap:10px}form{gap:18px}input,textarea,button{font:inherit;padding:12px;border:1px solid #485165;border-radius:10px;background:#1b2130;color:inherit;min-width:0}textarea{width:100%;box-sizing:border-box;min-height:180px}button{cursor:pointer;background:#253d70}button:disabled{opacity:.5;cursor:default}p{line-height:1.6}#status{overflow-wrap:anywhere}</style></head>
+<body><main><h1>เชื่อม PRISM กับ GO Hub</h1><p>กรอกรหัสเจ้าของ GO Hub เพื่อสร้าง session สำหรับ PRISM รหัสนี้ใช้ยืนยันบนฮับ ข้อมูลจับคู่ที่นำไปใส่แอปมีเพียง session และ token</p>
+<form id="pair"><label>รหัสเจ้าของ GO Hub<input id="passcode" type="password" autocomplete="current-password" required></label><label>ชื่อเครื่อง<input id="label" value="PRISM Android" maxlength="120" required></label><button type="submit">สร้าง session</button></form>
+<p id="status" role="status" aria-live="polite"></p><label>ข้อมูลจับคู่<textarea id="bootstrap" readonly spellcheck="false" placeholder="ข้อมูลจะแสดงหลังสร้าง session สำเร็จ"></textarea></label><p><button id="copy" type="button" disabled>คัดลอกข้อมูลจับคู่</button></p>
+<p>เปิด PRISM → Home → เชื่อมต่อฮับ → วางข้อมูลจับคู่ → เชื่อม GO Hub รอจนแอปแสดง “เชื่อม GO Hub แล้ว”</p>
+<p>เก็บข้อมูลจับคู่นี้เป็นส่วนตัว การสร้าง session ใหม่จะเปลี่ยน session เดิม</p>
+<script>
+const pair=document.getElementById('pair'),passcode=document.getElementById('passcode'),label=document.getElementById('label'),bootstrap=document.getElementById('bootstrap'),status=document.getElementById('status'),copy=document.getElementById('copy');
+let creating=false;
+pair.addEventListener('submit',async e=>{
+  e.preventDefault();if(creating)return;creating=true;bootstrap.value='';copy.disabled=true;status.textContent='กำลังสร้าง session…';
+  try{
+    const pending=fetch('/hub/api/lighthouse-control-port/session/start',{method:'POST',headers:{'content-type':'application/json','x-go-owner-passcode':passcode.value},body:JSON.stringify({device_label:label.value})});
+    passcode.value='';
+    const response=await pending;const body=await response.json().catch(()=>null);
+    if(!response.ok||!body?.ok)throw new Error(body?.code||'PAIRING_FAILED');
+    bootstrap.value=JSON.stringify(body,null,2);copy.disabled=false;status.textContent='สร้าง session แล้ว คัดลอกข้อมูลไปใส่ PRISM';
+  }catch(error){status.textContent=error.message==='OWNER_AUTH_FAILED'?'รหัสเจ้าของไม่ถูกต้อง กรุณาลองใหม่':('สร้าง session ไม่สำเร็จ: '+(error.message||'PAIRING_FAILED'));}
+  finally{passcode.value='';creating=false;}
+});
+copy.addEventListener('click',async()=>{
+  if(!bootstrap.value)return;
+  try{await navigator.clipboard.writeText(bootstrap.value);status.textContent='คัดลอกแล้ว เปิด PRISM แล้ววางในช่องเชื่อมต่อฮับ';}
+  catch{status.textContent='คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกและคัดลอกข้อมูลจากช่องด้านบน';}
+});
+</script></main></body></html>`,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'}});
 }
 
 export function lighthouseControlPortOwnerPage() {
@@ -276,6 +308,9 @@ export function createLighthouseControlPortHttpService({ namespace, ownerPasscod
   return Object.freeze({
     async fetch(request) {
       const url = new URL(request.url);
+      if (url.pathname === PRISM_PAIRING_PATH) {
+        return request.method === "GET" ? prismPairingPage() : json({code:"METHOD_NOT_ALLOWED"},405);
+      }
       if (request.method === "GET" && url.pathname === LIGHTHOUSE_CONTROL_PORT_OWNER_PATH) {
         return lighthouseControlPortOwnerPage();
       }

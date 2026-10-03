@@ -27,6 +27,7 @@ import {
   createLighthouseControlPortMcpService,
   LIGHTHOUSE_CONTROL_PORT_API_ROOT,
   LIGHTHOUSE_CONTROL_PORT_OWNER_PATH,
+  PRISM_PAIRING_PATH,
 } from "./go-hub-lighthouse-control-port-service.mjs";
 export { HephaestusForeman } from "./go-hub-factory-controller.mjs";
 export { createGoHubV4, CUTOVER_CONTRACT };
@@ -888,7 +889,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
       if (request.method === "GET" && url.pathname === "/hub/observer") {
         return observerOwnerPage();
       }
-      if (url.pathname === LIGHTHOUSE_CONTROL_PORT_OWNER_PATH ||
+      if (url.pathname === PRISM_PAIRING_PATH || url.pathname === LIGHTHOUSE_CONTROL_PORT_OWNER_PATH ||
           url.pathname.startsWith(LIGHTHOUSE_CONTROL_PORT_API_ROOT + "/")) {
         const ownerRoomPath = url.pathname === LIGHTHOUSE_CONTROL_PORT_OWNER_PATH ||
           url.pathname === `${LIGHTHOUSE_CONTROL_PORT_API_ROOT}/owner-state` ||
