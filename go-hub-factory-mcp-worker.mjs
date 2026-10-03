@@ -470,19 +470,14 @@ function observerStatus(code) {
   return 403;
 }
 
-export function createObserverEvidenceService({ namespace, factoryEyeNamespace } = {}) {
-  function legacyStub() {
-    if (!namespace || typeof namespace.getByName !== "function") return null;
-    return namespace.getByName("go-browser-observer-v1");
-  }
-
+export function createObserverEvidenceService({ factoryEyeNamespace } = {}) {
   function factoryEyeStub() {
     if (!factoryEyeNamespace || typeof factoryEyeNamespace.getByName !== "function") return null;
     return factoryEyeNamespace.getByName("ergasterion-factory-eye-v1");
   }
 
   async function callStub(current, baseUrl, method, input = {}) {
-    if (!current) return { ok:false, code:"HUB_UNAVAILABLE" };
+    if (!current) return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
     try {
       if (typeof current.fetch === "function") {
         const path = method === "latest" ? "latest" : "screenshot";
@@ -491,18 +486,15 @@ export function createObserverEvidenceService({ namespace, factoryEyeNamespace }
           headers:{ "content-type":"application/json" },
           body:JSON.stringify(input),
         }));
-        const body = await response.json().catch(() => ({ code:"HUB_UNAVAILABLE" }));
-        return response.ok ? body : { ok:false, code:body?.code || "HUB_UNAVAILABLE" };
+        const body = await response.json().catch(() => ({ code:"FACTORY_EYE_UNAVAILABLE" }));
+        return response.ok ? body : { ok:false, code:body?.code || "FACTORY_EYE_UNAVAILABLE" };
       }
       if (typeof current[method] === "function") return await current[method](input);
-      return { ok:false, code:"HUB_UNAVAILABLE" };
+      return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
     } catch {
-      return { ok:false, code:"HUB_UNAVAILABLE" };
+      return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
     }
   }
-
-  const callLegacy = (method, input = {}) =>
-    callStub(legacyStub(), "https://observer-session.internal/", method, input);
 
   const callFactoryEye = (method, input = {}) =>
     callStub(factoryEyeStub(), "https://factory-eye.internal/", method, input);
@@ -533,13 +525,7 @@ export function createObserverEvidenceService({ namespace, factoryEyeNamespace }
       if (!workId || !checkpointId) {
         return json({ code:"WORK_CONTEXT_REQUIRED" }, 400);
       }
-      const result = await callLegacy("latest", context);
-      if (!result?.ok) {
-        return json({
-          code:result?.code || eye?.code || "HUB_UNAVAILABLE",
-        }, observerStatus(result?.code));
-      }
-      return json({ ...result, source:"LEGACY_BROWSER_OBSERVER", workContextBound:true }, 200);
+      return json({ code:eye?.code || "FACTORY_EYE_UNAVAILABLE" }, 503);
     },
 
     async screenshot({ screenshotRef } = {}) {
@@ -554,9 +540,7 @@ export function createObserverEvidenceService({ namespace, factoryEyeNamespace }
         return json({ ...eye, source:"FACTORY_EYE", legacyBrowserPolicyUsed:false }, 200);
       }
 
-      const result = await callLegacy("screenshot", { screenshotRef:ref });
-      if (!result?.ok) return json({ code:result?.code || "HUB_UNAVAILABLE" }, observerStatus(result?.code));
-      return json({ ...result, source:"LEGACY_BROWSER_OBSERVER" }, 200);
+      return json({ code:"LEGACY_OBSERVER_RETIRED", canonical:"FACTORY_EYE" }, 410);
     },
   });
 }
@@ -746,9 +730,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         secret: env?.ERGASTERION_HUB_SHARED_SECRET,
         binding: env?.ERGASTERION_FACTORY,
       });
-      const observer = createObserverEvidenceService({
-        namespace:env?.OBSERVER_SESSIONS,
-        factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
+      const observer = createObserverEvidenceService({        factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
       });
       const centreLive = createCentreLiveService({ namespace: env?.GO_HUB_CENTRE_STATE });
       const broadcast = createBroadcastService({ namespace: env?.GO_HUB_BROADCAST_STATE });
