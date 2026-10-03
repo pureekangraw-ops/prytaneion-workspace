@@ -1192,12 +1192,20 @@ export function createCentreLiveService({ namespace } = {}) {
       if (!response.ok || !action.startsWith("v4_")) return response;
       const payload = await response.clone().json().catch(()=>null);
       if (!payload?.work?.workId || ["v4_inspect","v4_board"].includes(action)) return response;
-      const sync = await send(indexName, { action:"v4_index_replace", work:payload.work });
-      if (!sync.ok) {
-        const detail = await sync.clone().json().catch(()=>({}));
-        return json({ code:"CENTRE_INDEX_RECONCILIATION_REQUIRED", workCommitted:true, work:payload.work, indexError:detail?.code||null },502);
+      let indexSync = "SYNCED";
+      try {
+        const sync = await send(indexName, { action:"v4_index_replace", work:payload.work });
+        if (!sync.ok) indexSync = "RECONCILE_REQUIRED";
+      } catch {
+        indexSync = "RECONCILE_REQUIRED";
       }
-      return response;
+      const headers = new Headers(response.headers);
+      headers.set("x-go-centre-index-sync", indexSync);
+      return new Response(response.body, {
+        status:response.status,
+        statusText:response.statusText,
+        headers,
+      });
     },
   });
 }
