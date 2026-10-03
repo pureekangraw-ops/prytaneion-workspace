@@ -1,6 +1,10 @@
 const MAX_ATTEMPTS = 5;
 const WAITING_TARGET_RETRY_MS = 5 * 60 * 1000;
 const RETRY_DELAYS_MS = Object.freeze([1_000, 5_000, 30_000, 120_000, 300_000]);
+const COUNTER_HELPERS = Object.freeze(["PIXIE", "HERMES", "LIGHT", "SPECTRUM"]);
+const COUNTER_ACTORS = Object.freeze(["GO", ...COUNTER_HELPERS]);
+const COUNTER_ACTOR_SET = new Set(COUNTER_ACTORS);
+const LEGACY_PICKUP_ACTOR_SET = new Set(["GO", "LIGHT"]);
 const SECRET_FIELD = /(authorization|token|secret|passcode|master.?key|password|bearer)/i;
 
 function json(payload, status = 200) {
@@ -17,7 +21,7 @@ function required(value, label) {
 }
 function actor(value, fallback = null) {
   const text = String(value || fallback || "").trim().toUpperCase();
-  if (!["GO","LIGHT"].includes(text)) throw Object.assign(new Error("DISPATCH_ACTOR_INVALID"), { status:400 });
+  if (!COUNTER_ACTOR_SET.has(text)) throw Object.assign(new Error("DISPATCH_ACTOR_INVALID"), { status:400 });
   return text;
 }
 function objectValue(value, label, optional = false) {
@@ -121,7 +125,7 @@ export function createCounterDispatchCore({
       fromActor, toActor,
       answer:null,
       lightResult:null,
-      legs:{ LIGHT:leg(), GO:leg() },
+      legs:Object.fromEntries(COUNTER_ACTORS.map(name => [name, leg()])),
       bell:bell(),
       events:[],
       createdAt:at,
@@ -163,7 +167,7 @@ export function createCounterDispatchCore({
   function waitingTarget(input = {}, current = null) {
     if (!current) throw Object.assign(new Error("DISPATCH_NOT_FOUND"), { status:404 });
     const target = required(input.target, "Target").toUpperCase();
-    if (!["LIGHT","GO"].includes(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
+    if (!COUNTER_ACTOR_SET.has(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
     const state = clone(current);
     const targetLeg = state.legs[target];
     const alreadyWaiting = targetLeg.status === "WAITING_TARGET";
@@ -189,7 +193,7 @@ export function createCounterDispatchCore({
   function waitingPickup(input = {}, current = null) {
     if (!current) throw Object.assign(new Error("DISPATCH_NOT_FOUND"), { status:404 });
     const target = required(input.target, "Target").toUpperCase();
-    if (!["LIGHT","GO"].includes(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
+    if (!COUNTER_ACTOR_SET.has(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
     const state = clone(current);
     const targetLeg = state.legs[target];
     if (targetLeg.status === "WAITING_PICKUP" && targetLeg.nextAttemptAt == null) return publicState(state, { idempotent:true });
@@ -208,7 +212,7 @@ export function createCounterDispatchCore({
   function rung(input = {}, current = null) {
     if (!current) throw Object.assign(new Error("DISPATCH_NOT_FOUND"), { status:404 });
     const target = required(input.target, "Target").toUpperCase();
-    if (!["LIGHT","GO"].includes(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
+    if (!COUNTER_ACTOR_SET.has(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
     const state = clone(current);
     const targetLeg = state.legs[target];
     state.revision += 1;
@@ -299,7 +303,7 @@ export function createCounterDispatchCore({
   function beginBellAttempt(input = {}, current = null) {
     if (!current) throw Object.assign(new Error("DISPATCH_NOT_FOUND"), { status:404 });
     const target = required(input.target, "Target").toUpperCase();
-    if (!["LIGHT","GO"].includes(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
+    if (!COUNTER_ACTOR_SET.has(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
     const state = clone(current);
     const currentBell = state.bell || bell();
     if (currentBell.status === "DELIVERED" || currentBell.status === "DEAD_LETTER") {
@@ -386,9 +390,13 @@ export function createCounterDispatchCore({
 }
 
 function endpoint(env, target) {
-  const url = target === "LIGHT" ? env?.LIGHT_WAKE_URL : env?.GO_WAKE_URL;
-  const bearer = target === "LIGHT" ? env?.LIGHT_WAKE_BEARER : env?.GO_WAKE_BEARER;
-  return { url:String(url || "").trim(), bearer:String(bearer || "").trim() };
+  if (target === "LIGHT") {
+    return { url:String(env?.LIGHT_WAKE_URL || "").trim(), bearer:String(env?.LIGHT_WAKE_BEARER || "").trim() };
+  }
+  if (target === "GO") {
+    return { url:String(env?.GO_WAKE_URL || "").trim(), bearer:String(env?.GO_WAKE_BEARER || "").trim() };
+  }
+  return { url:"", bearer:"" };
 }
 function wakePayload(state, target) {
   const destination = actor(state.toActor, "LIGHT");
@@ -451,7 +459,7 @@ export class GoHubCounterDispatchState {
     let state = current;
 
     const destinationActor = actor(state.toActor, "LIGHT");
-    if (!state.answer && target === destinationActor) {
+    if (!state.answer && target === destinationActor && LEGACY_PICKUP_ACTOR_SET.has(target)) {
       const result = this.core.waitingPickup({ target }, state);
       if (!result.idempotent) await this.save(result.dispatch);
       return publicState(result.dispatch, {
@@ -645,7 +653,7 @@ export class GoHubCounterDispatchState {
     if (!current) throw Object.assign(new Error("DISPATCH_NOT_FOUND"), { status:404 });
     assertIdentity(current, input);
     const target = required(input.target, "Target").toUpperCase();
-    if (!["LIGHT","GO"].includes(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
+    if (!COUNTER_ACTOR_SET.has(target)) throw Object.assign(new Error("DISPATCH_TARGET_INVALID"), { status:400 });
     return this.deliver(target, current);
   }
   async alarm() {
