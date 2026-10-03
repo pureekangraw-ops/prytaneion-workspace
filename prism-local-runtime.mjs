@@ -93,3 +93,11 @@ export const PRISM_LOCAL_CAPABILITY_CONTRACT=Object.freeze({
   governed:GOVERNED_CAPABILITIES,
   rule:"LOCAL does not create shared authority; governed requests stay NOT_EXECUTED until a backend authority path runs them."
 });
+
+export const PRISM_OFFLOAD_CONTRACT=Object.freeze({
+  version:"prism-offload-v1",
+  localPreferred:["PAGE_SCAN","PAGE_FINGERPRINT","SAFE_FILL_PREVIEW","SAFE_FILL_EXECUTE","LOCAL_OBSERVER_SNAPSHOT","SCREENSHOT_WITH_LOCAL_CONSENT"],
+  remotePreferred:["PIXIE_VISUAL_RENDER","MEDIA_RENDER","BUILD","CI"],
+  governedOnly:["CENTRE_WORK_TRUTH","PASS_PERMISSION","COUNTER_SHARED_TRUTH","MERGE","DEPLOY","SHARED_AUDIT","REMOTE_MUTATION"],
+  rule:"Heavy compute may be offloaded, but remote execution does not grant authority or change central truth by itself."
+});
