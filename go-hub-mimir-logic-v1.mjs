@@ -75,6 +75,7 @@ export const MIMIR_V1_SCHEMA = Object.freeze({
   ContextPack: Object.freeze([
     "contextPackId",
     "consumer",
+    "effectiveScope",
     "basedOnRecordIds",
     "currentFacts",
     "warnings",
@@ -375,10 +376,12 @@ export function createContextPack(input = {}) {
   const warnings = accessible
     .filter(record => ["stale", "legacy", "smoke", "conflict", "unknown"].includes(record.lifecycleStatus))
     .map(record => `${record.recordId}:${record.lifecycleStatus}`);
+  const effectiveScope = intersectAccessScopes(accessible.map(record => record.accessScope));
   return deepFreeze({
     schemaVersion: MIMIR_LOGIC_VERSION,
     contextPackId: text(input.contextPackId, "contextPackId"),
     consumer,
+    effectiveScope,
     basedOnRecordIds: accessible.map(record => record.recordId),
     currentFacts,
     warnings,

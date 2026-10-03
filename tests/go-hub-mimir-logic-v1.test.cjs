@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
-const moduleUrl = pathToFileURL(path.resolve(__dirname, "..", "go-hub-mimir-logic-v1.mjs")).href;
+const moduleUrl = pathToFileURL(path.resolve(__dirname, "go-hub-mimir-logic-v1.mjs")).href;
 let mimir;
 
 test.before(async () => {
@@ -105,6 +105,33 @@ test("access scope only narrows when records are combined", () => {
   assert.deepEqual(scope.allowedConsumers, ["HERMES"]);
   assert.deepEqual(scope.fields, ["title"]);
   assert.equal(scope.visibility, "restricted");
+});
+
+test("context packs narrow the combined source scope before consumer delivery", () => {
+  const first = currentRecord({
+    recordId: "record-a",
+    accessScope: { visibility: "internal", allowedConsumers: ["HERMES", "PIXIE"], fields: ["title", "summary"] },
+  });
+  const second = currentRecord({
+    recordId: "record-b",
+    accessScope: { visibility: "restricted", allowedConsumers: ["HERMES"], fields: ["title"] },
+  });
+  const pack = mimir.createContextPack({
+    contextPackId: "context-001",
+    consumer: "HERMES",
+    records: [first, second],
+    generatedAt: "2026-10-03T00:02:00.000Z",
+  });
+  assert.deepEqual(pack.effectiveScope.allowedConsumers, ["HERMES"]);
+  assert.deepEqual(pack.effectiveScope.fields, ["title"]);
+  assert.equal(pack.effectiveScope.visibility, "restricted");
+});
+
+test("duplicate relation is explicit and does not choose a lifecycle winner", () => {
+  assert.equal(mimir.relateDuplicate({ contentHash: "same" }, { contentHash: "same" }), "exact");
+  assert.equal(mimir.relateDuplicate({ identityKey: "same" }, { identityKey: "same" }), "identity");
+  assert.equal(mimir.relateDuplicate({ semanticKey: "same" }, { semanticKey: "same" }), "possible");
+  assert.equal(mimir.relateDuplicate({ identityKey: "a" }, { identityKey: "b" }), "none");
 });
 
 test("lifecycle status and duplicate state remain independent", () => {
