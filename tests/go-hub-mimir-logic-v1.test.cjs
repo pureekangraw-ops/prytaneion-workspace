@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
-const moduleUrl = pathToFileURL(path.resolve(__dirname, "go-hub-mimir-logic-v1.mjs")).href;
+const moduleUrl = pathToFileURL(path.resolve(__dirname, "..", "go-hub-mimir-logic-v1.mjs")).href;
 let mimir;
 
 test.before(async () => {
