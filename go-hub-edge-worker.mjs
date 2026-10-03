@@ -237,6 +237,7 @@ function factoryEyeSessionsFor(env) {
       register:input => call("register", input),
       heartbeat:input => call("heartbeat", input),
       observe:input => call("observe", input),
+      requestObservation:input => call("request-observe", input),
       receipt:input => call("receipt", input),
       pullCommands:input => call("commands", input),
       stop:input => call("stop", input),
