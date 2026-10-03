@@ -54,6 +54,11 @@ const CONTROL_ROOM_PATH = "/hub/api/centre/control-room";
 const PROJECT_VIEWER_STATUS_PATH = "/hub/api/centre/project-viewer-status";
 const LIGHT_MCP_OWNER_PATH = "/hub/light-mcp";
 const LIGHT_MCP_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+const OFFICE_STATIC_ASSET_PATHS = new Set([
+  "/go-hub-office-surface.css",
+  "/go-hub-office-surface.js",
+  "/go-hub-office-login.js",
+]);
 const encoder = new TextEncoder();
 const officeRateLimitMemory = new Map();
 
@@ -669,6 +674,9 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         request = new Request(url.toString(), request);
       }
       if (!officeHost && url.pathname === "/" && env?.ASSETS?.fetch) {
+        return env.ASSETS.fetch(request);
+      }
+      if (OFFICE_STATIC_ASSET_PATHS.has(url.pathname) && env?.ASSETS?.fetch) {
         return env.ASSETS.fetch(request);
       }
       if (url.pathname === "/office" || url.pathname.startsWith("/office/")) {
