@@ -20,6 +20,165 @@ const assetForm=document.querySelector("[data-asset-upload]");
 const assetStatus=document.querySelector("[data-asset-status]");
 const assetList=document.querySelector("[data-asset-list]");
 
+const workList=document.querySelector("[data-work-list]");
+const workForm=document.querySelector("[data-work-form]");
+const workMessage=document.querySelector("[data-work-message]");
+const workRefresh=document.querySelector("[data-work-refresh]");
+const workActive=document.querySelector("[data-work-active]");
+const workWaiting=document.querySelector("[data-work-waiting]");
+const workDone=document.querySelector("[data-work-done]");
+const workEye=document.querySelector("[data-work-eye]");
+const OFFICE_TRACKED_WORK_KEY="ygg-office-tracked-work-v1";
+
+function loadTrackedWork(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(OFFICE_TRACKED_WORK_KEY)||"[]");
+    return Array.isArray(parsed)?parsed.filter(item=>item&&item.workId&&item.checkpointId).slice(0,24):[];
+  }catch{return[];}
+}
+function saveTrackedWork(items){
+  localStorage.setItem(OFFICE_TRACKED_WORK_KEY,JSON.stringify(items.slice(0,24)));
+}
+function normalizedStatus(value){
+  return String(value||"UNKNOWN").trim().toUpperCase().replace(/\s+/g," ");
+}
+function statusBucket(status){
+  if(["ON PROCESS","ON_PROCESS","DOING","ACTIVE","OPEN"].includes(status))return"active";
+  if(["WAIT","WAITING","WAIT VERIFY","WAIT_VERIFY","VERIFY","REVIEW_REQUIRED"].includes(status))return"waiting";
+  if(["COMPLETE","COMPLETED","DONE"].includes(status))return"done";
+  if(["CANCEL","CANCELLED","FAILED","BLOCKED"].includes(status))return"attention";
+  return"unknown";
+}
+function displayTime(value){
+  const ms=Date.parse(String(value||""));
+  if(!Number.isFinite(ms))return"ไม่ทราบเวลา";
+  return new Intl.DateTimeFormat("th-TH",{dateStyle:"short",timeStyle:"short"}).format(new Date(ms));
+}
+function textValue(...values){
+  for(const value of values){
+    const text=String(value??"").trim();
+    if(text)return text;
+  }
+  return"—";
+}
+async function readWork(identity){
+  const query=new URLSearchParams({workId:identity.workId,checkpointId:identity.checkpointId});
+  const response=await fetch("/office/api/work?"+query.toString(),{headers:{accept:"application/json"},cache:"no-store"});
+  const body=await response.json().catch(()=>({}));
+  if(response.status===401){
+    location.assign("/office/login");
+    throw new Error("OFFICE_AUTH_REQUIRED");
+  }
+  if(!response.ok)throw new Error(body.code||"OFFICE_WORK_READ_FAILED");
+  return body.work||body;
+}
+function makeWorkCard(work,identity){
+  const card=document.createElement("article");
+  card.className="office-work-card";
+  const status=normalizedStatus(work.status);
+  card.dataset.status=statusBucket(status);
+
+  const top=document.createElement("div");
+  top.className="office-work-card-top";
+  const badge=document.createElement("strong");
+  badge.className="office-work-status";
+  badge.textContent=status;
+  const remove=document.createElement("button");
+  remove.type="button";
+  remove.className="office-work-remove";
+  remove.textContent="Untrack";
+  remove.addEventListener("click",()=>{
+    const next=loadTrackedWork().filter(item=>!(item.workId===identity.workId&&item.checkpointId===identity.checkpointId));
+    saveTrackedWork(next);
+    readTrackedWork();
+  });
+  top.append(badge,remove);
+
+  const title=document.createElement("h4");
+  title.textContent=textValue(work.name,work.command,work.jobCode,identity.workId);
+  const ids=document.createElement("code");
+  ids.textContent=identity.workId+" · "+identity.checkpointId;
+
+  const meta=document.createElement("div");
+  meta.className="office-work-meta";
+  const holder=document.createElement("span");
+  holder.textContent="Holder: "+textValue(work.holder,work.ownerId);
+  const updated=document.createElement("span");
+  updated.textContent="Updated: "+displayTime(work.lastUpdated||work.updatedAt);
+  const destination=document.createElement("span");
+  destination.textContent="Next: "+textValue(work.nextAction,work.destination,(work.requestedDestinations||[]).join(", "));
+  meta.append(holder,updated,destination);
+
+  const note=document.createElement("p");
+  note.textContent=textValue(work.waitReason,work.result,work.requestedResult,work.initialContext?.summary,"Centre owner truth");
+  card.append(top,title,ids,meta,note);
+  return card;
+}
+async function readTrackedWork(){
+  if(!workList)return;
+  const tracked=loadTrackedWork();
+  workList.replaceChildren();
+  if(!tracked.length){
+    workMessage.textContent="ยังไม่ได้ปักงาน · ใส่ Work ID และ Checkpoint ID ด้านบน";
+    if(workActive)workActive.textContent="0";
+    if(workWaiting)workWaiting.textContent="0";
+    if(workDone)workDone.textContent="0";
+    return;
+  }
+  workMessage.textContent="กำลังอ่าน Centre owner truth…";
+  const counters={active:0,waiting:0,done:0,attention:0,unknown:0};
+  let ok=0;
+  for(const identity of tracked){
+    try{
+      const work=await readWork(identity);
+      const bucket=statusBucket(normalizedStatus(work.status));
+      counters[bucket]=(counters[bucket]||0)+1;
+      workList.append(makeWorkCard(work,identity));
+      ok+=1;
+    }catch(error){
+      const card=document.createElement("article");
+      card.className="office-work-card";
+      card.dataset.status="attention";
+      const title=document.createElement("h4");
+      title.textContent=identity.workId;
+      const detail=document.createElement("p");
+      detail.textContent=error instanceof Error?error.message:String(error);
+      card.append(title,detail);
+      workList.append(card);
+      counters.attention+=1;
+    }
+  }
+  if(workActive)workActive.textContent=String(counters.active||0);
+  if(workWaiting)workWaiting.textContent=String(counters.waiting||0);
+  if(workDone)workDone.textContent=String(counters.done||0);
+  workMessage.textContent="อ่านกลับ "+ok+"/"+tracked.length+" งาน · "+new Date().toLocaleTimeString("th-TH");
+}
+function trackWork(event){
+  event.preventDefault();
+  const data=new FormData(workForm);
+  const workId=String(data.get("workId")||"").trim();
+  const checkpointId=String(data.get("checkpointId")||"").trim();
+  if(!workId||!checkpointId)return;
+  const items=loadTrackedWork();
+  if(!items.some(item=>item.workId===workId&&item.checkpointId===checkpointId)){
+    items.unshift({workId,checkpointId});
+    saveTrackedWork(items);
+  }
+  workForm.reset();
+  readTrackedWork();
+}
+function adoptWorkFromUrl(){
+  const query=new URLSearchParams(location.search);
+  const workId=String(query.get("workId")||"").trim();
+  const checkpointId=String(query.get("checkpointId")||"").trim();
+  if(!workId||!checkpointId)return;
+  const items=loadTrackedWork();
+  if(!items.some(item=>item.workId===workId&&item.checkpointId===checkpointId)){
+    items.unshift({workId,checkpointId});
+    saveTrackedWork(items);
+  }
+}
+
 async function readEye(){
   if(!eye)return;
   state.textContent="CHECKING";
@@ -32,6 +191,7 @@ async function readEye(){
     const current=String(body.state||body.freshness?.state||"UNKNOWN");
     state.textContent=current;
     eye.dataset.state=current;
+    if(workEye)workEye.textContent=current;
     detail.textContent="Factory Eye · READ ONLY";
     const title=body.latest?.tab?.title||body.latest?.page?.title||"ยังไม่มีชื่อหน้า";
     const observed=body.latest?.observedAt||body.observedAt||"UNKNOWN";
@@ -39,6 +199,7 @@ async function readEye(){
   }catch(error){
     state.textContent="OFFLINE";
     eye.dataset.state="OFFLINE";
+    if(workEye)workEye.textContent="OFFLINE";
     detail.textContent="Factory Eye · READ ONLY";
     message.textContent=error instanceof Error?error.message:String(error);
   }
@@ -164,4 +325,9 @@ async function uploadAsset(event){
 assetForm?.addEventListener("submit",uploadAsset);
 refresh?.addEventListener("click",readEye);
 passkeyButton?.addEventListener("click",registerPasskey);
-await Promise.all([readEye(),readPasskeyStatus(),readAssets()]);
+workForm?.addEventListener("submit",trackWork);
+workRefresh?.addEventListener("click",readTrackedWork);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")readTrackedWork();});
+adoptWorkFromUrl();
+setInterval(()=>{if(document.visibilityState==="visible")readTrackedWork();},30000);
+await Promise.all([readEye(),readPasskeyStatus(),readAssets(),readTrackedWork()]);
