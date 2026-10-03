@@ -1008,6 +1008,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           observerScreenshot: input => observer.screenshot(input),
           auditHistory: input => globalAudit.history(input),
           centreInspect: input => inspectCentreCompat(centreLive, input),
+          centreResolve: input => centreLive.action({ action:"v4_resolve", ...input }),
           centreAuditHistory: input => centreAuditHistory(globalAudit, input),
           centreLiveAction: async input => {
             const response = await centreLive.action(input);
