@@ -1,3 +1,4 @@
+import { createSalesStore } from "./go-hub-sales-store.mjs";
 import { CENTRE_STATES, createCentrePassage } from "./go-hub-centre.js";
 import { routeInterruptionReturn } from "./go-hub-city-route.js";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
@@ -712,6 +713,19 @@ export class GoHubCentreState {
       return json({ ok:true, indexed });
     }
 
+    if (action === "spectrum_list" || action === "spectrum_brief" || action === "spectrum_event") {
+      const store = createSalesStore({ storage:this.ctx.storage });
+      return json(action === "spectrum_list" ? await store.list(input) : action === "spectrum_event" ? await store.event(input.payload) : await store.brief(input.operation, input.payload));
+    }
+
+    if (action === "v4_inventory") {
+      const index = createCentreBackedWorkIndex({ storage:this.ctx.storage, source:"CENTRE_GLOBAL_INDEX" });
+      const works = (await index.all()).sort((a,b)=>String(a.workId).localeCompare(String(b.workId)));
+      const offset = Math.max(0, Math.trunc(Number(input.offset) || 0));
+      const limit = Math.max(1, Math.min(50, Math.trunc(Number(input.limit) || 25)));
+      return json({ ok:true, source:"CENTRE_GLOBAL_INDEX", works:works.slice(offset,offset+limit), total:works.length, nextOffset:offset+limit<works.length?offset+limit:null });
+    }
+
     if (action === "v4_resolve") {
       const index = createCentreBackedWorkIndex({ storage:this.ctx.storage, source:"CENTRE_GLOBAL_INDEX" });
       const works = await index.all();
@@ -1159,7 +1173,8 @@ export class GoHubCentreState {
       if (request.method !== "POST") return json({ code: "METHOD_NOT_ALLOWED" }, 405);
       const input = await request.json().catch(() => null);
       if (!input || typeof input !== "object" || Array.isArray(input)) return json({ code: "INVALID_JSON" }, 400);
-      const result = await this.act(input);
+      const result = input.action?.startsWith("spectrum_") && this.ctx.blockConcurrencyWhile
+        ? await this.ctx.blockConcurrencyWhile(()=>this.act(input)) : await this.act(input);
       return result instanceof Response ? result : json(result, 200);
     } catch (error) {
       return json({ code: error?.message || "CENTRE_LIVE_ERROR" }, error?.status || 400);
@@ -1186,7 +1201,8 @@ export function createCentreLiveService({ namespace } = {}) {
   return Object.freeze({
     async action(input = {}) {
       const action = required(input.action, "Centre action");
-      if (action === "v4_resolve") return send(indexName, input);
+      if (["v4_resolve","v4_inventory"].includes(action)) return send(indexName, input);
+      if (["spectrum_list","spectrum_brief","spectrum_event"].includes(action)) return send("__centre-spectrum-intake-v1__", input);
       const workId = required(input.workId, "Work ID");
       const response = await send(workId, input);
       if (!response.ok || !action.startsWith("v4_")) return response;
