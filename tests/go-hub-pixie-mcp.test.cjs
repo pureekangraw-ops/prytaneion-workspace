@@ -266,3 +266,70 @@ test("PIXIE LAB → GO WORKS bridge blocks stale Work state but not by room or P
   });
   assert.match(JSON.stringify(await response.json()), /PIXIE_GO_WORKS_ACTIVE_WORK_REQUIRED/);
 });
+
+
+test("PIXIE LAB inspect bypasses Maintenance repair gating", async () => {
+  const { createFactoryMcpWorker } = await import(workerUrl + "?go-works-readonly=" + Date.now());
+  const { createTestAccessToken } = await import(oauthUrl + "?go-works-readonly-token=" + Date.now());
+  const signingKey = "test-signing-key-with-enough-entropy";
+  const accessToken = await createTestAccessToken({ issuer:"https://hub.example", signingKey });
+
+  const centreWork = {
+    workId:"WORK-PIXIE-READONLY",
+    checkpointId:"CP-PIXIE-READONLY",
+    workType:"MAINTENANCE",
+    status:"ON PROCESS",
+    holder:"GO",
+    pass:null,
+  };
+  const centreState = {
+    getByName(name) {
+      assert.equal(name, "WORK-PIXIE-READONLY");
+      return {
+        async fetch(request) {
+          const input = await request.json();
+          assert.equal(input.action, "v4_inspect");
+          return new Response(JSON.stringify({ ok:true, v4:true, work:structuredClone(centreWork) }), {
+            headers:{ "content-type":"application/json" },
+          });
+        },
+      };
+    },
+  };
+  const factoryState = {
+    getByName(name) {
+      assert.equal(name, "v4:WORK-PIXIE-READONLY");
+      return {
+        async load() { return null; },
+        async save() { throw new Error("inspect must not mutate Factory state"); },
+      };
+    },
+  };
+  const auditState = {
+    getByName() {
+      return {
+        async fetch() {
+          throw new Error("read-only PIXIE inspect must not enter governed mutation audit");
+        },
+      };
+    },
+  };
+
+  const worker = createFactoryMcpWorker({ fetchImpl:async () => { throw new Error("network not expected"); } });
+  const response = await worker.fetch(rpc(accessToken, "go_hub_pixie_go_works_action", {
+    action:"inspect",
+    factoryInput:{},
+    workContext:{ workId:"WORK-PIXIE-READONLY", checkpointId:"CP-PIXIE-READONLY" },
+  }), {
+    GITHUB_TOKEN:"github-runtime-secret",
+    GOHUB_MASTER_KEY:signingKey,
+    GOHUB_OWNER_PASSCODE:"owner-passcode",
+    GO_HUB_CENTRE_STATE:centreState,
+    GO_HUB_FACTORY_STATE:factoryState,
+    GO_HUB_GLOBAL_AUDIT:auditState,
+  });
+
+  const payload = await response.json();
+  assert.notEqual(response.status, 409);
+  assert.doesNotMatch(JSON.stringify(payload), /MAINTENANCE_REPAIR_PASS_REQUIRED/);
+});
