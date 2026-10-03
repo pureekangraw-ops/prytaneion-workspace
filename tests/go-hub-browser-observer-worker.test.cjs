@@ -1,13 +1,27 @@
 "use strict";
-const test=require("node:test");const assert=require("node:assert/strict");const path=require("node:path");const{pathToFileURL}=require("node:url");
-const root=path.resolve(__dirname,"..");const workerUrl=pathToFileURL(path.join(root,"go-hub-edge-worker.mjs")).href;
+const test=require("node:test");
+const assert=require("node:assert/strict");
+const path=require("node:path");
+const{pathToFileURL}=require("node:url");
+const root=path.resolve(__dirname,"..");
+const workerUrl=pathToFileURL(path.join(root,"go-hub-edge-worker.mjs")).href;
 async function load(tag){return import(`${workerUrl}?observer-worker=${tag}-${Date.now()}`)}
-function delegate(){return{async fetch(){return new Response("delegated",{status:202})}}}function mcp(){return{async fetch(){return new Response("mcp")}}}
-function fakeSessions(){const calls=[];return{calls,async start(input){calls.push(["start",input]);return{ok:true,session_id:"session-1",session_token:"token-1",expires_at:601000,allowed_origin:"https://gumroad.com"}},async acceptSnapshot(input){calls.push(["snapshot",input]);return{ok:true,code:null}},async stop(input){calls.push(["stop",input]);return{ok:true,code:null}},async grantScreenshot(input){calls.push(["grant",input]);return{ok:true,code:null}},async latest(){return{ok:true,latest:{page_title:"Edit product"}}}}}
-function env(passcode="owner-secret"){return{GOHUB_OWNER_PASSCODE:passcode,BROWSER_POLICY:{allowedHostnames:["gumroad.com","*.gumroad.com"],requireOwnerPasscode:true}}}
-test("GET observer owner page is served by GO Hub and explains bootstrap handoff",async()=>{const{createEdgeWorkerHandler}=await load("page");const response=await createEdgeWorkerHandler({delegate:delegate(),factoryMcp:mcp(),observerSessions:fakeSessions()}).fetch(new Request("https://hub.example/hub/observer"),env());assert.equal(response.status,200);const html=await response.text();assert.match(html,/Create Eye Session/);assert.match(html,/bootstrap/i);assert.equal(html.includes("localStorage"),false)});
-test("owner-authenticated session start returns only short-lived bootstrap data",async()=>{const sessions=fakeSessions();const{createEdgeWorkerHandler}=await load("start");const handler=createEdgeWorkerHandler({delegate:delegate(),factoryMcp:mcp(),observerSessions:sessions});const response=await handler.fetch(new Request("https://hub.example/hub/api/browser/observer/session/start",{method:"POST",headers:{"content-type":"application/json","x-go-owner-passcode":"owner-secret"},body:JSON.stringify({allowed_origin:"https://gumroad.com"})}),env());assert.equal(response.status,200);const body=await response.json();assert.equal(body.session_id,"session-1");assert.equal(body.session_token,"token-1");assert.equal(body.hub_origin,"https://hub.example");assert.deepEqual(sessions.calls[0],["start",{allowedOrigin:"https://gumroad.com",ttlMs:600000}])});
-test("observer session start fails closed without owner authentication",async()=>{const sessions=fakeSessions();const{createEdgeWorkerHandler}=await load("auth");const handler=createEdgeWorkerHandler({delegate:delegate(),factoryMcp:mcp(),observerSessions:sessions});const response=await handler.fetch(new Request("https://hub.example/hub/api/browser/observer/session/start",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({allowed_origin:"https://gumroad.com"})}),env());assert.equal(response.status,403);assert.deepEqual(await response.json(),{code:"BROWSER_OWNER_AUTH_FAILED"});assert.equal(sessions.calls.length,0)});
-test("snapshot route uses session id and token and never Browser Run",async()=>{const sessions=fakeSessions();let browserCalled=false;const{createEdgeWorkerHandler}=await load("snapshot");const handler=createEdgeWorkerHandler({delegate:delegate(),factoryMcp:mcp(),observerSessions:sessions});const packet={schema_version:"go-browser-observer-v1",session_id:"session-1"};const response=await handler.fetch(new Request("https://hub.example/hub/api/browser/observer/snapshot",{method:"POST",headers:{"content-type":"application/json","x-go-observer-session-id":"session-1","x-go-observer-session-token":"token-1"},body:JSON.stringify(packet)}),{...env(),BROWSER:{async quickAction(){browserCalled=true}}});assert.equal(response.status,200);assert.equal(browserCalled,false);assert.deepEqual(sessions.calls[0],["snapshot",{sessionId:"session-1",sessionToken:"token-1",packet}])});
-test("stop route revokes the server session",async()=>{const sessions=fakeSessions();const{createEdgeWorkerHandler}=await load("stop");const handler=createEdgeWorkerHandler({delegate:delegate(),factoryMcp:mcp(),observerSessions:sessions});const response=await handler.fetch(new Request("https://hub.example/hub/api/browser/observer/session/stop",{method:"POST",headers:{"x-go-observer-session-id":"session-1","x-go-observer-session-token":"token-1"}}),env());assert.equal(response.status,200);assert.deepEqual(sessions.calls[0],["stop",{sessionId:"session-1",sessionToken:"token-1"}])});
-test("screenshot consent route is explicit and session bound",async()=>{const sessions=fakeSessions();const{createEdgeWorkerHandler}=await load("shot");const handler=createEdgeWorkerHandler({delegate:delegate(),factoryMcp:mcp(),observerSessions:sessions});const response=await handler.fetch(new Request("https://hub.example/hub/api/browser/observer/screenshot/consent",{method:"POST",headers:{"x-go-observer-session-id":"session-1","x-go-observer-session-token":"token-1"}}),env());assert.equal(response.status,200);assert.deepEqual(sessions.calls[0],["grant",{sessionId:"session-1",sessionToken:"token-1"}])});
+function delegate(){return{async fetch(){return new Response("delegated",{status:202})}}}
+function mcp(){return{async fetch(){return new Response("mcp")}}}
+function env(){return{GOHUB_OWNER_PASSCODE:"owner-secret",BROWSER_POLICY:{allowedHostnames:["gumroad.com","*.gumroad.com"],requireOwnerPasscode:true}}}
+
+test("legacy Browser Observer owner and API routes are retired fail-closed",async()=>{
+  const{createEdgeWorkerHandler}=await load("retired");
+  const handler=createEdgeWorkerHandler({delegate:delegate(),factoryMcp:mcp()});
+  for(const [url,method] of [
+    ["https://hub.example/hub/observer","GET"],
+    ["https://hub.example/hub/api/browser/observer/session/start","POST"],
+    ["https://hub.example/hub/api/browser/observer/snapshot","POST"],
+    ["https://hub.example/hub/api/browser/observer/session/stop","POST"],
+    ["https://hub.example/hub/api/browser/observer/screenshot/consent","POST"],
+  ]){
+    const response=await handler.fetch(new Request(url,{method,headers:{"content-type":"application/json"},body:method==="POST"?"{}":undefined}),env());
+    assert.equal(response.status,410);
+    assert.deepEqual(await response.json(),{code:"LEGACY_OBSERVER_RETIRED",canonical:"FACTORY_EYE",canonicalPath:"/hub/api/factory-eye"});
+  }
+});
