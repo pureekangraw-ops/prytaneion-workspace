@@ -17,6 +17,7 @@ node_modules/**
 !/go-hub-control-room.js
 !/go-hub-runtime.js
 !/go-hub-centre.js
+!/go-hub-mimir-logic-v1.mjs
 !/go-hub-centre-client.js
 !/go-hub-city-route.js
 !/go-hub-optician.js

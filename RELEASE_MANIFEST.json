@@ -86,6 +86,9 @@
       "path": "go-hub-centre.js"
     },
     {
+      "path": "go-hub-mimir-logic-v1.mjs"
+    },
+    {
       "path": "go-hub-centre-client.js"
     },
     {

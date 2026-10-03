@@ -242,3 +242,86 @@ test("Centre MIMIR exposes only HERMES and SPECTRUM as consumers; PIXIE stays se
   assert.deepEqual(spectrum.effectiveScope.allowedConsumers, ["HERMES", "SPECTRUM"]);
   assert.throws(() => mimir.projectForConsumer(record, "PIXIE"), /unsupported consumer: PIXIE/);
 });
+
+
+test("MIMIR receives returned work as typed items without mutating source truth", () => {
+  const envelope = mimir.createReturnEnvelope({
+    returnId: "return-001",
+    workId: "WORK-001",
+    checkpointId: "CP-001",
+    source: "PIXIE",
+    receivedAt: "2026-10-03T12:00:00.000Z",
+    items: [
+      { itemId: "result-1", kind: "RESULT", ref: "result://1", lifecycleStatus: "current" },
+      { itemId: "evidence-1", kind: "EVIDENCE", ref: "evidence://1", lifecycleStatus: "current" },
+      { itemId: "receipt-1", kind: "RECEIPT", ref: "receipt://1", lifecycleStatus: "current" },
+      { itemId: "temp-1", kind: "METADATA", ref: "temp://1", lifecycleStatus: "smoke", disposable: true },
+    ],
+  });
+  assert.equal(envelope.workId, "WORK-001");
+  assert.equal(envelope.checkpointId, "CP-001");
+  assert.deepEqual(envelope.items.map(item => item.kind), ["RESULT", "EVIDENCE", "RECEIPT", "METADATA"]);
+  assert.equal(envelope.items[1].protected, true);
+  assert.equal(envelope.items[2].protected, true);
+  assert.equal(Object.isFrozen(envelope), true);
+});
+
+test("MIMIR housekeeping archives stale or duplicate truth and only proposes safe disposable deletion", () => {
+  const envelope = mimir.createReturnEnvelope({
+    returnId: "return-002",
+    workId: "WORK-002",
+    checkpointId: "CP-002",
+    source: "GO",
+    receivedAt: "2026-10-03T12:00:00.000Z",
+    items: [
+      { itemId: "current-1", kind: "RESULT", ref: "result://current", lifecycleStatus: "current" },
+      { itemId: "stale-1", kind: "ARTIFACT", ref: "artifact://stale", lifecycleStatus: "stale", lineageRefs: ["work://old"] },
+      { itemId: "dup-1", kind: "METADATA", ref: "meta://dup", lifecycleStatus: "current", duplicateState: "exact", duplicateOf: "meta://truth" },
+      { itemId: "evidence-old", kind: "EVIDENCE", ref: "evidence://old", lifecycleStatus: "legacy", disposable: true },
+      { itemId: "temp-1", kind: "METADATA", ref: "temp://smoke", lifecycleStatus: "smoke", disposable: true },
+      { itemId: "conflict-1", kind: "KNOWLEDGE", ref: "knowledge://conflict", lifecycleStatus: "conflict" },
+    ],
+  });
+  const plan = mimir.planReturnHousekeeping({
+    planId: "plan-002",
+    returnEnvelope: envelope,
+    policy: { policyRef: "policy://mimir/cleanup/v1", allowDeleteCandidates: true },
+  });
+
+  const byId = Object.fromEntries(plan.decisions.map(item => [item.itemId, item]));
+  assert.equal(byId["current-1"].action, "STORE");
+  assert.equal(byId["stale-1"].action, "ARCHIVE");
+  assert.equal(byId["dup-1"].action, "ARCHIVE");
+  assert.equal(byId["evidence-old"].action, "ARCHIVE");
+  assert.equal(byId["temp-1"].action, "DELETE_CANDIDATE");
+  assert.equal(byId["conflict-1"].action, "QUARANTINE");
+  assert.deepEqual(plan.deleteCandidateIds, ["temp-1"]);
+  assert.equal(plan.compactRequired, true);
+  assert.equal(plan.reindexRequired, true);
+  assert.equal(plan.requiresOwnerApproval, true);
+  assert.equal(plan.writePerformed, false);
+  assert.equal(plan.sourceMutationAllowed, false);
+  assert.equal(mimir.assertMimirHousekeepingSafety(plan), true);
+});
+
+test("MIMIR cleanup never treats evidence or receipt as deletable even when marked disposable", () => {
+  const envelope = mimir.createReturnEnvelope({
+    returnId: "return-003",
+    workId: "WORK-003",
+    checkpointId: "CP-003",
+    source: "CENTRE",
+    receivedAt: "2026-10-03T12:00:00.000Z",
+    items: [
+      { itemId: "evidence", kind: "EVIDENCE", ref: "evidence://protected", lifecycleStatus: "smoke", disposable: true },
+      { itemId: "receipt", kind: "RECEIPT", ref: "receipt://protected", lifecycleStatus: "legacy", disposable: true },
+    ],
+  });
+  const plan = mimir.planReturnHousekeeping({
+    planId: "plan-003",
+    returnEnvelope: envelope,
+    policy: { policyRef: "policy://mimir/cleanup/v1", allowDeleteCandidates: true },
+  });
+  assert.deepEqual(plan.decisions.map(item => item.action), ["ARCHIVE", "ARCHIVE"]);
+  assert.deepEqual(plan.deleteCandidateIds, []);
+  assert.equal(plan.requiresOwnerApproval, false);
+});

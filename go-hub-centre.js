@@ -1,4 +1,5 @@
 import { createId, nowIso } from "./go-hub-utils.js";
+import { createReturnEnvelope, planReturnHousekeeping, assertMimirHousekeepingSafety } from "./go-hub-mimir-logic-v1.mjs";
 
 export const CENTRE_STATES = Object.freeze({
   ARRIVED: "ARRIVED",
@@ -52,6 +53,7 @@ export function createCheckpoint(input = {}) {
     persona: null,
     handoff: null,
     returnedPayload: null,
+    mimirHousekeeping: null,
   });
 }
 
@@ -123,6 +125,121 @@ export function createHandoff(work, input = {}) {
   return snapshot({ work: next, envelope });
 }
 
+
+function returnRef(work, suffix) {
+  return `mimir-return://${encodeURIComponent(work.workId)}/${encodeURIComponent(work.checkpointId)}/${suffix}`;
+}
+
+function returnedItems(work, payload) {
+  const value = payload === undefined ? null : structuredClone(payload);
+  const items = [{
+    itemId: "result",
+    kind: "RESULT",
+    ref: returnRef(work, "result"),
+    lifecycleStatus: "current",
+    payload: value,
+  }];
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) return items;
+
+  if (value.status != null) {
+    items.push({
+      itemId: "status",
+      kind: "STATUS",
+      ref: returnRef(work, "status"),
+      lifecycleStatus: "current",
+      payload: { status: value.status },
+    });
+  }
+
+  const evidence = Array.isArray(value.evidence) ? value.evidence : [];
+  evidence.forEach((entry, index) => {
+    items.push({
+      itemId: `evidence-${index + 1}`,
+      kind: "EVIDENCE",
+      ref: returnRef(work, `evidence/${index + 1}`),
+      lifecycleStatus: "current",
+      payload: entry,
+    });
+  });
+
+  const artifactEntries = [
+    ["artifact", value.artifact],
+    ["build-artifact", value.buildArtifact],
+    ["signed-artifact", value.signedArtifact],
+  ].filter(([, artifact]) => artifact != null);
+  artifactEntries.forEach(([name, artifact]) => {
+    items.push({
+      itemId: name,
+      kind: "ARTIFACT",
+      ref: returnRef(work, name),
+      lifecycleStatus: "current",
+      payload: artifact,
+    });
+  });
+
+  if (value.receipt != null) {
+    items.push({
+      itemId: "receipt",
+      kind: "RECEIPT",
+      ref: returnRef(work, "receipt"),
+      lifecycleStatus: "current",
+      payload: value.receipt,
+    });
+  }
+  if (value.readback != null) {
+    items.push({
+      itemId: "readback",
+      kind: "RECEIPT",
+      ref: returnRef(work, "readback"),
+      lifecycleStatus: "current",
+      payload: value.readback,
+    });
+  }
+  if (value.refs != null) {
+    items.push({
+      itemId: "refs",
+      kind: "METADATA",
+      ref: returnRef(work, "refs"),
+      lifecycleStatus: "current",
+      payload: value.refs,
+    });
+  }
+  if (Array.isArray(value.lessons)) {
+    value.lessons.forEach((lesson, index) => {
+      items.push({
+        itemId: `knowledge-${index + 1}`,
+        kind: "KNOWLEDGE",
+        ref: returnRef(work, `knowledge/${index + 1}`),
+        lifecycleStatus: "current",
+        payload: lesson,
+      });
+    });
+  }
+  return items;
+}
+
+function createMimirReturnHousekeeping(work, returned) {
+  const envelope = createReturnEnvelope({
+    returnId: `RETURN:${work.workId}:${work.checkpointId}`,
+    workId: work.workId,
+    checkpointId: work.checkpointId,
+    source: work.handoff?.destination || "destination://unknown",
+    receivedAt: nowIso(),
+    items: returnedItems(work, returned.payload),
+  });
+  const plan = planReturnHousekeeping({
+    planId: `HOUSEKEEPING:${work.workId}:${work.checkpointId}`,
+    returnEnvelope: envelope,
+    policy: {
+      policyRef: "policy://centre/mimir-return/v1",
+      allowDeleteCandidates: false,
+    },
+  });
+  assertMimirHousekeepingSafety(plan);
+  return snapshot({ envelope, plan });
+}
+
 export function receiveReturn(work, returned = {}) {
   assertState(work, CENTRE_STATES.AWAY);
   if (String(returned.workId || "") !== work.workId) {
@@ -136,6 +253,7 @@ export function receiveReturn(work, returned = {}) {
   next.returnedPayload = returned.payload === undefined
     ? null
     : structuredClone(returned.payload);
+  next.mimirHousekeeping = createMimirReturnHousekeeping(work, returned);
   return snapshot(next);
 }
 

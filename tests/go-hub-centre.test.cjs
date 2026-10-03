@@ -96,6 +96,11 @@ test("Reality Test: Work A returns to Centre 001 and does not create Centre 002"
   assert.equal(returned.checkpointId, "CENTRE-001");
   assert.equal(returned.handoff.returnAddress, "CENTRE-001");
   assert.deepEqual(returned.returnedPayload, { outcome: "test-only" });
+  assert.equal(returned.mimirHousekeeping.envelope.workId, "WORK-A");
+  assert.equal(returned.mimirHousekeeping.envelope.checkpointId, "CENTRE-001");
+  assert.equal(returned.mimirHousekeeping.envelope.items[0].kind, "RESULT");
+  assert.equal(returned.mimirHousekeeping.plan.writePerformed, false);
+  assert.equal(returned.mimirHousekeeping.plan.sourceMutationAllowed, false);
 });
 
 test("return receiver rejects mismatched work or checkpoint identity", async () => {
@@ -310,4 +315,39 @@ test("explicit Work Target survives Review and Factory handoff without becoming 
   assert.equal(outbound.work.targetId, "lighthouse");
   assert.equal(outbound.envelope.targetId, "lighthouse");
   assert.equal(outbound.envelope.destination, "destination://factory");
+});
+
+
+test("every Centre return automatically passes through MIMIR return housekeeping", async () => {
+  const { createCentrePassage, createTestDestinationAdapter } = await load();
+  const centre = createCentrePassage();
+  let work = centre.enter({ checkpointId: "CENTRE-MIMIR-001", workId: "WORK-MIMIR-A" });
+  work = centre.review(work, {
+    task: "Build and return evidence",
+    requestedResult: "Verified result with artifact",
+    authority: "BIG",
+  });
+  work = centre.fit(work, {
+    personaId: "PERSONA-1",
+    personaReference: "persona://1",
+    workingView: "Return through Centre",
+  });
+  const outbound = centre.leave(work, { destination: "destination://factory" });
+  const destination = createTestDestinationAdapter(() => ({
+    status: "PASS",
+    evidence: [{ ref: "evidence://1" }],
+    artifact: { id: "artifact-1", digest: "sha256:1" },
+    refs: { headSha: "abc123" },
+    lessons: [{ finding: "keep return identity" }],
+  }));
+  const returned = centre.return(outbound.work, destination.accept(outbound.envelope));
+
+  assert.deepEqual(
+    returned.mimirHousekeeping.envelope.items.map(item => item.kind),
+    ["RESULT", "STATUS", "EVIDENCE", "ARTIFACT", "METADATA", "KNOWLEDGE"],
+  );
+  assert.equal(returned.mimirHousekeeping.plan.report.received, 6);
+  assert.equal(returned.mimirHousekeeping.plan.report.store, 6);
+  assert.equal(returned.mimirHousekeeping.plan.requiresOwnerApproval, false);
+  assert.equal(returned.mimirHousekeeping.plan.writePerformed, false);
 });
