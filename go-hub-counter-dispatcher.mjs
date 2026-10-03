@@ -4,7 +4,7 @@ const RETRY_DELAYS_MS = Object.freeze([1_000, 5_000, 30_000, 120_000, 300_000]);
 const COUNTER_HELPERS = Object.freeze(["PIXIE", "HERMES", "LIGHT", "SPECTRUM"]);
 const COUNTER_ACTORS = Object.freeze(["GO", ...COUNTER_HELPERS]);
 const COUNTER_ACTOR_SET = new Set(COUNTER_ACTORS);
-const LEGACY_PICKUP_ACTOR_SET = new Set(["GO", "LIGHT"]);
+const COUNTER_INBOX_ACTOR_SET = new Set(COUNTER_ACTORS);
 const SECRET_FIELD = /(authorization|token|secret|passcode|master.?key|password|bearer)/i;
 
 function json(payload, status = 200) {
@@ -459,7 +459,7 @@ export class GoHubCounterDispatchState {
     let state = current;
 
     const destinationActor = actor(state.toActor, "LIGHT");
-    if (!state.answer && target === destinationActor && LEGACY_PICKUP_ACTOR_SET.has(target)) {
+    if (!state.answer && target === destinationActor && COUNTER_INBOX_ACTOR_SET.has(target)) {
       const result = this.core.waitingPickup({ target }, state);
       if (!result.idempotent) await this.save(result.dispatch);
       return publicState(result.dispatch, {
