@@ -4,6 +4,7 @@ import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
 import { createWorkRecord as createV4WorkRecord, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, reopenWork as reopenV4Work, emergencyEnterWork as emergencyEnterV4Work, emergencyExitWork as emergencyExitV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
 import { createHeimdallV4 } from "./go-hub-heimdall-v4.js";
 import { prepareStandardMissionTicket, issueStandardMissionTicket, replaceStandardMissionTicket, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
+import { resolveCentreWork } from "./go-hub-centre-resolver.mjs";
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -703,6 +704,20 @@ export class GoHubCentreState {
     let state = await this.load();
     if (state?.auditPendingEvent) state = await this.flushPendingAudit(state);
 
+    if (action === "v4_index_replace") {
+      const work = input.work;
+      const index = createCentreBackedWorkIndex({ storage:this.ctx.storage, source:"CENTRE_GLOBAL_INDEX" });
+      const current = await index.get(work?.workId);
+      const indexed = current ? await index.replace(work) : await index.put(work);
+      return json({ ok:true, indexed });
+    }
+
+    if (action === "v4_resolve") {
+      const index = createCentreBackedWorkIndex({ storage:this.ctx.storage, source:"CENTRE_GLOBAL_INDEX" });
+      const works = await index.all();
+      return json(resolveCentreWork(works, input));
+    }
+
     if (action === "v4_create") {
       if (state) throw Object.assign(new Error("CENTRE_WORK_ALREADY_EXISTS"), { status: 409 });
       const supplied = input.work || input;
@@ -1158,16 +1173,39 @@ function centreStub(namespace, workId) {
 }
 
 export function createCentreLiveService({ namespace } = {}) {
+  const indexName = "__centre-global-index-v4__";
+  async function send(name, input) {
+    const stub = centreStub(namespace, name);
+    if (!stub || typeof stub.fetch !== "function") return json({ code:"CENTRE_STATE_NOT_CONFIGURED" },503);
+    return stub.fetch(new Request("https://centre-state.internal/action", {
+      method:"POST",
+      headers:{ "content-type":"application/json" },
+      body:JSON.stringify(input),
+    }));
+  }
   return Object.freeze({
     async action(input = {}) {
+      const action = required(input.action, "Centre action");
+      if (action === "v4_resolve") return send(indexName, input);
       const workId = required(input.workId, "Work ID");
-      const stub = centreStub(namespace, workId);
-      if (!stub || typeof stub.fetch !== "function") return json({ code: "CENTRE_STATE_NOT_CONFIGURED" }, 503);
-      return stub.fetch(new Request("https://centre-state.internal/action", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-      }));
+      const response = await send(workId, input);
+      if (!response.ok || !action.startsWith("v4_")) return response;
+      const payload = await response.clone().json().catch(()=>null);
+      if (!payload?.work?.workId || ["v4_inspect","v4_board"].includes(action)) return response;
+      let indexSync = "SYNCED";
+      try {
+        const sync = await send(indexName, { action:"v4_index_replace", work:payload.work });
+        if (!sync.ok) indexSync = "RECONCILE_REQUIRED";
+      } catch {
+        indexSync = "RECONCILE_REQUIRED";
+      }
+      const headers = new Headers(response.headers);
+      headers.set("x-go-centre-index-sync", indexSync);
+      return new Response(response.body, {
+        status:response.status,
+        statusText:response.statusText,
+        headers,
+      });
     },
   });
 }
