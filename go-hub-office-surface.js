@@ -87,7 +87,7 @@ function statusBucket(status){
 function displayTime(value){
   const ms=Date.parse(String(value||""));
   if(!Number.isFinite(ms))return"ไม่ทราบเวลา";
-  return new Intl.DateTimeFormat("th-TH",{dateStyle:"short",timeStyle:"short"}).format(new Date(ms));
+  return new Intl.DateTimeFormat("th-TH",{dateStyle:"short",timeStyle:"short",timeZone:"Asia/Bangkok"}).format(new Date(ms));
 }
 function textValue(...values){
   for(const value of values){
@@ -466,63 +466,52 @@ const overviewCoverage=document.querySelector('[data-overview-coverage]');
 const overviewMore=document.querySelector('[data-overview-more]');
 const overviewSales=document.querySelector('[data-overview-sales]');
 const salesMore=document.querySelector('[data-sales-more]');
+const officePage=document.body.dataset.officePage||'home';
+const workView=document.querySelector('[data-work-view]')?.dataset.workView||'current';
+const workLabels={'OPEN':'รอเริ่มงาน','ON PROCESS':'กำลังทำ','WAIT CONFIRM':'รอบิ๊กดู','COMPLETE':'เสร็จแล้ว','CANCEL':'ยกเลิกแล้ว','CANCELLED':'ยกเลิกแล้ว','UNKNOWN':'ยังอ่านสถานะไม่ได้'};
+const briefLabels={goal:'โจทย์',jobType:'ประเภทงาน',audience:'ทำให้ใครดู',materials:'ข้อมูลที่มี',pageCount:'จำนวนหน้า',package:'แพ็กเกจ',desiredDate:'วันที่ต้องการ',deadlineText:'กำหนดส่ง'};
 let overviewOffset=null,salesCursor=null,loadedWorks=new Map(),loadedSales=new Map(),overviewBusy=false;
 function overviewText(parent,tag,value,className){const node=document.createElement(tag);node.textContent=String(value||'—');if(className)node.className=className;parent.append(node);return node;}
-function overviewCard(parent,title,status,lines){const card=document.createElement('article');card.className='office-work-card';overviewText(card,'strong',status,'office-work-status');overviewText(card,'h4',title);for(const line of lines)overviewText(card,'p',line,'office-muted');parent.append(card);return card;}
+function overviewCard(parent,title,status,lines){const card=document.createElement('article');card.className='office-work-card';overviewText(card,'strong',workLabels[status]||status,'office-work-status');overviewText(card,'h4',title);for(const line of lines.filter(Boolean))overviewText(card,'p',line,'office-muted');parent.append(card);return card;}
+function workDetails(card,w){const details=document.createElement('details');overviewText(details,'summary','ดูรายละเอียด');overviewText(details,'code',w.workId);overviewText(details,'small','ตรวจล่าสุด '+displayTime(w.checkedAt));if(w.lastUpdated)overviewText(details,'p','อัปเดตงาน '+displayTime(w.lastUpdated));card.append(details);return details;}
+function evidenceLinks(card,w){
+ for(const evidence of w.readback?.evidence||[]){const ref=String(evidence.ref||evidence.evidenceRef||'');try{const url=new URL(ref);if(url.protocol!=='https:'||url.username||url.password)throw Error();const link=overviewText(card,'a',evidence.label||'เปิดผลลัพธ์ / หลักฐาน ↗','office-result-link');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';}catch{overviewText(card,'code',ref);}}
+}
 async function overviewRead(route){const response=await fetch('/office/api/'+route,{cache:'no-store'});if(!response.ok)throw Error('UNKNOWN');return response.json();}
 function renderOverviewWorks(){
-  overviewWorks.replaceChildren();overviewResults.replaceChildren();
-  for(const w of loadedWorks.values()){
-    const card=overviewCard(overviewWorks,w.name||w.workId,w.status,[w.workId,'ผู้ถือ: '+(w.holder?.owner||w.holder?.name||w.holder||'ยังไม่ระบุ'),'ข้อมูลล่าสุด: '+(w.lastUpdated||'UNKNOWN')]);
-    overviewText(card,'small','อ่านจาก '+w.source+' · '+w.checkedAt);
-    if(w.status==='WAIT CONFIRM'||w.status==='COMPLETE'||w.result||w.readback){
-      const result=w.readback?.result??w.result;
-      const summary=typeof result==='string'?result:result?.summary||result?.reason||JSON.stringify(result||{});
-      const resultCard=overviewCard(overviewResults,w.name||w.workId,w.status,[w.workId,summary==='{}'?'ยังไม่มีสรุปผลที่แสดงได้':summary,w.readback?.returnedAt||w.lastUpdated||'UNKNOWN']);
-      for(const evidence of w.readback?.evidence||[]){
-        const ref=String(evidence.ref||evidence.evidenceRef||'');
-        try{const url=new URL(ref);if(url.protocol!=='https:'||url.username||url.password)throw Error();const link=overviewText(resultCard,'a',evidence.label||ref);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';}
-        catch{overviewText(resultCard,'code',ref);}
-      }
-    }
-  }
-  if(!loadedWorks.size)overviewText(overviewWorks,'p','ยังไม่มีงานลงทะเบียนใน Centre');
-  if(!overviewResults.children.length)overviewText(overviewResults,'p','ยังไม่พบผลลัพธ์ในรายการที่อ่านแล้ว');
+ overviewWorks?.replaceChildren();overviewResults?.replaceChildren();
+ const items=[...loadedWorks.values()];
+ for(const w of officePage==='home'?items.slice(0,6):items){
+  if(overviewWorks){const card=overviewCard(overviewWorks,w.name||'งานที่ยังไม่มีชื่อ',w.status,[w.waitReason||'',w.holder?'ผู้ดูแลงาน: '+String(w.holder):'']);const details=workDetails(card,w);if(w.readback?.result){const result=w.readback.result;overviewText(details,'p',typeof result==='string'?result:result.summary||result.reason||'มีผลกลับจากงาน');}evidenceLinks(details,w);}
+  if(overviewResults){const result=w.readback?.result??w.result;const summary=typeof result==='string'?result:result?.summary||result?.reason||'ยังไม่มีสรุปผลที่แสดงได้';const card=overviewCard(overviewResults,w.name||'ผลงาน',w.status,[summary]);evidenceLinks(card,w);workDetails(card,w);}
+ }
+ if(overviewWorks&&!overviewWorks.children.length)overviewText(overviewWorks,'p',officePage==='history'?'ยังไม่มีประวัติในรายการนี้':'ตอนนี้ไม่มีงานที่รอบิ๊กดูหรือกำลังทำ');
+ if(overviewResults&&!overviewResults.children.length)overviewText(overviewResults,'p','ยังไม่มีผลงานที่เสร็จแล้วในรายการนี้');
 }
 async function loadOverviewWorks(append=false){
-  try{
-    const data=await overviewRead('works?offset='+(append?overviewOffset||0:0));
-    if(!append)loadedWorks.clear();for(const w of data.works)loadedWorks.set(w.workId,w);
-    overviewOffset=data.nextOffset;overviewMore.hidden=overviewOffset===null;
-    renderOverviewWorks();
-    const counts={};for(const w of loadedWorks.values())counts[w.status]=(counts[w.status]||0)+1;
-    overviewCoverage.textContent='อ่านแล้ว '+loadedWorks.size+' / '+data.total+' งานในดัชนี Centre · '+Object.entries(counts).map(([k,v])=>k+' '+v).join(' · ')+' · ตรวจ '+data.checkedAt;
-  }catch{overviewCoverage.textContent='UNKNOWN · อ่านสถานะล่าสุดไม่ได้'+(loadedWorks.size?' · รายการด้านล่างเป็นข้อมูลที่อ่านครั้งก่อน':'');}
+ if(!overviewWorks&&!overviewResults)return;
+ try{const data=await overviewRead('works?view='+workView+'&offset='+(append?overviewOffset||0:0));if(!append)loadedWorks.clear();for(const w of data.works)loadedWorks.set(w.workId,w);overviewOffset=data.nextOffset;if(overviewMore)overviewMore.hidden=overviewOffset===null||officePage==='home';renderOverviewWorks();
+ const counts={};for(const w of loadedWorks.values())counts[w.status]=(counts[w.status]||0)+1;
+ overviewCoverage.textContent=officePage==='home'?'แสดง '+Math.min(6,loadedWorks.size)+' จาก '+data.total+' งานปัจจุบัน':'แสดง '+loadedWorks.size+' จาก '+data.total+' รายการ · อัปเดต '+displayTime(data.checkedAt);
+ }catch{overviewCoverage.textContent='ตอนนี้อ่านงานล่าสุดไม่ได้'+(loadedWorks.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':' · ลองกดอัปเดตอีกครั้ง');}
 }
 async function loadOverviewSystem(){
-  const root=document.querySelector('[data-overview-system]');
-  try{const data=await overviewRead('system');root.replaceChildren();for(const c of data.components)overviewCard(root,c.name,c.status,[c.checkedAt]);}
-  catch{root.replaceChildren();overviewText(root,'p','UNKNOWN · อ่านจุดเชื่อมต่อไม่ได้');}
+ const root=document.querySelector('[data-overview-system]');if(!root)return;
+ try{const data=await overviewRead('system');root.replaceChildren();for(const c of data.components)overviewCard(root,c.name,c.status==='LIVE'?'อ่านจุดเชื่อมต่อได้':'ยังตรวจการเชื่อมต่อไม่ได้',[displayTime(c.checkedAt)]);}catch{root.replaceChildren();overviewText(root,'p','ตอนนี้อ่านการเชื่อมต่อไม่ได้');}
 }
 async function loadOverviewSales(append=false){
-  const status=document.querySelector('[data-overview-sales-status]');
-  try{
-    const data=await overviewRead('sales'+(append&&salesCursor?'?cursor='+encodeURIComponent(salesCursor):''));
-    if(!append)loadedSales.clear();for(const b of data.briefs)loadedSales.set(b.briefId,b);for(const e of data.events)loadedSales.set(e.eventId,e);
-    salesCursor=data.nextCursor;salesMore.hidden=!salesCursor;overviewSales.replaceChildren();
-    for(const item of loadedSales.values())overviewCard(overviewSales,item.brief?.goal||item.type||item.briefId,item.status||'OBSERVED',[item.briefId||item.page,item.brief?Object.entries(item.brief).filter(([,v])=>v).map(([k,v])=>k+': '+v).join(' · '):item.source,'รับข้อมูล: '+item.receivedAt,...(item.brief?['ประมวลผล SPECTRUM: '+item.processing]:[])]);
-    if(!loadedSales.size)overviewText(overviewSales,'p','ยังไม่มีใบรับข้อมูลในหน้าที่อ่าน');
-    status.textContent='Centre รับและเก็บ '+loadedSales.size+' รายการที่อ่านแล้ว · การชำระเงิน '+data.paymentStatus+' · ตรวจ '+data.checkedAt;
-  }catch{status.textContent='UNKNOWN · อ่านข้อมูลฝั่งขายไม่ได้'+(loadedSales.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':'');}
+ if(!overviewSales)return;const status=document.querySelector('[data-overview-sales-status]');
+ try{const data=await overviewRead('sales'+(append&&salesCursor?'?cursor='+encodeURIComponent(salesCursor):''));if(!append)loadedSales.clear();for(const b of data.briefs)loadedSales.set(b.briefId,b);for(const e of data.events)loadedSales.set(e.eventId,e);salesCursor=data.nextCursor;if(salesMore)salesMore.hidden=!salesCursor;overviewSales.replaceChildren();
+ const briefs=[...loadedSales.values()].filter(i=>i.brief),events=[...loadedSales.values()].filter(i=>i.type);
+ for(const item of briefs){const lines=Object.entries(item.brief).filter(([k,v])=>v&&k!=='goal').map(([k,v])=>(briefLabels[k]||k)+': '+v);const card=overviewCard(overviewSales,item.brief.goal||'บรีฟจากหน้าร้าน',item.status==='CONFIRMED'?'ลูกค้ายืนยันบรีฟแล้ว':'ร่างบรีฟ',lines);const details=document.createElement('details');overviewText(details,'summary','ดูข้อมูลการรับบรีฟ');overviewText(details,'code',item.briefId);overviewText(details,'p','เก็บข้อมูลเมื่อ '+displayTime(item.receivedAt));overviewText(details,'p',item.processing==='UNKNOWN'?'ยังไม่มีหลักฐานว่าประมวลผลต่อแล้ว':'สถานะต่อ: '+item.processing);card.append(details);}
+ if(!briefs.length)overviewText(overviewSales,'p','ยังไม่มีบรีฟลูกค้าในรายการที่อ่าน');
+ const views=events.filter(e=>e.type==='PAGE_VIEW').length,interest=events.filter(e=>e.type==='SERVICE_INTEREST').length;
+ status.textContent='บรีฟ '+briefs.length+' รายการ · บันทึกการเปิดหน้า '+views+' ครั้ง · บันทึกความสนใจ '+interest+' ครั้งในรายการนี้';overviewText(overviewSales,'p','ยังไม่มีข้อมูลยืนยันการชำระเงิน','office-muted');
+ }catch{status.textContent='ตอนนี้อ่านข้อมูลหน้าร้านไม่ได้'+(loadedSales.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':'');}
 }
 async function refreshOverview(){
-  if(!overviewWorks||overviewBusy)return;overviewBusy=true;
-  const workTarget=loadedWorks.size,salesTarget=loadedSales.size;
-  try{await Promise.all([
-    (async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),
-    loadOverviewSystem(),
-    (async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()
-  ]);}finally{overviewBusy=false;}
+ if(overviewBusy)return;overviewBusy=true;const workTarget=loadedWorks.size,salesTarget=loadedSales.size;
+ try{await Promise.all([(async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),loadOverviewSystem(),(async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()]);}finally{overviewBusy=false;}
 }
 document.querySelector('[data-overview-refresh]')?.addEventListener('click',refreshOverview);
 overviewMore?.addEventListener('click',async()=>{overviewMore.disabled=true;try{await loadOverviewWorks(true);}finally{overviewMore.disabled=false;}});
