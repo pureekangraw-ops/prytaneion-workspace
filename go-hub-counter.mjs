@@ -1,5 +1,8 @@
 const COUNTER_MODES = Object.freeze(["SEARCH", "HANDOFF"]);
 const COUNTER_MODE_SET = new Set(COUNTER_MODES);
+export const COUNTER_HELPERS = Object.freeze(["PIXIE", "HERMES", "LIGHT", "SPECTRUM"]);
+const COUNTER_ACTORS = Object.freeze(["GO", ...COUNTER_HELPERS]);
+const COUNTER_ACTOR_SET = new Set(COUNTER_ACTORS);
 const ANSWER_STATES = Object.freeze(["ANSWERED", "WAIT", "UNKNOWN", "NEEDS_INPUT", "FAILED", "EXPIRED"]);
 const ANSWER_STATE_SET = new Set(ANSWER_STATES);
 const CONTINUABLE_ANSWER_STATES = new Set(["SEEN", "WAIT", "NEEDS_INPUT"]);
@@ -25,7 +28,7 @@ function required(value, label) {
 
 function actor(value, fallback = null) {
   const text = String(value || fallback || "").trim().toUpperCase();
-  if (!["GO", "LIGHT"].includes(text)) throw Object.assign(new Error("COUNTER_ACTOR_INVALID"), { status: 400 });
+  if (!COUNTER_ACTOR_SET.has(text)) throw Object.assign(new Error("COUNTER_ACTOR_INVALID"), { status: 400 });
   return text;
 }
 
@@ -92,6 +95,7 @@ function appendEvent(state, type, actor, at, detail = null) {
 function publicState(state, extra = {}) {
   return {
     ok: true,
+    helpers: clone(COUNTER_HELPERS),
     counter: clone(state),
     ...extra,
   };
