@@ -62,3 +62,9 @@ test('session issuer denies missing and wrong owner code without creating a sess
   }
   assert.equal(app.data.size,0);
 });
+
+test('deployed asset routing sends PRISM pairing to the worker before SPA fallback',()=>{
+  const fs=require('node:fs');
+  const config=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../wrangler.go-hub.jsonc'),'utf8'));
+  assert.ok(config.assets.run_worker_first.includes('/hub/prism/pairing'));
+});
