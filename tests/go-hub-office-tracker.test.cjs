@@ -19,14 +19,18 @@ test("Office home exposes a real Centre-backed work tracker",()=>{
   assert.match(gate,/ติดตามงานจริงจาก Centre/);
 });
 
-test("Office tracker reads owner truth without creating new authority",()=>{
+test("Office tracker reads owner truth and SPECTRUM requests governed Tablet actions without owning authority",()=>{
   const surface=read("go-hub-office-surface.js");
   assert.match(surface,/\/office\/api\/work\?/);
   assert.match(surface,/ygg-office-tracked-work-v1/);
   assert.match(surface,/cache:"no-store"/);
   assert.match(surface,/setInterval\([^]*30000\)/);
   assert.match(surface,/visibilitychange/);
-  assert.doesNotMatch(surface,/\/office\/api\/command/);
+  assert.match(surface,/\/office\/api\/command/);
+  assert.match(surface,/action:"create_tablet"/);
+  assert.match(surface,/action:"pickup_tablet"/);
+  assert.match(surface,/source:"SPECTRUM_WORK"/);
+  assert.doesNotMatch(surface,/open_pass|merge_pull_request|deploy/i);
 });
 
 test("Office tracker styles live status lanes for mobile and desktop",()=>{
