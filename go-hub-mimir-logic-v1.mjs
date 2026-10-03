@@ -39,6 +39,24 @@ export const LINEAGE_EDGE_TYPES = Object.freeze([
 
 export const CONSUMERS = Object.freeze(["HERMES", "SPECTRUM"]);
 
+export const RETURN_ITEM_KINDS = Object.freeze([
+  "RESULT",
+  "EVIDENCE",
+  "ARTIFACT",
+  "STATUS",
+  "RECEIPT",
+  "METADATA",
+  "KNOWLEDGE",
+]);
+
+export const HOUSEKEEPING_ACTIONS = Object.freeze([
+  "STORE",
+  "ARCHIVE",
+  "QUARANTINE",
+  "DELETE_CANDIDATE",
+]);
+
+
 export const MIMIR_V1_SCHEMA = Object.freeze({
   ObservationEnvelope: Object.freeze([
     "observationId",
@@ -112,12 +130,34 @@ export const MIMIR_V1_SCHEMA = Object.freeze({
     "evidenceRefs",
     "createdAt",
   ]),
+  ReturnEnvelope: Object.freeze([
+    "returnId",
+    "workId",
+    "checkpointId",
+    "source",
+    "receivedAt",
+    "items",
+  ]),
+  HousekeepingPlan: Object.freeze([
+    "planId",
+    "returnId",
+    "workId",
+    "checkpointId",
+    "decisions",
+    "compactRequired",
+    "reindexRequired",
+    "deleteCandidateIds",
+    "requiresOwnerApproval",
+    "writePerformed",
+    "sourceMutationAllowed",
+  ]),
 });
 
 const LIFECYCLE_SET = new Set(LIFECYCLE_STATUS);
 const DUPLICATE_SET = new Set(DUPLICATE_STATE);
 const LINEAGE_SET = new Set(LINEAGE_EDGE_TYPES);
 const CONSUMER_SET = new Set(CONSUMERS);
+const RETURN_ITEM_KIND_SET = new Set(RETURN_ITEM_KINDS);
 const VISIBILITY_RANK = Object.freeze({ public: 0, internal: 1, restricted: 2, private: 3 });
 
 function text(value, label, { optional = false } = {}) {
@@ -446,6 +486,132 @@ export function createArchiveManifest(input = {}) {
     supersededBy: text(input.supersededBy, "supersededBy", { optional: true }),
     restorable: true,
   });
+}
+
+
+function normalizeReturnItem(item = {}, index = 0) {
+  const kind = String(item.kind ?? "").trim().toUpperCase();
+  if (!RETURN_ITEM_KIND_SET.has(kind)) throw new Error(`unsupported return item kind: ${kind || "UNKNOWN"}`);
+  const lifecycleStatus = String(item.lifecycleStatus ?? "unknown").trim().toLowerCase();
+  if (!LIFECYCLE_SET.has(lifecycleStatus)) throw new Error(`unsupported lifecycleStatus: ${lifecycleStatus}`);
+  return deepFreeze({
+    itemId: text(item.itemId ?? `return-item-${index + 1}`, "return item id"),
+    kind,
+    ref: text(item.ref, "return item ref"),
+    lifecycleStatus,
+    duplicateState: DUPLICATE_SET.has(String(item.duplicateState ?? "none").toLowerCase())
+      ? String(item.duplicateState ?? "none").toLowerCase()
+      : "none",
+    duplicateOf: text(item.duplicateOf, "return item duplicateOf", { optional: true }),
+    contentHash: text(item.contentHash, "return item contentHash", { optional: true }),
+    evidenceRefs: list(item.evidenceRefs, "return item evidenceRefs", { optional: true }) ?? [],
+    lineageRefs: list(item.lineageRefs, "return item lineageRefs", { optional: true }) ?? [],
+    disposable: item.disposable === true,
+    protected: item.protected === true || ["EVIDENCE", "RECEIPT"].includes(kind),
+    payload: deepFreeze(cloneJson(item.payload ?? null)),
+  });
+}
+
+export function createReturnEnvelope(input = {}) {
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new Error("return items must not be empty");
+  }
+  return deepFreeze({
+    schemaVersion: MIMIR_LOGIC_VERSION,
+    returnId: text(input.returnId, "returnId"),
+    workId: text(input.workId, "workId"),
+    checkpointId: text(input.checkpointId, "checkpointId"),
+    source: text(input.source, "source"),
+    receivedAt: iso(input.receivedAt ?? new Date().toISOString(), "receivedAt"),
+    items: input.items.map(normalizeReturnItem),
+  });
+}
+
+export function planReturnHousekeeping(input = {}) {
+  const envelope = input.returnEnvelope ?? {};
+  if (!Array.isArray(envelope.items) || envelope.items.length === 0) {
+    throw new Error("returnEnvelope.items must not be empty");
+  }
+  const allowDeleteCandidates = input.policy?.allowDeleteCandidates === true;
+  const policyRef = text(input.policy?.policyRef, "housekeeping policyRef");
+  const decisions = envelope.items.map(item => {
+    let action = "STORE";
+    let reason = "current_or_preserved";
+
+    if (item.lifecycleStatus === "conflict" || item.lifecycleStatus === "quarantine") {
+      action = "QUARANTINE";
+      reason = "conflict_or_quarantine";
+    } else if (["stale", "legacy", "smoke"].includes(item.lifecycleStatus) || item.duplicateState !== "none") {
+      const deletionSafe = allowDeleteCandidates
+        && item.disposable === true
+        && item.protected !== true
+        && item.evidenceRefs.length === 0
+        && item.lineageRefs.length === 0;
+      if (deletionSafe) {
+        action = "DELETE_CANDIDATE";
+        reason = "policy_allows_disposable_unreferenced_item";
+      } else {
+        action = "ARCHIVE";
+        reason = item.duplicateState !== "none" ? "duplicate_preserve_lineage" : "non_current_preserve_lineage";
+      }
+    } else if (item.lifecycleStatus === "unknown" || item.lifecycleStatus === "restricted") {
+      action = "QUARANTINE";
+      reason = "insufficient_or_restricted_truth";
+    }
+
+    return deepFreeze({
+      itemId: item.itemId,
+      kind: item.kind,
+      ref: item.ref,
+      lifecycleStatus: item.lifecycleStatus,
+      duplicateState: item.duplicateState,
+      action,
+      reason,
+      protected: item.protected,
+    });
+  });
+
+  const deleteCandidateIds = decisions.filter(d => d.action === "DELETE_CANDIDATE").map(d => d.itemId);
+  const compactRequired = decisions.some(d => ["ARCHIVE", "DELETE_CANDIDATE"].includes(d.action));
+  const reindexRequired = compactRequired || envelope.items.some(item => item.duplicateState !== "none");
+
+  return deepFreeze({
+    schemaVersion: MIMIR_LOGIC_VERSION,
+    planId: text(input.planId, "planId"),
+    returnId: text(envelope.returnId, "returnEnvelope.returnId"),
+    workId: text(envelope.workId, "returnEnvelope.workId"),
+    checkpointId: text(envelope.checkpointId, "returnEnvelope.checkpointId"),
+    policyRef,
+    decisions,
+    compactRequired,
+    reindexRequired,
+    deleteCandidateIds,
+    requiresOwnerApproval: deleteCandidateIds.length > 0,
+    writePerformed: false,
+    sourceMutationAllowed: false,
+    report: deepFreeze({
+      received: decisions.length,
+      store: decisions.filter(d => d.action === "STORE").length,
+      archive: decisions.filter(d => d.action === "ARCHIVE").length,
+      quarantine: decisions.filter(d => d.action === "QUARANTINE").length,
+      deleteCandidate: deleteCandidateIds.length,
+    }),
+  });
+}
+
+export function assertMimirHousekeepingSafety(plan = {}) {
+  if (plan.writePerformed === true) throw new Error("MIMIR housekeeping plan cannot perform writes");
+  if (plan.sourceMutationAllowed === true) throw new Error("MIMIR housekeeping cannot mutate source");
+  const decisions = Array.isArray(plan.decisions) ? plan.decisions : [];
+  for (const decision of decisions) {
+    if (decision.protected === true && decision.action === "DELETE_CANDIDATE") {
+      throw new Error("protected return item cannot be a delete candidate");
+    }
+  }
+  if ((plan.deleteCandidateIds?.length ?? 0) > 0 && plan.requiresOwnerApproval !== true) {
+    throw new Error("delete candidates require owner approval");
+  }
+  return true;
 }
 
 export function assertMimirSafety(value = {}) {
