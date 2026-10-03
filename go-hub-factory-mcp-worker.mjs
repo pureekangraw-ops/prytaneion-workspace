@@ -851,6 +851,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           };
         }
 
+        if (action === "inspect") return factoryV4(routed);
+
         return runMutation("pixie.go_works." + action, routed, async resolvedInput => {
           const rechecked = await centreLive.action({ action:"v4_inspect", workId });
           if (!rechecked.ok) return rechecked;
