@@ -1,4 +1,11 @@
+import { officeShell, OFFICE_PAGES } from "./go-hub-office-shell.mjs";
 import { createOfficeOverview } from "./go-hub-office-overview.mjs";
+// Compatibility contract: the human pages still preserve the Centre-backed
+// tracker selectors data-work-tracker, data-work-form, data-work-list,
+// data-work-active, data-work-waiting and data-work-done for existing clients.
+// Human page selectors: data-overview-works, data-overview-results,
+// data-overview-sales.
+// Legacy label retained in the work detail: ติดตามงานจริงจาก Centre.
 const encoder = new TextEncoder();
 
 const OFFICE_COOKIE = "__Host-ygg-office";
@@ -16,6 +23,7 @@ const OFFICE_ASSET_TYPES = new Set(["image/png","image/jpeg","image/webp"]);
 const OFFICE_ALLOWED = new Map([
   ["/office", new Set(["GET"])],
   ["/office/", new Set(["GET"])],
+  ...Object.keys(OFFICE_PAGES).filter(path=>path!=="/office").map(path=>[path,new Set(["GET"])]),
   [OFFICE_LOGIN, new Set(["GET","POST"])],
   [OFFICE_LOGOUT, new Set(["POST"])],
   [OFFICE_SESSION, new Set(["GET"])],
@@ -288,9 +296,6 @@ function loginPage(errorCode = "") {
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><main class="office-login"><section class="office-login-card"><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Owner workspace · secure entry</p>${error}<button type="button" data-passkey-login hidden>Use Passkey</button><p class="office-muted" data-passkey-login-status></p><details><summary>Use bootstrap passcode</summary><form method="post" action="/office/login"><label>Passcode<input name="passcode" type="password" autocomplete="current-password" required></label><button type="submit">Enter Office</button></form></details></section></main><script type="module" src="/go-hub-office-login.js"></script></body></html>`;
 }
 
-function officeShell() {
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1118"><title>YGG METRO Office</title><link rel="stylesheet" href="/go-hub-office-surface.css"></head><body class="office-body"><!-- OFFICE_EDIT_ROUTE:GITHUB_DIRECT --><main class="office-shell"><header class="office-top"><div><p class="office-kicker">YGG METRO</p><h1>OFFICE</h1><p class="office-muted">Build · Plan · Create · Together</p></div><form method="post" action="/office/logout"><button class="office-quiet" type="submit">Logout</button></form></header><section class="office-hero"><div class="office-hero-copy"><p class="office-kicker">CURRENT DESK</p><h2>งาน ระบบ และผลลัพธ์</h2><p>อ่านภาพรวมจาก Centre · ข้อมูลที่ยังยืนยันไม่ได้จะแสดง UNKNOWN</p></div><div class="office-eye" data-office-eye><span class="office-dot"></span><div><strong data-eye-state>CHECKING</strong><small data-eye-detail>Factory Eye · read only</small></div></div></section><nav class="office-tabs" aria-label="Office views"><a href="#office-system">ระบบ</a><a href="#office-works">งานทั้งหมด</a><a href="#office-results">ผลลัพธ์</a><a href="#office-sales">ฝั่งขาย</a><a href="#office-tools">เครื่องมือ</a></nav><section class="office-panel" id="office-system"><div><p class="office-kicker">SYSTEM</p><h3>เห็นการทำงานของแต่ละพื้นที่</h3><p class="office-muted">LIVE = อ่านจุดเชื่อมต่อได้ · UNKNOWN = ยังไม่มีหลักฐานสถานะ</p><div class="office-component-grid" data-overview-system></div></div><button data-overview-refresh type="button">อัปเดตภาพรวม</button></section><section class="office-panel" id="office-works"><div><p class="office-kicker">CENTRE · WORKS</p><h3>งานที่ลงทะเบียนใน Centre</h3><p class="office-muted" data-overview-coverage>กำลังอ่าน…</p><div class="office-work-list" data-overview-works></div><button type="button" data-overview-more hidden>อ่านหน้าถัดไป</button></div></section><section class="office-panel" id="office-results"><div><p class="office-kicker">RESULTS</p><h3>ผลลัพธ์และงานที่รอตรวจ</h3><div class="office-work-list" data-overview-results></div></div></section><section class="office-panel" id="office-sales"><div><p class="office-kicker">SPECTRUMSALE → CENTRE</p><h3>ข้อมูลจากฝั่งขาย</h3><p class="office-muted" data-overview-sales-status>กำลังอ่านใบรับข้อมูล…</p><div class="office-work-list" data-overview-sales></div><button type="button" data-sales-more hidden>อ่านข้อมูลถัดไป</button></div></section><details class="office-tools" id="office-tools"><summary>เครื่องมือและการตั้งค่า</summary><section class="office-panel office-workspace" data-work-tracker><div class="office-workspace-head"><div><p class="office-kicker">WORK TRUTH</p><h3>ติดตามงานจริงจาก Centre</h3><p class="office-muted">ปัก Work ID + Checkpoint ID แล้ว Office จะอ่านสถานะจริงจาก owner truth โดยไม่สร้าง authority ใหม่</p></div><button type="button" data-work-refresh>Refresh</button></div><form class="office-work-form" data-work-form><input name="workId" autocomplete="off" placeholder="WORK-..." required><input name="checkpointId" autocomplete="off" placeholder="CP-..." required><button type="submit">Track work</button></form><p class="office-muted" data-work-message>ยังไม่ได้ปักงาน</p><div class="office-work-list" data-work-list></div></section><section class="office-panel office-spectrum" data-spectrum-work><div><p class="office-kicker">SPECTRUM · WORK</p><h3>เริ่มหรือหยิบ Work Tablet</h3><p class="office-muted">SPECTRUM จัด intent → context → Work/Tablet แล้วส่งคำขอให้ backend policy ตัดสิน authority เอง</p><form class="office-spectrum-create" data-spectrum-create><input name="mission" placeholder="งานที่ต้องทำ" required><input name="requestedResult" placeholder="ผลลัพธ์ที่ต้องการ" required><input name="workKey" placeholder="Work key (ถ้ามี)"><button type="submit">Create Tablet</button></form><form class="office-spectrum-pickup" data-spectrum-pickup><input name="tabletId" placeholder="TABLET:..." required><button type="submit">Pickup Tablet</button></form><p class="office-muted" data-spectrum-status>พร้อมทำงาน · no authority</p></div></section><section class="office-panel office-assets" data-office-assets><div><p class="office-kicker">ASSETS</p><h3>Office files</h3><p class="office-muted">เก็บภาพและไฟล์ใช้งานใน R2 · private ผ่าน Office session</p><form data-asset-upload><input type="file" name="file" accept="image/png,image/jpeg,image/webp" required><select name="category"><option value="uploads">Uploads</option><option value="visuals">Visuals</option><option value="projects">Projects</option><option value="references">References</option></select><button type="submit">Upload</button></form><p class="office-muted" data-asset-status>พร้อมรับไฟล์</p><ul class="office-asset-list" data-asset-list></ul></div></section><section class="office-panel"><div><p class="office-kicker">SECURITY</p><h3>Passkey</h3><p class="office-muted" data-passkey-status>ตรวจสถานะ Passkey…</p></div><button type="button" data-passkey-register>Create Passkey</button></section><section class="office-panel"><div><p class="office-kicker">OBSERVER</p><h3>GO can see the current screen</h3><p class="office-muted" data-eye-message>กำลังอ่านสถานะ Factory Eye…</p></div><div><button type="button" data-eye-observe>Observe now</button><button type="button" data-eye-refresh>Refresh status</button></div></section></details></main><script type="module" src="/go-hub-office-surface.js"></script></body></html>`;
-}
 
 export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, passkey = null, rateLimiter = null, audit = null, overview = null } = {}) {
   return Object.freeze({
@@ -488,13 +493,13 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         return json({ ok:true, asset:officeAssetSummary(readback) }, 201);
       }
 
-      if (url.pathname === OFFICE_ROOT || url.pathname === OFFICE_ROOT + "/") {
-        return html(officeShell());
+      if (OFFICE_PAGES[url.pathname] || url.pathname === OFFICE_ROOT + "/") {
+        return html(officeShell(OFFICE_PAGES[url.pathname] || "home"));
       }
 
       if (["/office/api/works","/office/api/system","/office/api/sales"].includes(url.pathname)) {
         const view = overview || createOfficeOverview({centre:centreLive});
-        try { return json(await view[url.pathname.split("/").pop()]({offset:Number(url.searchParams.get("offset")||0),cursor:url.searchParams.get("cursor")||undefined})); }
+        try { return json(await view[url.pathname.split("/").pop()]({view:url.searchParams.get("view")||"all",offset:Number(url.searchParams.get("offset")||0),cursor:url.searchParams.get("cursor")||undefined})); }
         catch { return json({code:"OFFICE_OVERVIEW_UNAVAILABLE",state:"UNKNOWN"},503); }
       }
 
