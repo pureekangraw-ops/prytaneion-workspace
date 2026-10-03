@@ -1,4 +1,3 @@
-import { createOfficeOverview } from "./go-hub-office-overview.mjs";
 import githubWorker, { createGithubLifecycleService } from "./go-hub-worker.mjs";
 import { createBrowserInterface } from "./go-hub-browser-interface.js";
 import { createFactoryMcpWorker, createCounterDispatchLifecycle } from "./go-hub-factory-mcp-worker.mjs";
@@ -679,17 +678,6 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
-      if (url.pathname.startsWith("/internal/brief/") || url.pathname === "/internal/spectrum/event") {
-        if(url.hostname!=="go-hub.internal")return json({code:"INTERNAL_ROUTE_DENIED"},403);
-        if(request.method!=="POST")return json({code:"METHOD_NOT_ALLOWED"},405);
-        if(Number(request.headers.get("content-length")||0)>65536)return json({code:"PAYLOAD_TOO_LARGE"},413);
-        const raw=await request.text();if(raw.length>65536)return json({code:"PAYLOAD_TOO_LARGE"},413);
-        const payload=(()=>{try{return JSON.parse(raw);}catch{return null;}})();
-        if(!payload || typeof payload!=="object" || Array.isArray(payload))return json({code:"INVALID_JSON"},400);
-        const operation=url.pathname.split("/").pop();
-        if(url.pathname.startsWith("/internal/brief/") && !["upsert","confirm"].includes(operation))return json({code:"INTERNAL_ROUTE_DENIED"},404);
-        return createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE}).action({action:operation==="event"?"spectrum_event":"spectrum_brief",operation,payload});
-      }
       const officeHost = url.hostname.toLowerCase() === "office.yggmetro.com";
       if (officeHost && url.pathname === "/") {
         const hasOfficeSession = /(?:^|;\\s*)__Host-ygg-office=/.test(String(request.headers.get("cookie") || ""));
@@ -729,7 +717,6 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         });
         const officeGate = createOfficeGate({
           centreLive,
-          overview:createOfficeOverview({centre:centreLive,probes:{Centre:async()=>{const r=await centreLive.action({action:"v4_inventory",limit:1});return {ok:r.ok};},SPECTRUM:async()=>{const r=await centreLive.action({action:"spectrum_list",limit:1});return {ok:r.ok};}}}),
           agentMission,
           agentMissionActions:AGENT_MISSION_ACTIONS,
           factoryEye:factoryEyeSessionsFor(env),
@@ -901,7 +888,11 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         });
       }
       if (request.method === "GET" && url.pathname === "/hub/observer") {
-        return observerOwnerPage();
+        return json({
+          code:"LEGACY_OBSERVER_RETIRED",
+          canonical:"FACTORY_EYE",
+          canonicalPath:FACTORY_EYE_API_ROOT,
+        }, 410);
       }
       if (url.pathname === PRISM_PAIRING_PATH || url.pathname === LIGHTHOUSE_CONTROL_PORT_OWNER_PATH ||
           url.pathname.startsWith(LIGHTHOUSE_CONTROL_PORT_API_ROOT + "/")) {
@@ -1058,6 +1049,14 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
 
       if (!isBrowserApiPath(url.pathname)) {
         return delegate.fetch(request, env);
+      }
+
+      if (isObserverApiPath(url.pathname)) {
+        return json({
+          code:"LEGACY_OBSERVER_RETIRED",
+          canonical:"FACTORY_EYE",
+          canonicalPath:FACTORY_EYE_API_ROOT,
+        }, 410);
       }
 
       if (isObserverApiPath(url.pathname)) {
