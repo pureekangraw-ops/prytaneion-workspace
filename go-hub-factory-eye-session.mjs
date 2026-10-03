@@ -5,6 +5,9 @@ const MAX_TABS = 100;
 const MAX_COMPARE_SCREENSHOTS = 2;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1_800_000;
 const SCREENSHOT_CHUNK_CHARS = 80_000;
+const COMMAND_TTL_MS = 60_000;
+const COMMAND_RETRY_MS = 10_000;
+const COMMAND_MAX_ATTEMPTS = 3;
 const encoder = new TextEncoder();
 
 function clean(value, max = 4096) {
@@ -350,6 +353,7 @@ export function createFactoryEyeSessionService({
       await storage.delete("latest");
       await storage.delete("previous");
       await storage.delete("latest-receipt");
+      await storage.delete("pending-command");
       await storage.delete("recent-screenshot-refs");
       await storage.delete("latest-screenshot-ref");
 
@@ -513,6 +517,25 @@ export function createFactoryEyeSessionService({
       return { ok:true, observation };
     },
 
+    async requestObservation({ requestedBy = "OFFICE" } = {}) {
+      const session = await loadSession();
+      const current = Number(now());
+      if (!session || session.active !== true) return { ok:false, code:"FACTORY_EYE_SESSION_INACTIVE" };
+      if (!Number.isFinite(current) || current >= Number(session.expiresAt)) return { ok:false, code:"FACTORY_EYE_SESSION_EXPIRED" };
+      const command = {
+        commandId:"EYE-CMD-" + clean(randomUUID(), 160),
+        type:"OBSERVE_NOW",
+        requestedAt:new Date(current).toISOString(),
+        expiresAt:current + COMMAND_TTL_MS,
+        requestedBy:clean(requestedBy, 120) || "OFFICE",
+        deliveredAt:null,
+        attempts:0,
+        createsAuthority:false,
+      };
+      await storage.put("pending-command", command);
+      return { ok:true, command:{ ...command } };
+    },
+
     async receipt(input = {}) {
       const auth = await authorize(input);
       if (!auth.ok) return auth;
@@ -526,6 +549,8 @@ export function createFactoryEyeSessionService({
         createsAuthority:false,
       };
       await storage.put("latest-receipt", receipt);
+      const pending = await storage.get("pending-command");
+      if (pending && clean(pending.commandId, 180) === receipt.commandId) await storage.delete("pending-command");
       await saveSession({ ...auth.session, lastSeenAt:Number(now()) });
       return { ok:true, receipt };
     },
@@ -533,7 +558,30 @@ export function createFactoryEyeSessionService({
     async pullCommands(input = {}) {
       const auth = await authorize(input);
       if (!auth.ok) return auth;
-      return { ok:true, commands:[], capability:"EYES_ONLY" };
+      const current = Number(now());
+      const pending = await storage.get("pending-command");
+      if (!pending) return { ok:true, commands:[], capability:"EYES_ONLY_OBSERVE_NOW" };
+      if (!Number.isFinite(Number(pending.expiresAt)) || current >= Number(pending.expiresAt) || Number(pending.attempts || 0) >= COMMAND_MAX_ATTEMPTS) {
+        await storage.delete("pending-command");
+        return { ok:true, commands:[], capability:"EYES_ONLY_OBSERVE_NOW" };
+      }
+      const deliveredAt = Number(pending.deliveredAt || 0);
+      if (deliveredAt > 0 && current - deliveredAt < COMMAND_RETRY_MS) {
+        return { ok:true, commands:[], capability:"EYES_ONLY_OBSERVE_NOW" };
+      }
+      const delivered = { ...pending, deliveredAt:current, attempts:Number(pending.attempts || 0) + 1 };
+      await storage.put("pending-command", delivered);
+      return {
+        ok:true,
+        commands:[{
+          commandId:delivered.commandId,
+          type:"OBSERVE_NOW",
+          requestedAt:delivered.requestedAt,
+          expiresAt:delivered.expiresAt,
+          createsAuthority:false,
+        }],
+        capability:"EYES_ONLY_OBSERVE_NOW",
+      };
     },
 
     async stop(input = {}) {
@@ -602,6 +650,7 @@ export class FactoryEyeSessionRegistry {
   async register(input) { return this.service().register(input); }
   async heartbeat(input) { return this.service().heartbeat(input); }
   async observe(input) { return this.service().observe(input); }
+  async requestObservation(input) { return this.service().requestObservation(input); }
   async receipt(input) { return this.service().receipt(input); }
   async pullCommands(input) { return this.service().pullCommands(input); }
   async stop(input) { return this.service().stop(input); }
@@ -622,6 +671,7 @@ export class FactoryEyeSessionRegistry {
       "/register": value => this.register(value),
       "/heartbeat": value => this.heartbeat(value),
       "/observe": value => this.observe(value),
+      "/request-observe": value => this.requestObservation(value),
       "/receipt": value => this.receipt(value),
       "/commands": value => this.pullCommands(value),
       "/stop": value => this.stop(value),
