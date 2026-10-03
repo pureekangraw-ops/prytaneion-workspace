@@ -317,3 +317,41 @@ test("Factory Eye visual compare screenshot buffer stays bounded to two frames",
   assert.equal(latest.latest.observationId,"OBS-3");
   assert.equal(latest.comparison.visualCompareReady,true);
 });
+
+
+test("Factory Eye owner observe-now request is bounded, delivered, and cleared by receipt",async()=>{
+  const m=await load("observe-now-command");
+  let clock=1000;
+  let uuid=0;
+  const service=m.createFactoryEyeSessionService({
+    storage:new MemoryStorage(),now:()=>clock,randomUUID:()=>\"cmd-\"+(++uuid),tokenFactory:()=>\"t\",
+  });
+  const started=await service.start({adapterId:\"A\",ttlMs:600000});
+  const sessionId=started.session_id;
+  await service.register({sessionId,sessionToken:\"t\",adapterId:\"A\",host:\"firefox-addon\",version:\"0.3.1\",protocolVersion:\"2\"});
+
+  const requested=await service.requestObservation({requestedBy:\"BIG\"});
+  assert.equal(requested.ok,true);
+  assert.equal(requested.command.type,\"OBSERVE_NOW\");
+  assert.equal(requested.command.createsAuthority,false);
+
+  const pulled=await service.pullCommands({sessionId,sessionToken:\"t\",adapterId:\"A\"});
+  assert.equal(pulled.ok,true);
+  assert.equal(pulled.capability,\"EYES_ONLY_OBSERVE_NOW\");
+  assert.equal(pulled.commands.length,1);
+  assert.equal(pulled.commands[0].type,\"OBSERVE_NOW\");
+  assert.equal(pulled.commands[0].createsAuthority,false);
+
+  const duplicate=await service.pullCommands({sessionId,sessionToken:\"t\",adapterId:\"A\"});
+  assert.equal(duplicate.commands.length,0);
+
+  const receipt=await service.receipt({
+    sessionId,sessionToken:\"t\",adapterId:\"A\",commandId:pulled.commands[0].commandId,
+    status:\"COMPLETED\",followUpObservationId:\"OBS-FRESH\",
+  });
+  assert.equal(receipt.ok,true);
+  const after=await service.pullCommands({sessionId,sessionToken:\"t\",adapterId:\"A\"});
+  assert.equal(after.commands.length,0);
+  const latest=await service.latest();
+  assert.equal(latest.latestReceipt.followUpObservationId,\"OBS-FRESH\");
+});
