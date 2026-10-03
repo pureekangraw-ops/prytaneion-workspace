@@ -112,6 +112,10 @@ function officeEnv({eyeState="STALE"}={}){
       return{
         async fetch(request){
           const pathname=new URL(request.url).pathname;
+          if(pathname==="/request-observe"){
+            const input=await request.json();
+            return json({ok:true,command:{commandId:"EYE-CMD-E2E",type:"OBSERVE_NOW",requestedBy:input.requestedBy,createsAuthority:false}});
+          }
           if(pathname==="/latest"){
             return json({
               ok:true,
@@ -217,6 +221,18 @@ test("Office E2E happy path: login -> Agent Mission command -> Centre read -> Fa
   assert.equal(workBody.work.checkpointId,commandBody.workContext.checkpointId);
   assert.equal(workBody.work.status,"ON PROCESS");
   assert.equal(workBody.work.holder,"GO");
+
+  const observeNow=await handler.fetch(new Request("https://office.example/office/api/eye/refresh",{
+    method:"POST",
+    headers:{cookie,origin:"https://office.example","content-type":"application/json"},
+    body:"{}",
+  }),state.env);
+  assert.equal(observeNow.status,202);
+  const observeBody=await observeNow.json();
+  assert.equal(observeBody.ok,true);
+  assert.equal(observeBody.command.type,"OBSERVE_NOW");
+  assert.equal(observeBody.command.createsAuthority,false);
+  assert.equal(observeBody.mode,"EYES_ONLY_OBSERVE_NOW");
 
   const eye=await handler.fetch(new Request("https://office.example/office/api/eye",{headers:{cookie}}),state.env);
   assert.equal(eye.status,200);
