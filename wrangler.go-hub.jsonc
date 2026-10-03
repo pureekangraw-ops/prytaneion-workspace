@@ -30,10 +30,6 @@
         "class_name": "LighthouseControlPortSessionRegistry"
       },
       {
-        "name": "OBSERVER_SESSIONS",
-        "class_name": "ObserverSessionRegistry"
-      },
-      {
         "name": "FACTORY_EYE_SESSIONS",
         "class_name": "FactoryEyeSessionRegistry"
       },
