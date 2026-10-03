@@ -1040,7 +1040,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           pixieResult,
           counterCreate: input => {
             const fromActor = authenticatedActor;
-            const toActor = authenticatedActor === "LIGHT" ? "GO" : "LIGHT";
+            const requestedHelper = String(input?.helper || "").trim().toUpperCase();
+            const toActor = requestedHelper || (authenticatedActor === "LIGHT" ? "GO" : "LIGHT");
             const mode = String(input?.mode || "SEARCH").trim().toUpperCase();
             const routed = { ...input, fromActor, toActor };
             return runMutation("counter.create." + fromActor.toLowerCase(), routed, () => counterDispatch.create(routed));
