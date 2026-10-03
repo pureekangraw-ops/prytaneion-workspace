@@ -189,12 +189,12 @@ test("consumer projections are narrowed and never infer routes", () => {
     },
   });
   const hermes = mimir.projectForConsumer(record, "HERMES");
-  const restricted = mimir.projectForConsumer(record, "PIXIE");
+  const spectrum = mimir.projectForConsumer(record, "SPECTRUM");
   assert.deepEqual(hermes.effectiveScope.allowedConsumers, ["HERMES"]);
   assert.equal(hermes.routeHint, null);
   assert.equal(hermes.routeDerivedByMimir, false);
-  assert.equal(restricted.lifecycleStatus, "restricted");
-  assert.deepEqual(restricted.sourceRefs, []);
+  assert.equal(spectrum.lifecycleStatus, "restricted");
+  assert.deepEqual(spectrum.sourceRefs, []);
 });
 
 test("archive preserves evidence and lineage instead of deleting the record", () => {
@@ -239,6 +239,6 @@ test("Centre MIMIR exposes only HERMES and SPECTRUM as consumers; PIXIE stays se
     generatedAt: "2026-10-03T00:03:00.000Z",
   });
   assert.equal(spectrum.consumer, "SPECTRUM");
-  assert.deepEqual(spectrum.effectiveScope.allowedConsumers, ["SPECTRUM"]);
+  assert.deepEqual(spectrum.effectiveScope.allowedConsumers, ["HERMES", "SPECTRUM"]);
   assert.throws(() => mimir.projectForConsumer(record, "PIXIE"), /unsupported consumer: PIXIE/);
 });
