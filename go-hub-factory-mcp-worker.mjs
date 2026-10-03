@@ -477,7 +477,7 @@ export function createObserverEvidenceService({ factoryEyeNamespace } = {}) {
   }
 
   async function callStub(current, baseUrl, method, input = {}) {
-    if (!current) return { ok:false, code:"HUB_UNAVAILABLE" };
+    if (!current) return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
     try {
       if (typeof current.fetch === "function") {
         const path = method === "latest" ? "latest" : "screenshot";
@@ -486,13 +486,13 @@ export function createObserverEvidenceService({ factoryEyeNamespace } = {}) {
           headers:{ "content-type":"application/json" },
           body:JSON.stringify(input),
         }));
-        const body = await response.json().catch(() => ({ code:"HUB_UNAVAILABLE" }));
-        return response.ok ? body : { ok:false, code:body?.code || "HUB_UNAVAILABLE" };
+        const body = await response.json().catch(() => ({ code:"FACTORY_EYE_UNAVAILABLE" }));
+        return response.ok ? body : { ok:false, code:body?.code || "FACTORY_EYE_UNAVAILABLE" };
       }
       if (typeof current[method] === "function") return await current[method](input);
-      return { ok:false, code:"HUB_UNAVAILABLE" };
+      return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
     } catch {
-      return { ok:false, code:"HUB_UNAVAILABLE" };
+      return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
     }
   }
 
@@ -540,7 +540,7 @@ export function createObserverEvidenceService({ factoryEyeNamespace } = {}) {
         return json({ ...eye, source:"FACTORY_EYE", legacyBrowserPolicyUsed:false }, 200);
       }
 
-      return json({ code:eye?.code || "FACTORY_EYE_UNAVAILABLE" }, 503);
+      return json({ code:"LEGACY_OBSERVER_RETIRED", canonical:"FACTORY_EYE" }, 410);
     },
   });
 }
