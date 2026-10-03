@@ -476,50 +476,71 @@ export function createObserverEvidenceService({ factoryEyeNamespace } = {}) {
     return factoryEyeNamespace.getByName("ergasterion-factory-eye-v1");
   }
 
-  async function callFactoryEye(method, input = {}) {
-    const current = factoryEyeStub();
-    if (!current) return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
+  async function callStub(current, baseUrl, method, input = {}) {
+    if (!current) return { ok:false, code:"HUB_UNAVAILABLE" };
     try {
       if (typeof current.fetch === "function") {
-        const response = await current.fetch(new Request(`https://factory-eye.internal/${method}`, {
+        const path = method === "latest" ? "latest" : "screenshot";
+        const response = await current.fetch(new Request(baseUrl + path, {
           method:"POST",
           headers:{ "content-type":"application/json" },
           body:JSON.stringify(input),
         }));
-        const body = await response.json().catch(() => ({ ok:false, code:"FACTORY_EYE_UNAVAILABLE" }));
-        return response.ok ? body : { ok:false, code:body?.code || "FACTORY_EYE_UNAVAILABLE" };
+        const body = await response.json().catch(() => ({ code:"HUB_UNAVAILABLE" }));
+        return response.ok ? body : { ok:false, code:body?.code || "HUB_UNAVAILABLE" };
       }
-      if (typeof current[method] === "function") return current[method](input);
-      return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
+      if (typeof current[method] === "function") return await current[method](input);
+      return { ok:false, code:"HUB_UNAVAILABLE" };
     } catch {
-      return { ok:false, code:"FACTORY_EYE_UNAVAILABLE" };
+      return { ok:false, code:"HUB_UNAVAILABLE" };
     }
   }
+
+  const callFactoryEye = (method, input = {}) =>
+    callStub(factoryEyeStub(), "https://factory-eye.internal/", method, input);
 
   return Object.freeze({
     async latest({ workContext } = {}) {
       const workId = String(workContext?.workId || "").trim();
       const checkpointId = String(workContext?.checkpointId || "").trim();
-      if ((workId && !checkpointId) || (!workId && checkpointId)) {
+      const context = workId && checkpointId
+        ? { workContext:{ workId, checkpointId } }
+        : {};
+
+      // Factory Eye is the current read-only evidence source and does not create
+      // Work authority. Allow the compatibility call shape with no WorkContext
+      // so older MCP clients can still read CURRENT evidence while their cached
+      // tool schema catches up with the registry.
+      const eye = await callFactoryEye("latest", context);
+      if (eye?.ok) {
+        return json({
+          ...eye,
+          source:"FACTORY_EYE",
+          legacyBrowserPolicyUsed:false,
+          workContextBound:Boolean(workId && checkpointId),
+        }, 200);
+      }
+
+      // Legacy Browser Observer remains Work-bound. Never widen that older lane.
+      if (!workId || !checkpointId) {
         return json({ code:"WORK_CONTEXT_REQUIRED" }, 400);
       }
-      const context = workId && checkpointId ? { workContext:{ workId, checkpointId } } : {};
-      const eye = await callFactoryEye("latest", context);
-      if (!eye?.ok) return json({ code:eye?.code || "FACTORY_EYE_UNAVAILABLE" }, 503);
-      return json({
-        ...eye,
-        source:"FACTORY_EYE",
-        legacyBrowserPolicyUsed:false,
-        workContextBound:Boolean(workId && checkpointId),
-      }, 200);
+      return json({ code:eye?.code || "FACTORY_EYE_UNAVAILABLE" }, 503);
     },
 
     async screenshot({ screenshotRef } = {}) {
       const ref = String(screenshotRef || "").trim();
       if (!ref) return json({ code:"SCHEMA_REJECTED" }, 400);
-      const eye = await callFactoryEye("screenshot", { screenshotRef:ref });
-      if (!eye?.ok) return json({ code:eye?.code || "FACTORY_EYE_UNAVAILABLE" }, 503);
-      return json({ ...eye, source:"FACTORY_EYE", legacyBrowserPolicyUsed:false }, 200);
+
+      if (ref.startsWith("factory-eye-shot:")) {
+        const eye = await callFactoryEye("screenshot", { screenshotRef:ref });
+        if (!eye?.ok) {
+          return json({ code:eye?.code || "FACTORY_EYE_SCREENSHOT_NOT_FOUND" }, 404);
+        }
+        return json({ ...eye, source:"FACTORY_EYE", legacyBrowserPolicyUsed:false }, 200);
+      }
+
+      return json({ code:eye?.code || "FACTORY_EYE_UNAVAILABLE" }, 503);
     },
   });
 }
@@ -709,8 +730,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         secret: env?.ERGASTERION_HUB_SHARED_SECRET,
         binding: env?.ERGASTERION_FACTORY,
       });
-      const observer = createObserverEvidenceService({
-        factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
+      const observer = createObserverEvidenceService({        factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
       });
       const centreLive = createCentreLiveService({ namespace: env?.GO_HUB_CENTRE_STATE });
       const broadcast = createBroadcastService({ namespace: env?.GO_HUB_BROADCAST_STATE });
