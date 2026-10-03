@@ -199,6 +199,7 @@
       "/hub/api/counter/*",
       "/hub/api/lighthouse-control-port/*",
       "/hub/lighthouse",
+      "/hub/prism/pairing",
       "/hub/api/browser/*",
       "/hub/api/factory-eye/*",
       "/hub/api/github-workspace/*",

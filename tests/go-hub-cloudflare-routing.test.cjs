@@ -26,6 +26,7 @@ test("GO Hub API routes run the edge Worker before SPA asset fallback", () => {
     "/hub/api/counter/*",
     "/hub/api/lighthouse-control-port/*",
     "/hub/lighthouse",
+    "/hub/prism/pairing",
     "/hub/api/browser/*",
     "/hub/api/factory-eye/*",
     "/hub/api/github-workspace/*",
