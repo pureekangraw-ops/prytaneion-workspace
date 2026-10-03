@@ -459,3 +459,74 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 adoptWorkFromUrl();
 setInterval(()=>{if(document.visibilityState==="visible")readTrackedWork();},30000);
 await Promise.all([readEye(),readPasskeyStatus(),readAssets(),readTrackedWork()]);
+
+const overviewWorks=document.querySelector('[data-overview-works]');
+const overviewResults=document.querySelector('[data-overview-results]');
+const overviewCoverage=document.querySelector('[data-overview-coverage]');
+const overviewMore=document.querySelector('[data-overview-more]');
+const overviewSales=document.querySelector('[data-overview-sales]');
+const salesMore=document.querySelector('[data-sales-more]');
+let overviewOffset=null,salesCursor=null,loadedWorks=new Map(),loadedSales=new Map(),overviewBusy=false;
+function overviewText(parent,tag,value,className){const node=document.createElement(tag);node.textContent=String(value||'—');if(className)node.className=className;parent.append(node);return node;}
+function overviewCard(parent,title,status,lines){const card=document.createElement('article');card.className='office-work-card';overviewText(card,'strong',status,'office-work-status');overviewText(card,'h4',title);for(const line of lines)overviewText(card,'p',line,'office-muted');parent.append(card);return card;}
+async function overviewRead(route){const response=await fetch('/office/api/'+route,{cache:'no-store'});if(!response.ok)throw Error('UNKNOWN');return response.json();}
+function renderOverviewWorks(){
+  overviewWorks.replaceChildren();overviewResults.replaceChildren();
+  for(const w of loadedWorks.values()){
+    const card=overviewCard(overviewWorks,w.name||w.workId,w.status,[w.workId,'ผู้ถือ: '+(w.holder?.owner||w.holder?.name||w.holder||'ยังไม่ระบุ'),'ข้อมูลล่าสุด: '+(w.lastUpdated||'UNKNOWN')]);
+    overviewText(card,'small','อ่านจาก '+w.source+' · '+w.checkedAt);
+    if(w.status==='WAIT CONFIRM'||w.status==='COMPLETE'||w.result||w.readback){
+      const result=w.readback?.result??w.result;
+      const summary=typeof result==='string'?result:result?.summary||result?.reason||JSON.stringify(result||{});
+      const resultCard=overviewCard(overviewResults,w.name||w.workId,w.status,[w.workId,summary==='{}'?'ยังไม่มีสรุปผลที่แสดงได้':summary,w.readback?.returnedAt||w.lastUpdated||'UNKNOWN']);
+      for(const evidence of w.readback?.evidence||[]){
+        const ref=String(evidence.ref||evidence.evidenceRef||'');
+        try{const url=new URL(ref);if(url.protocol!=='https:'||url.username||url.password)throw Error();const link=overviewText(resultCard,'a',evidence.label||ref);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';}
+        catch{overviewText(resultCard,'code',ref);}
+      }
+    }
+  }
+  if(!loadedWorks.size)overviewText(overviewWorks,'p','ยังไม่มีงานลงทะเบียนใน Centre');
+  if(!overviewResults.children.length)overviewText(overviewResults,'p','ยังไม่พบผลลัพธ์ในรายการที่อ่านแล้ว');
+}
+async function loadOverviewWorks(append=false){
+  try{
+    const data=await overviewRead('works?offset='+(append?overviewOffset||0:0));
+    if(!append)loadedWorks.clear();for(const w of data.works)loadedWorks.set(w.workId,w);
+    overviewOffset=data.nextOffset;overviewMore.hidden=overviewOffset===null;
+    renderOverviewWorks();
+    const counts={};for(const w of loadedWorks.values())counts[w.status]=(counts[w.status]||0)+1;
+    overviewCoverage.textContent='อ่านแล้ว '+loadedWorks.size+' / '+data.total+' งานในดัชนี Centre · '+Object.entries(counts).map(([k,v])=>k+' '+v).join(' · ')+' · ตรวจ '+data.checkedAt;
+  }catch{overviewCoverage.textContent='UNKNOWN · อ่านสถานะล่าสุดไม่ได้'+(loadedWorks.size?' · รายการด้านล่างเป็นข้อมูลที่อ่านครั้งก่อน':'');}
+}
+async function loadOverviewSystem(){
+  const root=document.querySelector('[data-overview-system]');
+  try{const data=await overviewRead('system');root.replaceChildren();for(const c of data.components)overviewCard(root,c.name,c.status,[c.checkedAt]);}
+  catch{root.replaceChildren();overviewText(root,'p','UNKNOWN · อ่านจุดเชื่อมต่อไม่ได้');}
+}
+async function loadOverviewSales(append=false){
+  const status=document.querySelector('[data-overview-sales-status]');
+  try{
+    const data=await overviewRead('sales'+(append&&salesCursor?'?cursor='+encodeURIComponent(salesCursor):''));
+    if(!append)loadedSales.clear();for(const b of data.briefs)loadedSales.set(b.briefId,b);for(const e of data.events)loadedSales.set(e.eventId,e);
+    salesCursor=data.nextCursor;salesMore.hidden=!salesCursor;overviewSales.replaceChildren();
+    for(const item of loadedSales.values())overviewCard(overviewSales,item.brief?.goal||item.type||item.briefId,item.status||'OBSERVED',[item.briefId||item.page,item.brief?Object.entries(item.brief).filter(([,v])=>v).map(([k,v])=>k+': '+v).join(' · '):item.source,'รับข้อมูล: '+item.receivedAt,...(item.brief?['ประมวลผล SPECTRUM: '+item.processing]:[])]);
+    if(!loadedSales.size)overviewText(overviewSales,'p','ยังไม่มีใบรับข้อมูลในหน้าที่อ่าน');
+    status.textContent='Centre รับและเก็บ '+loadedSales.size+' รายการที่อ่านแล้ว · การชำระเงิน '+data.paymentStatus+' · ตรวจ '+data.checkedAt;
+  }catch{status.textContent='UNKNOWN · อ่านข้อมูลฝั่งขายไม่ได้'+(loadedSales.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':'');}
+}
+async function refreshOverview(){
+  if(!overviewWorks||overviewBusy)return;overviewBusy=true;
+  const workTarget=loadedWorks.size,salesTarget=loadedSales.size;
+  try{await Promise.all([
+    (async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),
+    loadOverviewSystem(),
+    (async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()
+  ]);}finally{overviewBusy=false;}
+}
+document.querySelector('[data-overview-refresh]')?.addEventListener('click',refreshOverview);
+overviewMore?.addEventListener('click',async()=>{overviewMore.disabled=true;try{await loadOverviewWorks(true);}finally{overviewMore.disabled=false;}});
+salesMore?.addEventListener('click',async()=>{salesMore.disabled=true;try{await loadOverviewSales(true);}finally{salesMore.disabled=false;}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshOverview();});
+setInterval(()=>{if(document.visibilityState==='visible')refreshOverview();},60000);
+await refreshOverview();

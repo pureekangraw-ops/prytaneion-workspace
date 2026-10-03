@@ -13,9 +13,9 @@ test("Office home exposes a real Centre-backed work tracker",()=>{
   assert.match(gate,/data-work-tracker/);
   assert.match(gate,/data-work-form/);
   assert.match(gate,/data-work-list/);
-  assert.match(gate,/data-work-active/);
-  assert.match(gate,/data-work-waiting/);
-  assert.match(gate,/data-work-done/);
+  assert.match(gate,/data-overview-works/);
+  assert.match(gate,/data-overview-results/);
+  assert.match(gate,/data-overview-sales/);
   assert.match(gate,/ติดตามงานจริงจาก Centre/);
 });
 
