@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_PREFIX = "go-hub-app-";
-const CACHE_NAME = `${CACHE_PREFIX}v13-control-owner-surface`;
+const CACHE_NAME = `${CACHE_PREFIX}v14-office-assets`;
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -49,6 +49,9 @@ const APP_SHELL = [
   "./go-hub-verification-scanner.js",
   "./go-hub-housekeeper.js",
   "./go-hub-learning-recorder.js",
+  "./go-hub-office-surface.css",
+  "./go-hub-office-surface.js",
+  "./go-hub-office-login.js",
   "./go-hub-workbench-model.js",
   "./pixie-visual-workbench.html",
   "./pixie-visual-workbench.css",

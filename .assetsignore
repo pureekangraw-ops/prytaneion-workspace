@@ -62,3 +62,6 @@ node_modules/**
 !/project-viewer.js
 !/project-viewer.webmanifest
 !/project-viewer-icon.svg
+!/go-hub-office-surface.css
+!/go-hub-office-surface.js
+!/go-hub-office-login.js
