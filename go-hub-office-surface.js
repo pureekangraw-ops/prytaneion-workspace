@@ -14,6 +14,7 @@ const state=document.querySelector("[data-eye-state]");
 const detail=document.querySelector("[data-eye-detail]");
 const message=document.querySelector("[data-eye-message]");
 const refresh=document.querySelector("[data-eye-refresh]");
+const observeNow=document.querySelector("[data-eye-observe]");
 const passkeyButton=document.querySelector("[data-passkey-register]");
 const passkeyStatus=document.querySelector("[data-passkey-status]");
 const assetForm=document.querySelector("[data-asset-upload]");
@@ -308,6 +309,27 @@ async function readEye(){
   }
 }
 
+async function requestEyeObservation(){
+  if(!observeNow)return;
+  observeNow.disabled=true;
+  state.textContent="WAKING";
+  eye.dataset.state="WAKING";
+  message.textContent="กำลังขอ Factory Eye เก็บภาพปัจจุบัน…";
+  try{
+    const response=await fetch("/office/api/eye/refresh",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:"{}"});
+    const body=await response.json().catch(()=>({}));
+    if(response.status===401){location.assign("/office/login");throw new Error("OFFICE_AUTH_REQUIRED");}
+    if(!response.ok)throw new Error(body.code||"OFFICE_EYE_OBSERVE_FAILED");
+    message.textContent="ส่ง OBSERVE_NOW แล้ว · รอ Factory Eye…";
+    await new Promise(resolve=>setTimeout(resolve,3500));
+    await readEye();
+  }catch(error){
+    message.textContent=error instanceof Error?error.message:String(error);
+  }finally{
+    observeNow.disabled=false;
+  }
+}
+
 async function readPasskeyStatus(){
   if(!passkeyStatus)return;
   if(!window.PublicKeyCredential||!navigator.credentials){
@@ -427,6 +449,7 @@ async function uploadAsset(event){
 
 assetForm?.addEventListener("submit",uploadAsset);
 refresh?.addEventListener("click",readEye);
+observeNow?.addEventListener("click",requestEyeObservation);
 passkeyButton?.addEventListener("click",registerPasskey);
 workForm?.addEventListener("submit",trackWork);
 spectrumCreate?.addEventListener("submit",createSpectrumTablet);
