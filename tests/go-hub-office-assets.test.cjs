@@ -82,7 +82,7 @@ test("Office R2 assets require session and upload with verified readback",async(
   assert.equal(upload.status,201);
   const uploaded=await upload.json();
   assert.equal(uploaded.ok,true);
-  assert.match(uploaded.asset.key,/^office\/visuals\/2026\/10\/03\//);
+  assert.match(uploaded.asset.key,/^office\/visuals\/\d{4}\/\d{2}\/\d{2}\//);
   assert.equal(uploaded.asset.customMetadata.originalName,"demo.png");
   assert.equal(uploaded.asset.customMetadata.source,"OFFICE");
   assert.equal(uploaded.asset.customMetadata.sha256.length,64);
