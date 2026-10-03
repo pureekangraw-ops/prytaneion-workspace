@@ -32,6 +32,37 @@ const spectrumCreate=document.querySelector("[data-spectrum-create]");
 const spectrumPickup=document.querySelector("[data-spectrum-pickup]");
 const spectrumStatus=document.querySelector("[data-spectrum-status]");
 const OFFICE_TRACKED_WORK_KEY="ygg-office-tracked-work-v1";
+const OFFICE_WORK_CACHE_KEY="ygg-office-work-cache-v1";
+const OFFICE_EYE_CACHE_KEY="ygg-office-eye-cache-v1";
+
+function loadLocalJson(key,fallback){
+  try{return JSON.parse(localStorage.getItem(key)||JSON.stringify(fallback));}
+  catch{return fallback;}
+}
+function workCacheKey(identity){return identity.workId+"::"+identity.checkpointId;}
+function loadCachedWork(identity){
+  const cache=loadLocalJson(OFFICE_WORK_CACHE_KEY,{});
+  return cache&&typeof cache==="object"?cache[workCacheKey(identity)]||null:null;
+}
+function saveCachedWork(identity,work){
+  const cache=loadLocalJson(OFFICE_WORK_CACHE_KEY,{});
+  const next=cache&&typeof cache==="object"?cache:{};
+  next[workCacheKey(identity)]={work,syncedAt:new Date().toISOString()};
+  const entries=Object.entries(next).sort((a,b)=>String(b[1]?.syncedAt||"").localeCompare(String(a[1]?.syncedAt||""))).slice(0,24);
+  localStorage.setItem(OFFICE_WORK_CACHE_KEY,JSON.stringify(Object.fromEntries(entries)));
+}
+function loadCachedEye(){return loadLocalJson(OFFICE_EYE_CACHE_KEY,null);}
+function saveCachedEye(body){
+  const latest=body?.latest||{};
+  localStorage.setItem(OFFICE_EYE_CACHE_KEY,JSON.stringify({
+    source:"FACTORY_EYE",
+    state:String(body?.state||body?.freshness?.state||"UNKNOWN"),
+    title:String(latest?.tab?.title||latest?.page?.title||""),
+    observedAt:String(latest?.observedAt||body?.observedAt||""),
+    syncedAt:new Date().toISOString(),
+    createsAuthority:false
+  }));
+}
 
 function loadTrackedWork(){
   try{
@@ -75,7 +106,7 @@ async function readWork(identity){
   if(!response.ok)throw new Error(body.code||"OFFICE_WORK_READ_FAILED");
   return body.work||body;
 }
-function makeWorkCard(work,identity){
+function makeWorkCard(work,identity,{source="LIVE",syncedAt=null}={}){
   const card=document.createElement("article");
   card.className="office-work-card";
   const status=normalizedStatus(work.status);
@@ -110,7 +141,11 @@ function makeWorkCard(work,identity){
   updated.textContent="Updated: "+displayTime(work.lastUpdated||work.updatedAt);
   const destination=document.createElement("span");
   destination.textContent="Next: "+textValue(work.nextAction,work.destination,(work.requestedDestinations||[]).join(", "));
-  meta.append(holder,updated,destination);
+  const sourceLine=document.createElement("span");
+  sourceLine.textContent=source==="CACHE"
+    ?"Source: CACHED · synced "+displayTime(syncedAt)
+    :"Source: LIVE";
+  meta.append(holder,updated,destination,sourceLine);
 
   const note=document.createElement("p");
   note.textContent=textValue(work.waitReason,work.result,work.requestedResult,work.initialContext?.summary,"Centre owner truth");
@@ -131,21 +166,31 @@ async function readTrackedWork(){
   workMessage.textContent="กำลังอ่าน Centre owner truth…";
   const counters={active:0,waiting:0,done:0,attention:0,unknown:0};
   let ok=0;
+  let cachedCount=0;
   for(const identity of tracked){
     try{
       const work=await readWork(identity);
+      saveCachedWork(identity,work);
       const bucket=statusBucket(normalizedStatus(work.status));
       counters[bucket]=(counters[bucket]||0)+1;
-      workList.append(makeWorkCard(work,identity));
+      workList.append(makeWorkCard(work,identity,{source:"LIVE"}));
       ok+=1;
     }catch(error){
+      const cached=loadCachedWork(identity);
+      if(cached?.work){
+        const bucket=statusBucket(normalizedStatus(cached.work.status));
+        counters[bucket]=(counters[bucket]||0)+1;
+        workList.append(makeWorkCard(cached.work,identity,{source:"CACHE",syncedAt:cached.syncedAt}));
+        cachedCount+=1;
+        continue;
+      }
       const card=document.createElement("article");
       card.className="office-work-card";
       card.dataset.status="attention";
       const title=document.createElement("h4");
       title.textContent=identity.workId;
       const detail=document.createElement("p");
-      detail.textContent=error instanceof Error?error.message:String(error);
+      detail.textContent="UNAVAILABLE · "+(error instanceof Error?error.message:String(error));
       card.append(title,detail);
       workList.append(card);
       counters.attention+=1;
@@ -154,7 +199,9 @@ async function readTrackedWork(){
   if(workActive)workActive.textContent=String(counters.active||0);
   if(workWaiting)workWaiting.textContent=String(counters.waiting||0);
   if(workDone)workDone.textContent=String(counters.done||0);
-  workMessage.textContent="อ่านกลับ "+ok+"/"+tracked.length+" งาน · "+new Date().toLocaleTimeString("th-TH");
+  workMessage.textContent=cachedCount
+    ?"DEGRADED MODE · live "+ok+" · cached "+cachedCount+" · "+new Date().toLocaleTimeString("th-TH")
+    :"LIVE · อ่านกลับ "+ok+"/"+tracked.length+" งาน · "+new Date().toLocaleTimeString("th-TH");
 }
 function trackWork(event){
   event.preventDefault();
@@ -197,7 +244,7 @@ async function createSpectrumTablet(event){
     spectrumStatus.textContent=(body.tabletId||"Work Tablet")+" พร้อม · backend policy คุม authority";
     spectrumCreate.reset();
     await readTrackedWork();
-  }catch(error){spectrumStatus.textContent=error instanceof Error?error.message:String(error);}
+  }catch(error){spectrumStatus.textContent="NOT EXECUTED · "+(error instanceof Error?error.message:String(error));}
 }
 async function pickupSpectrumTablet(event){
   event.preventDefault();
@@ -210,7 +257,7 @@ async function pickupSpectrumTablet(event){
     spectrumStatus.textContent=(body.tabletId||tabletId)+" พร้อมทำต่อ";
     spectrumPickup.reset();
     await readTrackedWork();
-  }catch(error){spectrumStatus.textContent=error instanceof Error?error.message:String(error);}
+  }catch(error){spectrumStatus.textContent="NOT EXECUTED · "+(error instanceof Error?error.message:String(error));}
 }
 
 function adoptWorkFromUrl(){
@@ -234,6 +281,7 @@ async function readEye(){
     const response=await fetch("/office/api/eye",{headers:{accept:"application/json"},cache:"no-store"});
     const body=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(body.code||"OFFICE_EYE_UNAVAILABLE");
+    saveCachedEye(body);
     const current=String(body.state||body.freshness?.state||"UNKNOWN");
     state.textContent=current;
     eye.dataset.state=current;
@@ -243,6 +291,15 @@ async function readEye(){
     const observed=body.latest?.observedAt||body.observedAt||"UNKNOWN";
     message.textContent=title+" · "+observed;
   }catch(error){
+    const cached=loadCachedEye();
+    if(cached){
+      state.textContent="STALE";
+      eye.dataset.state="STALE";
+      if(workEye)workEye.textContent="STALE";
+      detail.textContent="Factory Eye · CACHED READ ONLY";
+      message.textContent=(cached.title||"Factory Eye cached")+" · observed "+displayTime(cached.observedAt||cached.syncedAt)+" · DEGRADED";
+      return;
+    }
     state.textContent="OFFLINE";
     eye.dataset.state="OFFLINE";
     if(workEye)workEye.textContent="OFFLINE";
