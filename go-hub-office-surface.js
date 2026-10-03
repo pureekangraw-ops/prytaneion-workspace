@@ -28,6 +28,9 @@ const workActive=document.querySelector("[data-work-active]");
 const workWaiting=document.querySelector("[data-work-waiting]");
 const workDone=document.querySelector("[data-work-done]");
 const workEye=document.querySelector("[data-work-eye]");
+const spectrumCreate=document.querySelector("[data-spectrum-create]");
+const spectrumPickup=document.querySelector("[data-spectrum-pickup]");
+const spectrumStatus=document.querySelector("[data-spectrum-status]");
 const OFFICE_TRACKED_WORK_KEY="ygg-office-tracked-work-v1";
 
 function loadTrackedWork(){
@@ -167,6 +170,49 @@ function trackWork(event){
   workForm.reset();
   readTrackedWork();
 }
+async function spectrumCommand(payload){
+  const response=await fetch("/office/api/command",{method:"POST",headers:{"content-type":"application/json","accept":"application/json"},body:JSON.stringify(payload)});
+  const body=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(body.code||"SPECTRUM_COMMAND_FAILED");
+  const ctx=body.workContext;
+  if(ctx?.workId&&ctx?.checkpointId){
+    const items=loadTrackedWork();
+    if(!items.some(item=>item.workId===ctx.workId&&item.checkpointId===ctx.checkpointId)){
+      items.unshift({workId:ctx.workId,checkpointId:ctx.checkpointId});
+      saveTrackedWork(items);
+    }
+  }
+  return body;
+}
+async function createSpectrumTablet(event){
+  event.preventDefault();
+  const data=new FormData(spectrumCreate);
+  const mission=String(data.get("mission")||"").trim();
+  const requestedResult=String(data.get("requestedResult")||"").trim();
+  const workKey=String(data.get("workKey")||"").trim();
+  if(!mission||!requestedResult)return;
+  spectrumStatus.textContent="SPECTRUM กำลังเตรียม Work Tablet…";
+  try{
+    const body=await spectrumCommand({action:"create_tablet",agentId:"GO",mission,requestedResult,workKey:workKey||("OFFICE-"+Date.now()),workType:"NORMAL",initialContext:{source:"SPECTRUM_WORK",surface:"OFFICE"}});
+    spectrumStatus.textContent=(body.tabletId||"Work Tablet")+" พร้อม · backend policy คุม authority";
+    spectrumCreate.reset();
+    await readTrackedWork();
+  }catch(error){spectrumStatus.textContent=error instanceof Error?error.message:String(error);}
+}
+async function pickupSpectrumTablet(event){
+  event.preventDefault();
+  const data=new FormData(spectrumPickup);
+  const tabletId=String(data.get("tabletId")||"").trim();
+  if(!tabletId)return;
+  spectrumStatus.textContent="SPECTRUM กำลังหยิบ Tablet…";
+  try{
+    const body=await spectrumCommand({action:"pickup_tablet",tabletId,agentId:"GO"});
+    spectrumStatus.textContent=(body.tabletId||tabletId)+" พร้อมทำต่อ";
+    spectrumPickup.reset();
+    await readTrackedWork();
+  }catch(error){spectrumStatus.textContent=error instanceof Error?error.message:String(error);}
+}
+
 function adoptWorkFromUrl(){
   const query=new URLSearchParams(location.search);
   const workId=String(query.get("workId")||"").trim();
@@ -326,6 +372,8 @@ assetForm?.addEventListener("submit",uploadAsset);
 refresh?.addEventListener("click",readEye);
 passkeyButton?.addEventListener("click",registerPasskey);
 workForm?.addEventListener("submit",trackWork);
+spectrumCreate?.addEventListener("submit",createSpectrumTablet);
+spectrumPickup?.addEventListener("submit",pickupSpectrumTablet);
 workRefresh?.addEventListener("click",readTrackedWork);
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")readTrackedWork();});
 adoptWorkFromUrl();
