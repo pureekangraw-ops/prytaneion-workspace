@@ -27,6 +27,9 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     "/oauth/*",
     "/.well-known/*",
   ]);
+  assert.deepEqual(wrangler.r2_buckets, [
+    { binding:"GO_HUB_CENTRE_OBJECTS", bucket_name:"hubcentre" },
+  ]);
   assert.deepEqual(wrangler.durable_objects?.bindings, [
     { name: "HEPHAESTUS", class_name: "HephaestusForeman" },
     { name: "GO_HUB_FACTORY_STATE", class_name: "GoHubFactoryState" },
@@ -92,6 +95,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     "go-hub-factory-state.mjs",
     "go-hub-pixie-monitor.mjs",
     "go-hub-centre-live.mjs",
+    "go-hub-centre-object-store.mjs",
     "go-hub-global-audit.mjs",
     "go-hub-office-passkey.mjs",
     "go-hub-counter.mjs",

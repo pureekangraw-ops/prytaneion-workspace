@@ -220,5 +220,11 @@
       "binding": "OLYMPUS_SERVICE",
       "service": "olympus"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "GO_HUB_CENTRE_OBJECTS",
+      "bucket_name": "hubcentre"
+    }
   ]
 }
