@@ -209,13 +209,18 @@
       "/mcp",
       "/mcp/*",
       "/oauth/*",
-      "/.well-known/*"
+      "/.well-known/*",
+      "/internal/*"
     ]
   },
   "r2_buckets": [
     {
       "binding": "OFFICE_ASSETS",
       "bucket_name": "ygg-office-assets"
+    },
+    {
+      "binding": "GO_HUB_CENTRE_OBJECTS",
+      "bucket_name": "hubcentre"
     }
   ],
   "services": [
@@ -226,12 +231,6 @@
     {
       "binding": "OLYMPUS_SERVICE",
       "service": "olympus"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "GO_HUB_CENTRE_OBJECTS",
-      "bucket_name": "hubcentre"
     }
   ]
 }
