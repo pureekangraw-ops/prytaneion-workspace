@@ -27,8 +27,10 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
     "/mcp/*",
     "/oauth/*",
     "/.well-known/*",
+    "/internal/*",
   ]);
   assert.deepEqual(wrangler.r2_buckets, [
+    { binding:"OFFICE_ASSETS", bucket_name:"ygg-office-assets" },
     { binding:"GO_HUB_CENTRE_OBJECTS", bucket_name:"hubcentre" },
   ]);
   assert.deepEqual(wrangler.durable_objects?.bindings, [
