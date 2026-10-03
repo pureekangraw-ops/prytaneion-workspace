@@ -34,28 +34,30 @@ test("Counter exposes the four helper roster and accepts HERMES/SPECTRUM targets
   assert.equal(spectrum.counter.to, "SPECTRUM");
 });
 
-test("new helpers fail closed at WAITING_TARGET until a transport adapter exists", async () => {
+test("all four helpers use the bounded Counter actor inbox transport", async () => {
   const { GoHubCounterDispatchState } = await mod("go-hub-counter-dispatcher.mjs");
-  let stored = null;
-  const ctx = { storage:{
-    async get(){ return stored; },
-    async put(_key,value){ stored = structuredClone(value); },
-    async setAlarm(){},
-  }};
-  const dispatch = new GoHubCounterDispatchState(ctx, {});
-  const result = await dispatch.enqueueOpen({
-    counterId:"COUNTER-HERMES-TRANSPORT-001",
-    workId:workContext.workId,
-    checkpointId:workContext.checkpointId,
-    workContext,
-    fromActor:"GO",
-    toActor:"HERMES",
-    request:"Take this Tablet",
-  });
-  assert.equal(result.dispatch.legs.HERMES.status, "WAITING_TARGET");
-  assert.equal(result.dispatch.legs.HERMES.lastError, "CALLABLE_TARGET_NOT_CONFIGURED");
-  assert.equal(result.targetConfigured, false);
-  assert.equal(result.dispatch.legs.LIGHT.status, "IDLE");
+  for (const helper of ["PIXIE","HERMES","LIGHT","SPECTRUM"]) {
+    let stored = null;
+    const ctx = { storage:{
+      async get(){ return stored; },
+      async put(_key,value){ stored = structuredClone(value); },
+      async setAlarm(){},
+    }};
+    const dispatch = new GoHubCounterDispatchState(ctx, {});
+    const result = await dispatch.enqueueOpen({
+      counterId:"COUNTER-" + helper + "-TRANSPORT-001",
+      workId:workContext.workId,
+      checkpointId:workContext.checkpointId,
+      workContext,
+      fromActor:"GO",
+      toActor:helper,
+      request:"Take this Counter ticket",
+    });
+    assert.equal(result.dispatch.legs[helper].status, "WAITING_PICKUP");
+    assert.equal(result.transport, "COUNTER_INBOX");
+    assert.equal(result.targetConfigured, true);
+    assert.equal(result.pickupRequired, true);
+  }
 });
 
 test("MCP Counter create exposes only the four helper choices", async () => {
