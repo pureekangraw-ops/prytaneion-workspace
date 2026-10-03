@@ -1,3 +1,4 @@
+import { officeWorkPage } from "./go-hub-office-work-page.mjs";
 import { createSalesStore } from "./go-hub-sales-store.mjs";
 import { CENTRE_STATES, createCentrePassage } from "./go-hub-centre.js";
 import { routeInterruptionReturn } from "./go-hub-city-route.js";
@@ -720,7 +721,7 @@ export class GoHubCentreState {
 
     if (action === "v4_inventory") {
       const index = createCentreBackedWorkIndex({ storage:this.ctx.storage, source:"CENTRE_GLOBAL_INDEX" });
-      const works = (await index.all()).sort((a,b)=>String(a.workId).localeCompare(String(b.workId)));
+      const works = officeWorkPage(await index.all(), input.view || "all");
       const offset = Math.max(0, Math.trunc(Number(input.offset) || 0));
       const limit = Math.max(1, Math.min(50, Math.trunc(Number(input.limit) || 25)));
       return json({ ok:true, source:"CENTRE_GLOBAL_INDEX", works:works.slice(offset,offset+limit), total:works.length, nextOffset:offset+limit<works.length?offset+limit:null });
