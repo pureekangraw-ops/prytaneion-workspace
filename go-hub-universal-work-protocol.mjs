@@ -63,6 +63,7 @@ const ACTOR_ACTION_MAP = Object.freeze({
     execute: "EXECUTE",
     return: "RETURN",
     verify: "VERIFY",
+    verification: "VERIFY",
     close: "CLOSE",
   }),
   LIGHT: Object.freeze({
