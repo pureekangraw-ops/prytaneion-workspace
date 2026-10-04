@@ -10,6 +10,7 @@ test("deployment publishes Browser, Factory MCP, OAuth, and durable Hephaestus",
   const wrangler = JSON.parse(fs.readFileSync(path.join(root, "wrangler.go-hub.jsonc"), "utf8"));
   assert.deepEqual(wrangler.assets.run_worker_first, [
     "/",
+    "/metro",
     "/office",
     "/office/*",
     "/hub/api/centre/*",

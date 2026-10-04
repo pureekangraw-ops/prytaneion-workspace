@@ -222,6 +222,12 @@
     },
     {
       "path": "go-hub-office-login.js"
+    },
+    {
+      "path": "go-hub-metro-surface.css"
+    },
+    {
+      "path": "go-hub-metro-surface.js"
     }
   ],
   "serverRuntimeFiles": [

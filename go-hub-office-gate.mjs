@@ -1,4 +1,5 @@
 import { officeShell, OFFICE_PAGES } from "./go-hub-office-shell.mjs";
+import { metroShell } from "./go-hub-metro-shell.mjs";
 import { createOfficeOverview } from "./go-hub-office-overview.mjs";
 // Compatibility contract: the human pages still preserve the Centre-backed
 // tracker selectors data-work-tracker, data-work-form, data-work-list,
@@ -21,6 +22,7 @@ const OFFICE_ASSET_MAX_BYTES = 10 * 1024 * 1024;
 const OFFICE_ASSET_TYPES = new Set(["image/png","image/jpeg","image/webp"]);
 
 const OFFICE_ALLOWED = new Map([
+  ["/metro", new Set(["GET"])],
   ["/office", new Set(["GET"])],
   ["/office/", new Set(["GET"])],
   ...Object.keys(OFFICE_PAGES).filter(path=>path!=="/office").map(path=>[path,new Set(["GET"])]),
@@ -32,6 +34,7 @@ const OFFICE_ALLOWED = new Map([
   ["/office/api/command", new Set(["POST"])],
   ["/office/api/eye", new Set(["GET"])],
   ["/office/api/eye/refresh", new Set(["POST"])],
+  ["/office/api/prism/latest", new Set(["GET"])],
   [OFFICE_ASSET_ROOT, new Set(["GET","POST"])],
   ["/office/passkey/status", new Set(["GET"])],
   ["/office/passkey/register/options", new Set(["POST"])],
@@ -297,10 +300,10 @@ function loginPage(errorCode = "") {
 }
 
 
-export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, passkey = null, rateLimiter = null, audit = null, overview = null } = {}) {
+export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, prismEye = null, passkey = null, rateLimiter = null, audit = null, overview = null } = {}) {
   return Object.freeze({
     owns(pathname) {
-      return pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
+      return pathname === "/metro" || pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
     },
 
     async fetch(request, env) {
@@ -493,6 +496,8 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         return json({ ok:true, asset:officeAssetSummary(readback) }, 201);
       }
 
+      if (url.pathname === "/metro") return html(metroShell());
+
       if (OFFICE_PAGES[url.pathname] || url.pathname === OFFICE_ROOT + "/") {
         return html(officeShell(OFFICE_PAGES[url.pathname] || "home"));
       }
@@ -547,6 +552,27 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
           return json(payload, response.status);
         } catch {
           return json({ code:"OFFICE_COMMAND_FAILED" }, 500);
+        }
+      }
+
+      if (url.pathname === "/office/api/prism/latest") {
+        if (!prismEye || typeof prismEye.latest !== "function") {
+          return json({ code:"OFFICE_PRISM_LIVE_UNAVAILABLE", source:"PRISM_BROWSER" }, 503);
+        }
+        const workId = String(url.searchParams.get("workId") || "").trim();
+        const checkpointId = String(url.searchParams.get("checkpointId") || "").trim();
+        if (!workId || !checkpointId) return json({ code:"OFFICE_PRISM_WORK_CONTEXT_REQUIRED", source:"PRISM_BROWSER" }, 400);
+        try {
+          const response = await prismEye.latest({ workContext:{ workId, checkpointId } });
+          const payload = await response.clone().json().catch(() => ({}));
+          return json({
+            ...payload,
+            source:"PRISM_BROWSER",
+            mode:"READ_ONLY_LIVE_READBACK",
+            createsAuthority:false,
+          }, response.status);
+        } catch {
+          return json({ code:"OFFICE_PRISM_LIVE_READ_FAILED", source:"PRISM_BROWSER" }, 502);
         }
       }
 
@@ -619,5 +645,6 @@ export const OFFICE_GATE_CONTRACT = Object.freeze({
   allowedRoutes:[...OFFICE_ALLOWED.keys()],
   workTruthOwner:"CENTRE",
   eyeTruthOwner:"FACTORY_EYE",
+  prismTruthOwner:"PRISM_BROWSER",
   sessionRevocation:"rotate GOHUB_OFFICE_SESSION_EPOCH or GOHUB_OFFICE_SESSION_KEY; logout clears browser cookie",
 });
