@@ -28,7 +28,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -37,6 +40,7 @@ jobs:
         run: |
           java -version
           gradle --version
+          sdkmanager --list_installed | sed -n '1,80p'
       - name: Build METRO debug APK
         run: >-
           gradle --no-daemon :app:assembleDebug
