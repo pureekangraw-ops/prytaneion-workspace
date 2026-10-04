@@ -32,7 +32,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
     "go_hub_lighthouse_control_port_state", "go_hub_lighthouse_control_port_command", "go_hub_project_status", "go_hub_board_read",
     "go_hub_pixie_command", "go_hub_pixie_go_works_action", "go_hub_pixie_debug_factory_action", "go_hub_pixie_result",
     "go_hub_counter_create", "go_hub_counter_inbox", "go_hub_counter_get", "go_hub_counter_seen", "go_hub_counter_pickup", "go_hub_counter_answer", "go_hub_counter_readback",
-    "go_hub_observer_latest", "go_hub_observer_screenshot", "go_hub_linear_list_projects", "go_hub_linear_get_issue",
+    "go_hub_observer_latest", "go_hub_prism_observer_session", "go_hub_observer_screenshot", "go_hub_linear_list_projects", "go_hub_linear_get_issue",
     "go_hub_linear_create_issue", "go_hub_linear_update_issue",
     "go_hub_cloudflare_capabilities", "go_hub_cloudflare_health", "go_hub_cloudflare_list_workers", "go_hub_cloudflare_inspect_worker", "go_hub_cloudflare_deploy_worker",
     "go_hub_notion_status", "go_hub_notion_connect", "go_hub_notion_search", "go_hub_notion_tools", "go_hub_notion_call",
@@ -385,3 +385,4 @@ test("Maintenance Tablet scope is read from Centre directly without HERMES media
   assert.equal(backendRouted.structuredContent.ok, true);
   assert.equal(hermesCalls, 0);
 });
+
