@@ -135,6 +135,20 @@ export function createSalesStore({storage}={}) {
       const record={eventId,type:payload.type,page:text(payload.page).split(/[?#]/)[0],source:text(payload.source),receivedAt:new Date().toISOString()};
       await storage.put(key,record);return {ok:true,event:record};
     },
+    async paymentRecord(payload={}) {
+      ready();const paymentId=id(payload.paymentId),idempotencyKey=id(payload.idempotencyKey);
+      const requestKey="payment:request:"+idempotencyKey,priorRequest=await storage.get(requestKey);
+      if(priorRequest){if(priorRequest.paymentId!==paymentId)fail("PAYMENT_IDEMPOTENCY_CONFLICT",409);return {ok:true,payment:await storage.get("payment:record:"+paymentId),duplicate:true};}
+      const record={...payload,paymentId,quoteId:id(payload.quoteId),workId:id(payload.workId),customerId:id(payload.customerId),idempotencyKey,source:"PAYMENT_PROVIDER"};
+      for(const key of Object.keys(record))if(/card|cvv|cvc|pan|secret|api.?key/i.test(key))delete record[key];
+      await storage.put("payment:record:"+paymentId,record);await storage.put(requestKey,{paymentId,recordedAt:record.recordedAt});
+      const saved=await storage.get("payment:record:"+paymentId);if(saved?.paymentId!==paymentId)fail("PAYMENT_READBACK_FAILED",502);
+      return {ok:true,payment:saved,duplicate:false};
+    },
+    async paymentList({limit=50,cursor}={}) {
+      ready();const take=Math.min(100,Math.max(1,Number(limit)||50)),records=await storage.list({prefix:"payment:record:",limit:take,...(cursor?{startAfter:cursor}:{})});
+      const entries=[...records];return {ok:true,source:"PAYMENT_PROVIDER",payments:entries.map(([,value])=>value),coverage:"PAYMENT_RECORDS_PAGE",nextCursor:entries.length>=take?entries.at(-1)[0]:null,checkedAt:new Date().toISOString()};
+    },
     async list({limit=50,cursor}={}) {
       ready();const records=await storage.list({prefix:"spectrum:",limit:Math.min(100,Math.max(1,Number(limit)||50)),...(cursor?{startAfter:cursor}:{})});
       const entries=[...records], briefs=entries.filter(([k])=>k.startsWith("spectrum:brief:")).map(([,v])=>v),events=entries.filter(([k])=>k.startsWith("spectrum:event:")).map(([,v])=>v);

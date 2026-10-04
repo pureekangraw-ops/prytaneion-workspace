@@ -66,8 +66,10 @@ export function createOfficeOverview({centre,probes={}}={}) {
       return {ok:true,components,coverage:"CONFIGURED_READBACKS"};
     },
     async sales(input={}) {
-      const response=await centre?.action({action:"spectrum_list",...input});
-      if(!response?.ok)throw Error("OFFICE_SALES_UNAVAILABLE");return response.json();
+      const [salesResponse,paymentResponse]=await Promise.all([centre?.action({action:"spectrum_list",...input}),centre?.action({action:"payment_list",...input})]);
+      if(!salesResponse?.ok||!paymentResponse?.ok)throw Error("OFFICE_SALES_UNAVAILABLE");
+      const sales=await salesResponse.json(),payment=await paymentResponse.json();
+      return {...sales,payments:payment.payments||[],paymentSource:payment.source||"UNKNOWN",paymentCheckedAt:payment.checkedAt||null};
     }
   };
 }
