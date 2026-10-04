@@ -27,7 +27,7 @@ const OFFICE_ALLOWED = new Map([
   [OFFICE_LOGIN, new Set(["GET","POST"])],
   [OFFICE_LOGOUT, new Set(["POST"])],
   [OFFICE_SESSION, new Set(["GET"])],
-  ...["works","system","sales"].map(name=>["/office/api/"+name,new Set(["GET"])]),
+  ...["works","activity","health","system","sales"].map(name=>["/office/api/"+name,new Set(["GET"])]),
   ["/office/api/work", new Set(["GET"])],
   ["/office/api/command", new Set(["POST"])],
   ["/office/api/eye", new Set(["GET"])],
@@ -497,7 +497,7 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         return html(officeShell(OFFICE_PAGES[url.pathname] || "home"));
       }
 
-      if (["/office/api/works","/office/api/system","/office/api/sales"].includes(url.pathname)) {
+      if (["/office/api/works","/office/api/activity","/office/api/health","/office/api/system","/office/api/sales"].includes(url.pathname)) {
         const view = overview || createOfficeOverview({centre:centreLive});
         try { return json(await view[url.pathname.split("/").pop()]({view:url.searchParams.get("view")||"all",offset:Number(url.searchParams.get("offset")||0),cursor:url.searchParams.get("cursor")||undefined})); }
         catch { return json({code:"OFFICE_OVERVIEW_UNAVAILABLE",state:"UNKNOWN"},503); }
