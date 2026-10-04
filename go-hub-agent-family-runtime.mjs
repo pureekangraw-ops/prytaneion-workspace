@@ -56,7 +56,7 @@ const RECEIVE_ACTIONS = Object.freeze({
 });
 
 export function translateAgentAction({ agentId, action, sourceEvent = action } = {}) {
-  return adaptActorAction({ agent:agentId, action, sourceEvent });
+  return adaptActorAction({ actor:agentId, action, sourceEvent });
 }
 
 function translateAgentReceive(agentId, sourceEvent) {
