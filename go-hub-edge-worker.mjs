@@ -734,8 +734,13 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         const allowed=new Set(["version","surface","customerId","quoteId","workId","idempotencyKey","requestedAt"]);
         if(Object.keys(body).some(key=>!allowed.has(key)))return json({code:"PAYMENT_INPUT_FORBIDDEN"},400);
         try{
-          const payment=await createPaymentAdapter({binding:env?.PAYMENT_PROVIDER}).checkout(body);
           const centreLive=createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE});
+          const quoteResponse=await centreLive.action({action:"quote_get",payload:{quoteId:body.quoteId}}),quoteResult=await quoteResponse.json().catch(()=>null);
+          if(!quoteResponse.ok||!quoteResult?.quote)return json({code:String(quoteResult?.code||"QUOTE_READ_FAILED")},quoteResponse.status||502);
+          const quote=quoteResult.quote;
+          if(quote.customerId!==body.customerId||quote.workId!==body.workId)return json({code:"QUOTE_IDENTITY_MISMATCH"},409);
+          if(quote.status!=="QUOTE_SENT")return json({code:"QUOTE_NOT_SENT"},409);
+          const payment=await createPaymentAdapter({binding:env?.PAYMENT_PROVIDER}).checkout({...body,amount:quote.amount,currency:quote.currency});
           const stored=await centreLive.action({action:"payment_record",payload:payment});const result=await stored.json().catch(()=>null);
           if(!stored.ok||!result?.payment)return json({code:String(result?.code||"PAYMENT_RECORD_FAILED")},stored.status||502);
           return json(result.payment);

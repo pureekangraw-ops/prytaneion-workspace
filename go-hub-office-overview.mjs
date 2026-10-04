@@ -66,10 +66,10 @@ export function createOfficeOverview({centre,probes={}}={}) {
       return {ok:true,components,coverage:"CONFIGURED_READBACKS"};
     },
     async sales(input={}) {
-      const [salesResponse,paymentResponse]=await Promise.all([centre?.action({action:"spectrum_list",...input}),centre?.action({action:"payment_list",...input})]);
-      if(!salesResponse?.ok||!paymentResponse?.ok)throw Error("OFFICE_SALES_UNAVAILABLE");
-      const sales=await salesResponse.json(),payment=await paymentResponse.json();
-      return {...sales,payments:payment.payments||[],paymentSource:payment.source||"UNKNOWN",paymentCheckedAt:payment.checkedAt||null};
+      const [salesResponse,quoteResponse,paymentResponse]=await Promise.all([centre?.action({action:"spectrum_list",...input}),centre?.action({action:"quote_list",...input}),centre?.action({action:"payment_list",...input})]);
+      if(!salesResponse?.ok||!quoteResponse?.ok||!paymentResponse?.ok)throw Error("OFFICE_SALES_UNAVAILABLE");
+      const sales=await salesResponse.json(),quote=await quoteResponse.json(),payment=await paymentResponse.json();
+      return {...sales,quotes:quote.quotes||[],quoteSource:quote.source||"UNKNOWN",quoteCheckedAt:quote.checkedAt||null,payments:payment.payments||[],paymentSource:payment.source||"UNKNOWN",paymentCheckedAt:payment.checkedAt||null};
     }
   };
 }

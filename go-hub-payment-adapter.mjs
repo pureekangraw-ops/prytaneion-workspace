@@ -19,6 +19,7 @@ function normalize(requested,source={}){
   if(status==="PAYMENT_CONFIRMED"&&!providerEventId)fail("PAYMENT_EVIDENCE_REQUIRED");
   const amount=Number(source.amount),currency=String(source.currency||"").toUpperCase();
   if(!Number.isFinite(amount)||amount<0||!/^[A-Z]{3}$/.test(currency))fail("PAYMENT_AMOUNT_INVALID");
+  if(amount!==requested.amount||currency!==requested.currency)fail("PAYMENT_QUOTE_MISMATCH");
   const checkoutUrl=httpsUrl(source.checkoutUrl);
   if(status==="PAYMENT_PENDING"&&!checkoutUrl)fail("PAYMENT_CHECKOUT_INVALID");
   const providerObservedAt=iso(source.providerObservedAt);
@@ -38,7 +39,8 @@ export function createPaymentAdapter({binding}={}){
   return Object.freeze({
     async checkout(input={}){
       if(!binding||typeof binding.fetch!=="function")fail("PAYMENT_PROVIDER_NOT_CONFIGURED",503);
-      const requested={version:"1",surface:"SPECTRUMSALE",customerId:id(input.customerId),quoteId:id(input.quoteId),workId:id(input.workId),idempotencyKey:id(input.idempotencyKey)};
+      const requested={version:"1",surface:"SPECTRUMSALE",customerId:id(input.customerId),quoteId:id(input.quoteId),workId:id(input.workId),idempotencyKey:id(input.idempotencyKey),amount:Number(input.amount),currency:String(input.currency||"").toUpperCase()};
+      if(!Number.isFinite(requested.amount)||requested.amount<=0||!/^[A-Z]{3}$/.test(requested.currency))fail("PAYMENT_QUOTE_INVALID",400);
       let response;try{response=await binding.fetch(new Request("https://payment-provider.internal/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(requested)}));}catch{fail("PAYMENT_PROVIDER_UNAVAILABLE");}
       const body=await response.json().catch(()=>null);
       if(!response.ok||!body||typeof body!=="object"||Array.isArray(body))fail(String(body?.code||"PAYMENT_PROVIDER_REJECTED"));
