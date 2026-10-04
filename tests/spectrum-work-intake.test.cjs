@@ -13,7 +13,7 @@ function memoryStorage() {
 }
 
 test("confirmed brief preserves deterministic Work identity", async () => {
-  const { createSalesStore } = await import("./go-hub-sales-store.mjs");
+  const { createSalesStore } = await import("../go-hub-sales-store.mjs");
   const store = createSalesStore({ storage: memoryStorage() });
   const payload = {
     briefId: "BRIEF-1",
