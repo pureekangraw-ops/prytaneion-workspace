@@ -72,6 +72,50 @@ function json(payload, status = 200, headers = {}) {
   });
 }
 
+function spectrumWorkId(briefId) {
+  const value = String(briefId || "").trim();
+  return /^[A-Za-z0-9:_-]{1,160}$/.test(value) ? `WORK-SPECTRUM-${value}` : null;
+}
+
+function spectrumWorkInput(brief, workId) {
+  const briefId = String(brief?.briefId || "").trim();
+  const goal = String(brief?.brief?.goal || "").trim().replace(/\s+/g, " ").slice(0, 120) || "Confirmed client brief";
+  return {
+    workId,
+    name: `GO Client · ${goal}`,
+    command: "Review and route confirmed client brief",
+    expectedResult: `Confirmed brief ${briefId} is available in GO Hub for owner routing and next action.`,
+    scope: ["SPECTRUMSALE", "GO_CLIENT"],
+    workType: "NORMAL",
+    requestedDestinations: ["GO_HUB"],
+    destination: "GO_HUB",
+    createdAt: brief?.receivedAt,
+  };
+}
+
+async function ensureSpectrumWork({ centreLive, result }) {
+  const brief = result?.brief;
+  const workId = String(brief?.workId || spectrumWorkId(brief?.briefId) || "").trim();
+  if (!workId) return json({ ...result, workCreated: false, workCreation: { ok: false, code: "BRIEF_WORK_ID_MISSING" } }, 502);
+
+  const inspected = await centreLive.action({ action: "v4_inspect", workId });
+  if (inspected.ok) {
+    const current = await inspected.clone().json().catch(() => ({}));
+    return json({ ...result, workId, work: current.work || null, workCreated: false, workCreation: { ok: true, state: "EXISTING" } });
+  }
+  if (inspected.status !== 404) {
+    const detail = await inspected.clone().json().catch(() => ({}));
+    return json({ ...result, workId, workCreated: false, workCreation: { ok: false, code: detail?.code || "BRIEF_WORK_LOOKUP_FAILED" } }, 502);
+  }
+
+  const created = await centreLive.action({ action: "v4_create", workId, work: spectrumWorkInput(brief, workId) });
+  const createdBody = await created.clone().json().catch(() => ({}));
+  if (!created.ok) {
+    return json({ ...result, workId, workCreated: false, workCreation: { ok: false, code: createdBody?.code || "BRIEF_WORK_CREATE_FAILED" } }, 502);
+  }
+  return json({ ...result, workId, work: createdBody.work || null, workCreated: true, workCreation: { ok: true, state: "CREATED" } });
+}
+
 async function edgeBroadcastSpeaker(env, area, observed = null) {
   if (!env?.GO_HUB_BROADCAST_STATE) return { ok:true, current:null };
   const heard = await createBroadcastService({ namespace:env.GO_HUB_BROADCAST_STATE }).speaker({ area, observed });
@@ -688,7 +732,14 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         if(!payload || typeof payload!=="object" || Array.isArray(payload))return json({code:"INVALID_JSON"},400);
         const operation=url.pathname.split("/").pop();
         if(url.pathname.startsWith("/internal/brief/") && !["upsert","confirm"].includes(operation))return json({code:"INTERNAL_ROUTE_DENIED"},404);
-        return createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE}).action({action:operation==="event"?"spectrum_event":"spectrum_brief",operation,payload});
+        const centreLive=createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE});
+        const workId=operation==="confirm"?spectrumWorkId(payload.briefId):null;
+        const forwardedPayload=workId?{...payload,workId}:payload;
+        const response=await centreLive.action({action:operation==="event"?"spectrum_event":"spectrum_brief",operation,payload:forwardedPayload});
+        if(operation!=="confirm" || !response.ok)return response;
+        const confirmed=await response.clone().json().catch(()=>null);
+        if(!confirmed?.ok)return response;
+        return ensureSpectrumWork({centreLive,result:confirmed});
       }
       const officeHost = url.hostname.toLowerCase() === "office.yggmetro.com";
       if (officeHost && url.pathname === "/") {
