@@ -1374,3 +1374,70 @@ test("HERMES entry asks for Work ID first, then reuses existing Work or creates 
   assert.equal(supplied.workContext.workId, created.workContext.workId);
   assert.equal(supplied.workContext.checkpointId, created.workContext.checkpointId);
 });
+
+
+test("HERMES mission return adapter preserves Work identity and waits for VERIFY across WAIT/BLOCKED/UNKNOWN/COMPLETE", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?universal-return=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?universal-return=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead:async () => new Response(JSON.stringify({ ok:true, pins:[] }), { headers:{ "content-type":"application/json" } }),
+    createId:prefix => prefix + "-UNIVERSAL-" + Date.now(),
+  });
+
+  for (const [index, [status, expectedStatus]] of [
+    ["WAIT", "WAIT"],
+    ["BLOCKED", "BLOCKED"],
+    ["UNKNOWN", "UNKNOWN"],
+    ["COMPLETE", "WAIT_VERIFY"],
+  ].entries()) {
+    const created = await body(await service.action({
+      action:"create",
+      mission:"Universal return regression " + status,
+      requestedResult:"preserve identity through mission return",
+      workKey:"UNIVERSAL-RETURN-" + status + "-" + index,
+      createDecision:"CREATE_NEW",
+      destinations:["destination://factory"],
+      scope:["destination://factory"],
+    }));
+    const workContext = created.workContext;
+    await body(await centreLive.action({ action:"v4_claim", ...workContext, actor:"GO" }));
+    await body(await centreLive.action({
+      action:"v4_open_pass",
+      ...workContext,
+      actor:"GO",
+      kind:"WORK",
+      destinations:["destination://factory"],
+      scope:["destination://factory"],
+      closeCondition:"RETURN",
+      returnAddress:workContext.checkpointId,
+    }));
+
+    const returned = await body(await service.action({
+      action:"return",
+      workContext,
+      status,
+      result:{ status },
+      evidence:status === "COMPLETE" ? [{ ref:"evidence://" + status }] : [],
+    }));
+    assert.equal(returned.ok, true);
+    assert.equal(returned.lifecycle.event, "RETURN");
+    assert.equal(returned.lifecycle.actor, "HERMES");
+    assert.equal(returned.lifecycle.actorAction, "return_tablet");
+    assert.equal(returned.lifecycle.sourceEvent, "HERMES_MISSION_RETURN");
+    assert.equal(returned.lifecycle.workStatus, expectedStatus);
+    assert.equal(returned.lifecycle.nextEvent, "VERIFY");
+    assert.equal(returned.lifecycle.closeAllowed, false);
+    assert.equal(returned.workContext.workId, workContext.workId);
+    assert.equal(returned.workContext.checkpointId, workContext.checkpointId);
+
+    const inspected = await body(await centreLive.action({ action:"v4_mission_get", ...workContext }));
+    assert.equal(inspected.work.workId, workContext.workId);
+    assert.equal(inspected.work.checkpointId, workContext.checkpointId);
+    assert.equal(inspected.mission.memory.latestReality.universalLifecycle.workStatus, expectedStatus);
+    assert.equal(inspected.mission.memory.latestReality.universalLifecycle.nextEvent, "VERIFY");
+  }
+});

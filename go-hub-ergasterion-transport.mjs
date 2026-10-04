@@ -58,6 +58,10 @@ export function sendErgasterionFactoryHandoff(input = {}) {
   return postJson({ ...input, endpoint: `${text(input.endpoint).replace(/\/$/, '')}/api/hub-factory/receive`, payload: input.handoff });
 }
 
+export function sendPrismEyeAdmin(input = {}) {
+  return postJson({...input,endpoint:`${text(input.endpoint).replace(/\/$/, '')}/api/prism-eye/admin`,payload:input.payload,retries:0});
+}
+
 export function readErgasterionFactoryReadback(input = {}) {
   const handoffId = text(input.handoffId);
   if (!handoffId) return Promise.reject(new Error('HANDOFF_ID_REQUIRED'));

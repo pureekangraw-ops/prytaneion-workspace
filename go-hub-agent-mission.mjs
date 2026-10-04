@@ -1,6 +1,7 @@
 import { createMissionCard, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 import { workCardView } from "./go-hub-work-card.js";
 import { CARD_HISTORY_RESET, currentCardHistoryPins, cardHistoryPolicyView } from "./go-hub-card-history-policy.mjs";
+import { translateAgentAction } from "./go-hub-agent-family-runtime.mjs";
 
 const text = value => String(value ?? "").trim();
 const clone = value => value == null ? value : structuredClone(value);
@@ -9,6 +10,30 @@ const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
   status,
   headers:{ "content-type":"application/json; charset=utf-8" },
 });
+
+function missionReturnLifecycle(missionStatus) {
+  const normalized = text(missionStatus).toUpperCase();
+  const translated = translateAgentAction({
+    agentId:"HERMES",
+    action:"return_tablet",
+    sourceEvent:"HERMES_MISSION_RETURN",
+  });
+  const workStatus = {
+    "ON PROCESS":"RETURNED",
+    WAIT:"WAIT",
+    "WAIT VERIFY":"WAIT_VERIFY",
+    BLOCKED:"BLOCKED",
+    UNKNOWN:"UNKNOWN",
+    COMPLETE:"WAIT_VERIFY",
+    CANCEL:"CANCELLED",
+  }[normalized] || "RETURNED";
+  return Object.freeze({
+    ...translated,
+    workStatus,
+    nextEvent:normalized === "CANCEL" ? null : "VERIFY",
+    closeAllowed:false,
+  });
+}
 
 async function payload(response) {
   if (response instanceof Response) return response.clone().json().catch(() => ({}));
@@ -1883,9 +1908,10 @@ export function createAgentMissionService({
   async function returnCard(input = {}) {
     const workContext = requireWorkContext(input);
     const missionStatus = text(input.status || "ON PROCESS").toUpperCase();
-    const allowed = new Set(["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"]);
+    const allowed = new Set(["ON PROCESS","WAIT","WAIT VERIFY","BLOCKED","UNKNOWN","COMPLETE","CANCEL"]);
     if (!allowed.has(missionStatus)) return json({ code:"HERMES_RETURN_STATUS_INVALID" }, 400);
     const centreStatus = missionStatus === "COMPLETE" ? "COMPLETE" : missionStatus === "CANCEL" ? "CANCEL" : "OPEN";
+    const lifecycle = missionReturnLifecycle(missionStatus);
     const evidence = evidenceRefs(input.evidence);
     if (centreStatus === "COMPLETE" && !evidence.length) {
       return json({ code:"HERMES_COMPLETE_EVIDENCE_REQUIRED" }, 409);
@@ -1910,6 +1936,7 @@ export function createAgentMissionService({
       unknowns:unique(input.unknowns),
       lastLocation:text(input.lastLocation) || null,
       mode:text(input.mode || "NORMAL_RETURN").toUpperCase(),
+      universalLifecycle:lifecycle,
       ownerReadback:{
         sourceStatus:work.status,
         holder:work.holder || null,
@@ -1923,6 +1950,7 @@ export function createAgentMissionService({
       workContext,
       card:workCardView(work),
       mission:recorded.mission,
+      lifecycle,
       readout:composeMissionReadout(work, recorded.mission),
       readbackVerified:true,
       exitAllowed:true,

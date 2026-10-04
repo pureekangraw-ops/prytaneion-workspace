@@ -495,7 +495,7 @@ function v4MissionAction(state, action, input = {}) {
       throw Object.assign(new Error("HERMES_OWNER_RETURN_READBACK_REQUIRED"), { status:409 });
     }
     const exactStatus = required(input.missionStatus, "HERMES Return Status").toUpperCase();
-    if (!["ON PROCESS","WAIT","WAIT VERIFY","COMPLETE","CANCEL"].includes(exactStatus)) {
+    if (!["ON PROCESS","WAIT","WAIT VERIFY","BLOCKED","UNKNOWN","COMPLETE","CANCEL"].includes(exactStatus)) {
       throw Object.assign(new Error("HERMES_RETURN_STATUS_INVALID"), { status:400 });
     }
     const reality = {
@@ -508,6 +508,9 @@ function v4MissionAction(state, action, input = {}) {
       unknowns:missionUnique(input.unknowns),
       lastLocation:String(input.lastLocation || mission.session.lastDestination || "").trim() || null,
       mode:String(input.mode || "NORMAL_RETURN").trim().toUpperCase(),
+      universalLifecycle:input.universalLifecycle && typeof input.universalLifecycle === "object"
+        ? clone(input.universalLifecycle)
+        : null,
       ownerReadback:{
         workId:state.work?.workId || null,
         checkpointId:state.work?.checkpointId || null,
@@ -714,9 +717,9 @@ export class GoHubCentreState {
       return json({ ok:true, indexed });
     }
 
-    if (action === "spectrum_list" || action === "spectrum_brief" || action === "spectrum_event") {
+    if (action === "spectrum_list" || action === "spectrum_brief" || action === "spectrum_event" || action === "spectrum_go_budget") {
       const store = createSalesStore({ storage:this.ctx.storage });
-      return json(action === "spectrum_list" ? await store.list(input) : action === "spectrum_event" ? await store.event(input.payload) : await store.brief(input.operation, input.payload));
+      return json(action === "spectrum_list" ? await store.list(input) : action === "spectrum_event" ? await store.event(input.payload) : action === "spectrum_go_budget" ? await store.goBudget(input.payload) : await store.brief(input.operation, input.payload));
     }
 
     if (action === "v4_inventory") {
@@ -1203,7 +1206,7 @@ export function createCentreLiveService({ namespace } = {}) {
     async action(input = {}) {
       const action = required(input.action, "Centre action");
       if (["v4_resolve","v4_inventory"].includes(action)) return send(indexName, input);
-      if (["spectrum_list","spectrum_brief","spectrum_event"].includes(action)) return send("__centre-spectrum-intake-v1__", input);
+      if (["spectrum_list","spectrum_brief","spectrum_event","spectrum_go_budget"].includes(action)) return send("__centre-spectrum-intake-v1__", input);
       const workId = required(input.workId, "Work ID");
       const response = await send(workId, input);
       if (!response.ok || !action.startsWith("v4_")) return response;

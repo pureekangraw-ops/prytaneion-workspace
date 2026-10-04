@@ -725,7 +725,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
-      if (url.pathname.startsWith("/internal/brief/") || url.pathname === "/internal/spectrum/event") {
+      if (url.pathname.startsWith("/internal/brief/") || url.pathname === "/internal/spectrum/event" || url.pathname === "/internal/spectrum/go-budget") {
         if(url.hostname!=="go-hub.internal")return json({code:"INTERNAL_ROUTE_DENIED"},403);
         if(request.method!=="POST")return json({code:"METHOD_NOT_ALLOWED"},405);
         if(Number(request.headers.get("content-length")||0)>65536)return json({code:"PAYLOAD_TOO_LARGE"},413);
@@ -735,6 +735,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         const operation=url.pathname.split("/").pop();
         if(url.pathname.startsWith("/internal/brief/") && !["upsert","confirm"].includes(operation))return json({code:"INTERNAL_ROUTE_DENIED"},404);
         const centreLive=createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE});
+        if(url.pathname==="/internal/spectrum/go-budget")return centreLive.action({action:"spectrum_go_budget",payload});
         const workId=operation==="confirm"?spectrumWorkId(payload.briefId):null;
         const forwardedPayload=workId?{...payload,workId}:payload;
         const response=await centreLive.action({action:operation==="event"?"spectrum_event":"spectrum_brief",operation,payload:forwardedPayload});

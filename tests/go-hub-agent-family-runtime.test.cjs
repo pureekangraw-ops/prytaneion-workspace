@@ -15,6 +15,17 @@ test("Agent runtime routes preserve Work identity and do not expand authority", 
   assert.equal(prepared.handoff.to,"PIXIE_LAB_GO_WORKS");
   assert.equal(prepared.handoff.authorityExpanded,false);
   assert.equal(prepared.handoff.checkpointPreserved,true);
+  assert.equal(prepared.handoff.lifecycle.event,"RECEIVED");
+  assert.equal(prepared.handoff.lifecycle.actorAction,"receive");
+});
+
+test("runtime adapter translates actor vocabulary without owning lifecycle state", async()=>{
+  const { translateAgentAction }=await import("../go-hub-agent-family-runtime.mjs");
+  const pixie=translateAgentAction({agentId:"PIXIE",action:"result packet",sourceEvent:"PIXIE_RESULT_PACKET"});
+  assert.equal(pixie.event,"RETURN");
+  assert.equal(pixie.actorAction,"result packet");
+  assert.equal(pixie.sourceEvent,"PIXIE_RESULT_PACKET");
+  assert.equal(pixie.adapter,"PIXIE_ADAPTER");
 });
 
 test("HERMES remains stationary transport home", async()=>{
@@ -55,6 +66,25 @@ test("verified return goes back to Centre and COMPLETE still needs readback", as
   assert.equal(returned.to,"CENTRE");
   assert.equal(returned.from,"WEB_OFFICE_STOREFRONT");
   assert.equal(returned.authorityExpanded,false);
+  assert.equal(returned.lifecycle.event,"RETURN");
+  assert.equal(returned.lifecycle.nextEvent,"VERIFY");
+  assert.equal(returned.lifecycle.closeAllowed,false);
+
+  const pixie=prepareAgentReturn({
+    agentId:"PIXIE",
+    workId:"WORK-PIXIE",
+    checkpointId:"CP-PIXIE",
+    requestedResult:"factory result",
+    status:"COMPLETE",
+    evidenceRefs:["pixie://evidence/1"],
+    readback:{source:"PIXIE",state:"MATCHED"},
+    result:{ok:true},
+  });
+  assert.equal(pixie.returned.status,"COMPLETE");
+  assert.equal(pixie.lifecycle.event,"RETURN");
+  assert.equal(pixie.lifecycle.workStatus,"WAIT_VERIFY");
+  assert.equal(pixie.lifecycle.nextEvent,"VERIFY");
+  assert.equal(pixie.lifecycle.closeAllowed,false);
 });
 
 test("BIG GO and LIGHT receive reports from the intended agents", async()=>{

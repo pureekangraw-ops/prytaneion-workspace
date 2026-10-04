@@ -8,6 +8,7 @@ import { createGithubLifecycleService } from "./go-hub-worker.mjs";
 import { createFactoryControllerService } from "./go-hub-factory-controller.mjs";
 import { createFactoryActionService, createFactoryAutoService, createFactoryV4Service } from "./go-hub-factory-service.mjs";
 import { createErgasterionRuntime } from "./go-hub-ergasterion-runtime.mjs";
+import { createPrismEyeService } from "./go-hub-prism-eye.mjs";
 import { createMaintenanceService } from "./go-hub-maintenance.js";
 import { createMaintenanceRealityReader } from "./go-hub-maintenance-reader.mjs";
 import { createMaintenanceDurableStorage } from "./go-hub-maintenance-state.mjs";
@@ -471,7 +472,7 @@ function observerStatus(code) {
   return 403;
 }
 
-export function createObserverEvidenceService({ factoryEyeNamespace } = {}) {
+export function createObserverEvidenceService({ factoryEyeNamespace, prismEye } = {}) {
   function factoryEyeStub() {
     if (!factoryEyeNamespace || typeof factoryEyeNamespace.getByName !== "function") return null;
     return factoryEyeNamespace.getByName("ergasterion-factory-eye-v1");
@@ -501,7 +502,9 @@ export function createObserverEvidenceService({ factoryEyeNamespace } = {}) {
     callStub(factoryEyeStub(), "https://factory-eye.internal/", method, input);
 
   return Object.freeze({
-    async latest({ workContext } = {}) {
+    async latest({ workContext, source } = {}) {
+      if(source==='PRISM_BROWSER')return prismEye?.latest({workContext})||json({ok:false,code:'PRISM_FACTORY_UNAVAILABLE',source:'PRISM_BROWSER'},503);
+      if(source&&source!=='FACTORY_EYE')return json({code:'OBSERVER_SOURCE_INVALID'},400);
       const workId = String(workContext?.workId || "").trim();
       const checkpointId = String(workContext?.checkpointId || "").trim();
       const context = workId && checkpointId
@@ -731,7 +734,8 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
         secret: env?.ERGASTERION_HUB_SHARED_SECRET,
         binding: env?.ERGASTERION_FACTORY,
       });
-      const observer = createObserverEvidenceService({        factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
+      const prismEye=createPrismEyeService({fetchImpl,endpoint:env?.ERGASTERION_FACTORY_URL,secret:env?.ERGASTERION_HUB_SHARED_SECRET,binding:env?.ERGASTERION_FACTORY});
+      const observer = createObserverEvidenceService({prismEye, factoryEyeNamespace:env?.FACTORY_EYE_SESSIONS,
       });
       const centreLive = createCentreLiveService({ namespace: env?.GO_HUB_CENTRE_STATE });
       const broadcast = createBroadcastService({ namespace: env?.GO_HUB_BROADCAST_STATE });
@@ -882,6 +886,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           mergePullRequest: input => runMutation("github.merge_pull_request", input, () => lifecycle.mergePullRequest(input)),
           ergasterionHealth: () => ergasterion.health(),
           ergasterionHandoff: input => runMutation("factory.ergasterion_handoff", input, () => ergasterion.handoff(input)),
+          prismObserverSession: input => runMutation('factory.prism_observer_'+input.action,input,()=>prismEye.session(input)),
           aionResolve: async input => json(await olympusAion.resolve(input)),
           aionRegistry: async () => json(await olympusAion.registry()),
           agentFamilyStatus: input => json(agentFamilyStatus(input)),
