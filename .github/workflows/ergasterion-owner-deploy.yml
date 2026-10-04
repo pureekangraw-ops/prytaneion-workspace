@@ -48,8 +48,16 @@ jobs:
       - name: Test the exact owner source
         run: npm test
 
+      - name: Prepare the deployment CLI
+        run: npm install --prefix "$RUNNER_TEMP/factory-deployer" --no-audit --no-fund wrangler@4
+
       - name: Deploy using the unchanged Factory owner configuration
-        run: npx --yes wrangler@4 deploy --config wrangler.jsonc
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$owner_main" = "$FACTORY_SOURCE_SHA"
+          "$RUNNER_TEMP/factory-deployer/node_modules/.bin/wrangler" deploy --config wrangler.jsonc
 
       - name: Verify protected ingress and required bindings
         run: |
