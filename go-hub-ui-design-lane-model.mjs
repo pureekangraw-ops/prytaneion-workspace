@@ -28,6 +28,7 @@ function normalizeProvenance(value = {}) {
     promptRef: text(value.promptRef) || null,
     sourceRef: text(value.sourceRef) || null,
     approvedVersionId: text(value.approvedVersionId) || null,
+    approvedBy: text(value.approvedBy) || null,
     evidenceRefs: unique(value.evidenceRefs),
   };
 }
