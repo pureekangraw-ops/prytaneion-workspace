@@ -61,6 +61,8 @@ const OFFICE_STATIC_ASSET_PATHS = new Set([
   "/go-hub-office-surface.css",
   "/go-hub-office-surface.js",
   "/go-hub-office-login.js",
+  "/go-hub-metro-surface.css",
+  "/go-hub-metro-surface.js",
 ]);
 const encoder = new TextEncoder();
 const officeRateLimitMemory = new Map();
@@ -702,7 +704,7 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
       if (OFFICE_STATIC_ASSET_PATHS.has(url.pathname) && env?.ASSETS?.fetch) {
         return env.ASSETS.fetch(request);
       }
-      if (url.pathname === "/office" || url.pathname.startsWith("/office/")) {
+      if (url.pathname === "/metro" || url.pathname === "/office" || url.pathname.startsWith("/office/")) {
         const centreLive = createCentreLiveService({ namespace:env?.GO_HUB_CENTRE_STATE });
         const counter = createCounterService({
           namespace:env?.GO_HUB_COUNTER_STATE,
