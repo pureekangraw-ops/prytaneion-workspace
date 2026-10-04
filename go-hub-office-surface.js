@@ -465,6 +465,9 @@ const overviewResults=document.querySelector('[data-overview-results]');
 const overviewCoverage=document.querySelector('[data-overview-coverage]');
 const overviewMore=document.querySelector('[data-overview-more]');
 const overviewSales=document.querySelector('[data-overview-sales]');
+const overviewQuotes=document.querySelector('[data-overview-quotes]');
+const quoteForm=document.querySelector('[data-quote-form]');
+const quoteStatus=document.querySelector('[data-quote-status]');
 const overviewActivity=document.querySelector('[data-overview-activity]');
 const overviewActivityStatus=document.querySelector('[data-overview-activity-status]');
 const overviewHealth=document.querySelector('[data-overview-health]');
@@ -540,16 +543,19 @@ async function loadOverviewSystem(){
 async function loadOverviewSales(append=false){
  if(!overviewSales)return;const status=document.querySelector('[data-overview-sales-status]');
  const payments=document.querySelector('[data-overview-payments]');
- try{const data=await overviewRead('sales'+(append&&salesCursor?'?cursor='+encodeURIComponent(salesCursor):''));if(!append)loadedSales.clear();for(const b of data.briefs)loadedSales.set(b.briefId,b);for(const e of data.events)loadedSales.set(e.eventId,e);salesCursor=data.nextCursor;if(salesMore)salesMore.hidden=!salesCursor;overviewSales.replaceChildren();payments?.replaceChildren();
+ try{const data=await overviewRead('sales'+(append&&salesCursor?'?cursor='+encodeURIComponent(salesCursor):''));if(!append)loadedSales.clear();for(const b of data.briefs)loadedSales.set(b.briefId,b);for(const e of data.events)loadedSales.set(e.eventId,e);salesCursor=data.nextCursor;if(salesMore)salesMore.hidden=!salesCursor;overviewSales.replaceChildren();overviewQuotes?.replaceChildren();payments?.replaceChildren();
  const briefs=[...loadedSales.values()].filter(i=>i.brief),events=[...loadedSales.values()].filter(i=>i.type);
  for(const item of briefs){const lines=Object.entries(item.brief).filter(([k,v])=>v&&k!=='goal').map(([k,v])=>(briefLabels[k]||k)+': '+v);const card=overviewCard(overviewSales,item.brief.goal||'บรีฟจากหน้าร้าน',item.status==='CONFIRMED'?'ลูกค้ายืนยันบรีฟแล้ว':'ร่างบรีฟ',lines);const details=document.createElement('details');overviewText(details,'summary','ดูข้อมูลการรับบรีฟ');overviewText(details,'code',item.briefId);overviewText(details,'p','เก็บข้อมูลเมื่อ '+displayTime(item.receivedAt));overviewText(details,'p',item.processing==='UNKNOWN'?'ยังไม่มีหลักฐานว่าประมวลผลต่อแล้ว':'สถานะต่อ: '+item.processing);card.append(details);}
  if(!briefs.length)overviewText(overviewSales,'p','ยังไม่มีบรีฟลูกค้าในรายการที่อ่าน');
  const views=events.filter(e=>e.type==='PAGE_VIEW').length,interest=events.filter(e=>e.type==='SERVICE_INTEREST').length;
  status.textContent='บรีฟ '+briefs.length+' รายการ · บันทึกการเปิดหน้า '+views+' ครั้ง · บันทึกความสนใจ '+interest+' ครั้งในรายการนี้';
+ for(const q of data.quotes||[]){overviewCard(overviewQuotes,q.customerId+' · '+q.workId,q.status,[q.quoteId+' · '+q.amount+' '+q.currency,q.status==='QUOTE_SENT'?'ใช้สร้าง checkout ได้':'ยังเป็นร่าง ห้ามสร้าง checkout',q.sentAt?'ส่งเมื่อ '+displayTime(q.sentAt):'']);}
+ if(overviewQuotes&&!(data.quotes||[]).length)overviewText(overviewQuotes,'p','ยังไม่มีใบเสนอราคาจาก Office','office-muted');
  for(const p of data.payments||[]){overviewCard(payments,p.customerId+' · '+p.workId,p.status,[p.quoteId+' · '+p.amount+' '+p.currency,'อ้างอิง '+(p.providerReference||'UNKNOWN'),'พร้อมเริ่มงาน '+p.fulfillmentReadiness,'หลักฐาน '+(p.evidenceFreshness?.state||'UNKNOWN')+' · '+displayTime(p.providerObservedAt),'ถัดไป '+p.nextAction]);}
  if(payments&&!(data.payments||[]).length)overviewText(payments,'p','ยังไม่มีรายการชำระเงินจาก provider','office-muted');
  }catch{status.textContent='ตอนนี้อ่านข้อมูลหน้าร้านไม่ได้'+(loadedSales.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':'');}
 }
+quoteForm?.addEventListener('submit',async event=>{event.preventDefault();const submit=quoteForm.querySelector('button[type="submit"]');submit.disabled=true;quoteStatus.textContent='กำลังบันทึก…';try{const form=new FormData(quoteForm),payload={quoteId:String(form.get('quoteId')||'').trim(),customerId:String(form.get('customerId')||'').trim(),workId:String(form.get('workId')||'').trim(),amount:Number(form.get('amount')),currency:String(form.get('currency')||'').trim().toUpperCase(),status:String(form.get('status')||'QUOTE_DRAFT')};const response=await fetch('/office/api/quotes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}),body=await response.json().catch(()=>({}));if(!response.ok)throw Error(body.code||'QUOTE_SAVE_FAILED');quoteStatus.textContent='บันทึก '+body.quote.quoteId+' แล้ว';await loadOverviewSales();}catch(error){quoteStatus.textContent='บันทึกไม่ได้: '+String(error.message||'UNKNOWN');}finally{submit.disabled=false;}});
 async function refreshOverview(){
  if(overviewBusy)return;overviewBusy=true;const workTarget=loadedWorks.size,salesTarget=loadedSales.size;
  try{await Promise.all([(async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),loadOverviewActivity(),loadOverviewHealth(),loadOverviewSystem(),(async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()]);}finally{overviewBusy=false;}
