@@ -58,6 +58,8 @@ const APP_SHELL = [
   "./pixie-visual-workbench.css",
   "./pixie-visual-workbench.js",
   "./go-hub-visual-workbench-model.js",
+  "./go-hub-ui-design-lane.js",
+  "./go-hub-ui-design-lane-model.mjs",
   "./go-hub-github-workspace.js",
   "./go-hub-persistence.js",
   "./go-hub-sw-bootstrap.js",
