@@ -1441,3 +1441,70 @@ test("HERMES mission return adapter preserves Work identity and waits for VERIFY
     assert.equal(inspected.mission.memory.latestReality.universalLifecycle.nextEvent, "VERIFY");
   }
 });
+
+test("HERMES Tablet HOLD exposes recovery custody and resumes the same Work", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?tablet-recovery=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?tablet-recovery=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const pins = [];
+  const boardRead = async () => new Response(JSON.stringify({ ok:true, pins }), { headers:{ "content-type":"application/json" } });
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead,
+    createId:prefix => prefix + "-RECOVERY",
+  });
+
+  const created = await body(await service.action({
+    action:"create_tablet",
+    mission:"Implement Hermes recovery seam",
+    requestedResult:"Preserve a resumable HOLD record",
+    workKey:"HERMES-RECOVERY-SEAM",
+  }));
+  pins.push({
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+    jobCode:created.tabletId.slice("TABLET:".length),
+    status:"ON PROCESS",
+    title:"Implement Hermes recovery seam",
+    detail:"Preserve a resumable HOLD record",
+    card:{
+      cardId:"CARD:" + created.tabletId.slice("TABLET:".length),
+      tabletId:created.tabletId,
+      checkpointId:created.workContext.checkpointId,
+      jobCode:created.tabletId.slice("TABLET:".length),
+      sourceStatus:"ON PROCESS",
+      tool_access:[],
+    },
+  });
+
+  const held = await body(await service.action({
+    action:"return_tablet",
+    tabletId:created.tabletId,
+    status:"WAIT",
+    result:{ summary:"Paused after safe stop" },
+    evidence:[{ ref:"test://hermes/recovery" }],
+    unknowns:["post-safe-point effect"],
+    lastLocation:"GITHUB",
+    nextAction:"Inspect actual branch state before resume",
+  }));
+  assert.equal(held.ok, true);
+  assert.equal(held.tablet.recovery.mode, "HOLD");
+  assert.equal(held.tablet.recovery.custody, "HERMES");
+  assert.equal(held.tablet.recovery.lastLocation, "GITHUB");
+  assert.equal(held.tablet.recovery.nextAction, "Inspect actual branch state before resume");
+  assert.deepEqual(held.tablet.recovery.unknowns, ["post-safe-point effect"]);
+  assert.equal(held.tablet.recovery.resumeAllowed, true);
+
+  const resumed = await body(await service.action({
+    action:"resume_tablet",
+    tabletId:created.tabletId,
+  }));
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.resumedFrom.mode, "HOLD");
+  assert.equal(resumed.workContext.workId, created.workContext.workId);
+  assert.equal(resumed.workContext.checkpointId, created.workContext.checkpointId);
+  assert.notEqual(resumed.tablet.recovery.mode, "HOLD");
+});
