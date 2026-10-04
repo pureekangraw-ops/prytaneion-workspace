@@ -56,7 +56,7 @@ test('rendered PRISM form issues a real session, clears passcode and copies only
   const html = await (await app.fetch('/hub/prism/pairing')).text();
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script,'pairing page must include its working form controller');
-  const nodes = Object.fromEntries(['pair','passcode','label','bootstrap','status','copy'].map(id=>[id,{value:'',textContent:'',disabled:false,addEventListener(event,fn){this[event]=fn;}}]));
+  const nodes = Object.fromEntries(['pair','passcode','label','bootstrap','status','copy','observer-pair','observer-passcode','observer-work','observer-checkpoint','observer-adapter','observer-bootstrap','observer-status','observer-copy'].map(id=>[id,{value:'',textContent:'',disabled:false,addEventListener(event,fn){this[event]=fn;}}]));
   nodes.passcode.value='test-owner'; nodes.label.value='PRISM phone';
   let copied;
   vm.runInNewContext(script,{document:{getElementById:id=>nodes[id]},fetch:app.fetch,navigator:{clipboard:{writeText:async value=>{copied=value;}}}});
