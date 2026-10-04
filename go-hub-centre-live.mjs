@@ -720,9 +720,9 @@ export class GoHubCentreState {
       return json({ ok:true, indexed });
     }
 
-    if (action === "spectrum_list" || action === "spectrum_brief" || action === "spectrum_event" || action === "spectrum_go_budget") {
+    if (action === "spectrum_list" || action === "spectrum_brief" || action === "spectrum_event" || action === "spectrum_go_budget" || action === "payment_record" || action === "payment_list") {
       const store = createSalesStore({ storage:this.ctx.storage });
-      return json(action === "spectrum_list" ? await store.list(input) : action === "spectrum_event" ? await store.event(input.payload) : action === "spectrum_go_budget" ? await store.goBudget(input.payload) : await store.brief(input.operation, input.payload));
+      return json(action === "spectrum_list" ? await store.list(input) : action === "spectrum_event" ? await store.event(input.payload) : action === "spectrum_go_budget" ? await store.goBudget(input.payload) : action === "payment_record" ? await store.paymentRecord(input.payload) : action === "payment_list" ? await store.paymentList(input) : await store.brief(input.operation, input.payload));
     }
 
     if (action === "v4_inventory") {
@@ -1225,7 +1225,7 @@ export function createCentreLiveService({ namespace } = {}) {
     async action(input = {}) {
       const action = required(input.action, "Centre action");
       if (["v4_resolve","v4_inventory"].includes(action)) return send(indexName, input);
-      if (["spectrum_list","spectrum_brief","spectrum_event","spectrum_go_budget"].includes(action)) return send("__centre-spectrum-intake-v1__", input);
+      if (["spectrum_list","spectrum_brief","spectrum_event","spectrum_go_budget","payment_record","payment_list"].includes(action)) return send("__centre-spectrum-intake-v1__", input);
       const workId = required(input.workId, "Work ID");
       const response = await send(workId, input);
       if (!response.ok || !action.startsWith("v4_")) return response;
