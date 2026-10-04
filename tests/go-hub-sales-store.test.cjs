@@ -37,3 +37,43 @@ test('SPECTRUM storefront context survives Centre intake and strips query fragme
  assert.equal(saved.sourcePage,'/client');
  assert.equal(saved.jobType,'WEB_EXPERIENCE');
 });
+
+
+test('confirmed SPECTRUM brief persists bounded handoff packet',async()=>{
+ const {createSalesStore}=await load(),store=createSalesStore({storage:bucket()});
+ await store.brief('confirm',{
+   briefId:'BRIEF-HANDOFF-1',clientId:'CLIENT-HANDOFF-1',conversationId:'CONV-HANDOFF-1',
+   brief:{goal:'Pitch deck',jobType:'PROPOSAL',materials:'มีไฟล์เดิม'},
+   handoff:{
+     version:'1',
+     identity:{customerId:'CLIENT-HANDOFF-1',conversationId:'CONV-HANDOFF-1',briefId:'BRIEF-HANDOFF-1'},
+     intent:{activeIntent:'PRE_ESTIMATE',requestedResult:'Pitch deck',customerWords:['อยากทำ pitch deck','อยากประเมินก่อน'],successDefinition:'ทีมรับช่วงได้โดยไม่ต้องเล่าซ้ำ'},
+     scope:{confirmedFacts:['goal=Pitch deck'],missingFields:['audience'],materialsReceived:'มีไฟล์เดิม'},
+     commercial:{packageCandidate:'STANDARD',priceSource:null,paymentClaim:'UNKNOWN',approvalRequired:true},
+     operations:{riskClass:'COMMERCIAL_REVIEW',ownerSource:'CENTRE_SPECTRUM_INTAKE',currentState:'CONFIRMED',nextAction:'TEAM_REVIEW'},
+     communication:{lastMessage:'อยากประเมินก่อน',customerEmotion:'UNKNOWN',responseTone:'WARM_STRICT',whatNotToRepeat:['goal=Pitch deck']}
+   }
+ });
+ const saved=(await store.list()).briefs[0];
+ assert.equal(saved.handoff.identity.briefId,'BRIEF-HANDOFF-1');
+ assert.equal(saved.handoff.intent.activeIntent,'PRE_ESTIMATE');
+ assert.equal(saved.handoff.commercial.paymentClaim,'UNKNOWN');
+ assert.equal(saved.handoff.commercial.approvalRequired,true);
+ assert.equal(saved.handoff.operations.nextAction,'TEAM_REVIEW');
+ assert.deepEqual(saved.handoff.intent.customerWords,['อยากทำ pitch deck','อยากประเมินก่อน']);
+});
+
+test('handoff packet remains immutable on idempotent confirm retry',async()=>{
+ const {createSalesStore}=await load(),store=createSalesStore({storage:bucket()});
+ const base={
+   briefId:'BRIEF-HANDOFF-2',clientId:'CLIENT-HANDOFF-2',conversationId:'CONV-HANDOFF-2',
+   brief:{goal:'Brand system',jobType:'BRAND_VISUAL_SYSTEM'},
+   handoff:{intent:{activeIntent:'START',customerWords:['เริ่มงานแบรนด์']},operations:{currentState:'CONFIRMED',nextAction:'TEAM_REVIEW'}}
+ };
+ const first=await store.brief('confirm',base);
+ const second=await store.brief('confirm',{...base,handoff:{intent:{activeIntent:'HELP',customerWords:['ข้อความใหม่']}}});
+ assert.equal(second.receipt,first.receipt);
+ const saved=(await store.list()).briefs[0];
+ assert.equal(saved.handoff.intent.activeIntent,'START');
+ assert.deepEqual(saved.handoff.intent.customerWords,['เริ่มงานแบรนด์']);
+});
