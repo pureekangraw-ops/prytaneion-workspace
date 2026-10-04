@@ -271,6 +271,8 @@ export function applyActorAction(envelope, input = {}) {
   return appendLifecycleEvent(envelope, {
     ...input,
     ...adapted,
+    workId: input.workId ?? envelope.identity?.workId,
+    checkpointId: input.checkpointId ?? envelope.identity?.checkpointId,
   });
 }
 
