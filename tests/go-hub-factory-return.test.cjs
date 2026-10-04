@@ -48,7 +48,7 @@ const taskSnapshot = Object.freeze({
   workBranch: "go-city-roundtrip-integration",
   headSha: "head-sha",
   blocker: null,
-  pullRequest: { number: 51, headSha: "head-sha" },
+  pullRequest: { number: 51, headSha: "head-sha", url: "https://github.com/pureekangraw-ops/standard-/pull/51" },
   ci: { status: "success", headSha: "head-sha" },
   deployment: null,
   verification: null,
@@ -99,6 +99,9 @@ test("Factory reality return preserves Centre identity and returns real workbenc
   assert.equal(packet.payload.refs.headSha, "head-sha");
   assert.equal(packet.payload.pullRequest.number, 51);
   assert.equal(packet.payload.ci.status, "success");
+  assert.equal(packet.payload.mergeReady, true);
+  assert.equal(packet.payload.mergeLink, "https://github.com/pureekangraw-ops/standard-/pull/51");
+  assert.equal(packet.payload.nextAction, "MERGE_READY");
   assert.deepEqual(packet.payload.evidence, taskSnapshot.evidence);
   assert.equal(JSON.stringify(packet.payload).includes("returned-by-operator"), false);
   assert.equal(returned.workId, "WORK-A");
@@ -121,4 +124,17 @@ test("Code capability can expose a Centre-bound work context without changing re
   assert.equal(capability.status, "ready");
   assert.equal(capability.repository, "pureekangraw-ops/standard-");
   assert.deepEqual(capability.workContext, context);
+});
+
+
+test("Factory reality return does not advertise merge-ready when CI is not exact-head green", async () => {
+  const { access } = await createFactoryAccess();
+  const { createFactoryRealityReturn } = await import(`${factoryReturnUrl}?notready=${Date.now()}`);
+  const packet = createFactoryRealityReturn(access, {
+    ...taskSnapshot,
+    ci: { status: "success", headSha: "other-head" },
+  });
+  assert.equal(packet.payload.mergeReady, false);
+  assert.equal(packet.payload.mergeLink, null);
+  assert.notEqual(packet.payload.nextAction, "MERGE_READY");
 });
