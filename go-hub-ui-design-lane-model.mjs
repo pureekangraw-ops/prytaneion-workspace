@@ -423,6 +423,9 @@ export function createPixiePreviewRequest(document, { previewId = null, target =
 export function createPreviewResult(request, { status = "RENDERED", observedScene = null, artifactRef = null, renderer = "PIXIE_LOCAL_PREVIEW_V1", error = null } = {}) {
   if (!request?.previewId || request?.protocol !== "GO_UI_DESIGN_PREVIEW_V1") throw new Error("UI_DESIGN_PREVIEW_REQUEST_REQUIRED");
   const normalizedStatus = ["RENDERED", "FAILED", "UNKNOWN"].includes(upper(status)) ? upper(status) : "UNKNOWN";
+  const isLocalPreview = text(renderer) === "PIXIE_LOCAL_PREVIEW_V1";
+  const runtimeScene = observedScene ? clone(observedScene) : (isLocalPreview ? clone(request.scene) : null);
+  const safeStatus = normalizedStatus === "RENDERED" && !runtimeScene ? "UNKNOWN" : normalizedStatus;
   return {
     previewId: request.previewId,
     packetId: request.packetId,
@@ -430,8 +433,8 @@ export function createPreviewResult(request, { status = "RENDERED", observedScen
     workId: request.workId,
     approvedVersionId: request.approvedVersionId,
     renderer: text(renderer) || "PIXIE_LOCAL_PREVIEW_V1",
-    status: normalizedStatus,
-    observedScene: clone(observedScene || request.scene),
+    status: safeStatus,
+    observedScene: runtimeScene,
     artifactRef: text(artifactRef) || `preview://${request.previewId}`,
     error: text(error) || null,
     createdAt: nowIso(),

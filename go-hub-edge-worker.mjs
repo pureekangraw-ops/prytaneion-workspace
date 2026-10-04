@@ -23,6 +23,8 @@ import { createCounterService } from "./go-hub-counter.mjs";
 import { createCounterDispatchService } from "./go-hub-counter-dispatcher.mjs";
 import { createPrismControlPortService } from "./go-hub-prism-control-port.mjs";
 import { createGoHubV4, CUTOVER_CONTRACT } from "./go-hub-v4-cutover.mjs";
+import { createPixieCommandService } from "./go-hub-pixie-service.mjs";
+import { createPixiePreviewBridge } from "./go-hub-pixie-preview-bridge.mjs";
 import {
   createLighthouseControlPortHttpService,
   createLighthouseControlPortMcpService,
@@ -55,6 +57,7 @@ const FACTORY_EYE_API_ROOT = "/hub/api/factory-eye";
 const FACTORY_ACTION_PATH = "/hub/api/github-workspace/factory-action";
 const CONTROL_ROOM_PATH = "/hub/api/centre/control-room";
 const PROJECT_VIEWER_STATUS_PATH = "/hub/api/centre/project-viewer-status";
+const PIXIE_API_ROOT = "/hub/api/pixie";
 const LIGHT_MCP_OWNER_PATH = "/hub/light-mcp";
 const LIGHT_MCP_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const OFFICE_STATIC_ASSET_PATHS = new Set([
@@ -741,6 +744,33 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         if(!confirmed?.ok)return response;
         return ensureSpectrumWork({centreLive,result:confirmed});
       }
+      if (url.pathname === `${PIXIE_API_ROOT}/preview` || url.pathname.startsWith(`${PIXIE_API_ROOT}/preview/`)) {
+        const pixie = createPixieCommandService({
+          token: env?.GITHUB_TOKEN,
+          repository: env?.PIXIE_REPOSITORY,
+          workflow: env?.PIXIE_WORKFLOW,
+          ref: env?.PIXIE_RUNTIME_REF,
+        });
+        const bridge = createPixiePreviewBridge({
+          pixie,
+          monitorBinding: env?.GO_HUB_PIXIE_MONITOR_STATE,
+        });
+        if (request.method === "POST" && url.pathname === `${PIXIE_API_ROOT}/preview`) {
+          const body = await request.json().catch(() => null);
+          if (!body || typeof body !== "object" || Array.isArray(body)) return json({ code: "INVALID_JSON" }, 400);
+          const result = await bridge.dispatch({
+            requestId: body.requestId || body.previewId,
+            packet: body.packet || body.handoff || body,
+          });
+          return json(result, result.status || (result.ok ? 202 : 400));
+        }
+        if (request.method === "GET" && url.pathname.startsWith(`${PIXIE_API_ROOT}/preview/`)) {
+          const requestId = decodeURIComponent(url.pathname.slice(`${PIXIE_API_ROOT}/preview/`.length));
+          const result = await bridge.read({ requestId });
+          return json(result, result.status || (result.ok ? 200 : 400));
+        }
+        return json({ code: "METHOD_NOT_ALLOWED" }, 405);
+      }
       const officeHost = url.hostname.toLowerCase() === "office.yggmetro.com";
       if (officeHost && url.pathname === "/") {
         const hasOfficeSession = /(?:^|;\\s*)__Host-ygg-office=/.test(String(request.headers.get("cookie") || ""));
@@ -1217,3 +1247,4 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
 }
 
 export default createEdgeWorkerHandler();
+

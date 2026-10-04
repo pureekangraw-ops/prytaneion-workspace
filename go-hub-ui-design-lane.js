@@ -24,6 +24,86 @@ const esc = value => String(value ?? "").replace(/[&<>\"']/g, char => ({ "&":"&a
 const text = value => String(value ?? "").trim();
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const now = () => new Date().toISOString();
+const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+function parseJsonValue(value) {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+function findRuntimeReceipt(value, seen = new Set()) {
+  const parsed = parseJsonValue(value);
+  if (!parsed || typeof parsed !== "object") return null;
+  if (seen.has(parsed)) return null;
+  seen.add(parsed);
+  if (parsed.observedScene && parsed.approvedVersionId) return parsed;
+  for (const key of ["result", "output", "data", "payload"]) {
+    const found = findRuntimeReceipt(parsed[key], seen);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function dispatchRuntimePreview(request) {
+  const dispatchResponse = await fetch("/hub/api/pixie/preview", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ requestId: request.previewId, packet: request }),
+  });
+  const dispatchBody = await dispatchResponse.json().catch(() => ({}));
+  if (!dispatchResponse.ok || dispatchBody?.ok !== true) {
+    throw new Error(dispatchBody?.code || "PIXIE_DISPATCH_FAILED");
+  }
+
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await sleep(1000);
+    const pollResponse = await fetch(`/hub/api/pixie/preview/${encodeURIComponent(request.previewId)}`);
+    const pollBody = await pollResponse.json().catch(() => ({}));
+    if (!pollResponse.ok || pollBody?.ok !== true) throw new Error(pollBody?.code || "PIXIE_MONITOR_READ_FAILED");
+    const watch = pollBody.watch;
+    if (!watch || watch.status === "WAIT") continue;
+    if (watch.status === "FAILED") {
+      return createPreviewResult(request, {
+        status: "FAILED",
+        renderer: "PIXIE_REMOTE_V1",
+        error: watch.result?.error || "PIXIE_RUNTIME_FAILED",
+      });
+    }
+    if (watch.status === "ANSWERED") {
+      const runtime = findRuntimeReceipt(watch.result);
+      if (!runtime?.observedScene) {
+        return createPreviewResult(request, {
+          status: "UNKNOWN",
+          renderer: "PIXIE_REMOTE_V1",
+          error: "PIXIE_OBSERVED_SCENE_MISSING",
+        });
+      }
+      if (runtime.approvedVersionId !== request.approvedVersionId) {
+        return createPreviewResult(request, {
+          status: "UNKNOWN",
+          renderer: "PIXIE_REMOTE_V1",
+          error: "PIXIE_APPROVED_VERSION_MISMATCH",
+        });
+      }
+      return createPreviewResult(request, {
+        status: "RENDERED",
+        observedScene: runtime.observedScene,
+        artifactRef: runtime.artifactRef,
+        renderer: "PIXIE_REMOTE_V1",
+      });
+    }
+    return createPreviewResult(request, {
+      status: "UNKNOWN",
+      renderer: "PIXIE_REMOTE_V1",
+      error: `PIXIE_MONITOR_STATUS_${watch.status || "UNKNOWN"}`,
+    });
+  }
+  return createPreviewResult(request, {
+    status: "UNKNOWN",
+    renderer: "PIXIE_REMOTE_V1",
+    error: "PIXIE_RUNTIME_TIMEOUT",
+  });
+}
 
 function readStoredDesign() {
   try {
@@ -307,12 +387,13 @@ export function mountUiDesignLane(root) {
     commit(nextDesign);
     status(`${type} added to ${parentId}`);
   });
-  q(root, "[data-ui-design-preview-action]")?.addEventListener("click", () => {
+  q(root, "[data-ui-design-preview-action]")?.addEventListener("click", async () => {
     try {
       const request = createPixiePreviewRequest(design, { target: "PIXIE" });
-      const preview = createPreviewResult(request, { renderer: "PIXIE_LOCAL_PREVIEW_V1" });
+      status(`PIXIE dispatch queued · ${request.approvedVersionId}`);
+      const preview = await dispatchRuntimePreview(request);
       commit(recordPreviewResult(design, preview));
-      status(`PIXIE preview rendered · ${preview.approvedVersionId}`);
+      status(`PIXIE ${preview.status.toLowerCase()} · ${preview.approvedVersionId}`);
     } catch (error) { status(error.message); }
   });
   q(root, "[data-ui-design-readback-action]")?.addEventListener("click", () => {

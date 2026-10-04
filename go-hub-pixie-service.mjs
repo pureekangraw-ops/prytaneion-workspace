@@ -1,4 +1,4 @@
-const PIXIE_REPOSITORY = "pureekangraw-ops/Go-Calalog-";
+const PIXIE_REPOSITORY = "pureekangraw-ops/Ergasterion-factory";
 const PIXIE_WORKFLOW = "pixie-lab-v1.yml";
 const PIXIE_REF = "main";
 const PIXIE_STATE_REF = "pixie-runtime-state";
