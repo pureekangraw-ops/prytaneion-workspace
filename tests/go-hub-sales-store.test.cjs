@@ -23,3 +23,17 @@ test('sales public observations cannot fabricate paid orders and duplicate event
 test('missing sales storage reports unavailable instead of an empty successful funnel',async()=>{
  const {createSalesStore}=await load();await assert.rejects(()=>createSalesStore().list(),/SALES_STORE_NOT_CONFIGURED/);
 });
+
+
+test('SPECTRUM storefront context survives Centre intake and strips query fragments',async()=>{
+ const {createSalesStore}=await load(),store=createSalesStore({storage:bucket()});
+ await store.brief('upsert',{
+   briefId:'BRIEF-SVC-1',clientId:'CLIENT-SVC-1',conversationId:'CONV-SVC-1',
+   brief:{goal:'New web',serviceLine:'DIGITAL',entryService:'digital',sourcePage:'/client?service=digital#top',jobType:'WEB_EXPERIENCE'}
+ });
+ const saved=(await store.list()).briefs[0].brief;
+ assert.equal(saved.serviceLine,'DIGITAL');
+ assert.equal(saved.entryService,'digital');
+ assert.equal(saved.sourcePage,'/client');
+ assert.equal(saved.jobType,'WEB_EXPERIENCE');
+});
