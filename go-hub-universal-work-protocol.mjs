@@ -3,12 +3,15 @@ export const UNIVERSAL_WORK_PROTOCOL_VERSION = "UNIVERSAL_WORK_PROTOCOL_V1";
 export const UNIVERSAL_WORK_EVENTS = Object.freeze([
   "CREATE",
   "RECEIVED",
-  "ACKNOWLEDGE",
   "RESUME",
   "EXECUTE",
   "RETURN",
   "VERIFY",
   "CLOSE",
+]);
+
+export const UNIVERSAL_WORK_HANDOFF_EVENTS = Object.freeze([
+  "ACKNOWLEDGE",
 ]);
 
 export const UNIVERSAL_WORK_EXCEPTION_EVENTS = Object.freeze([
@@ -46,6 +49,7 @@ export const UNIVERSAL_WORK_ACTORS = Object.freeze([
 
 const ALL_EVENTS = new Set([
   ...UNIVERSAL_WORK_EVENTS,
+  ...UNIVERSAL_WORK_HANDOFF_EVENTS,
   ...UNIVERSAL_WORK_EXCEPTION_EVENTS,
 ]);
 const STATUS_SET = new Set(UNIVERSAL_WORK_STATUSES);
@@ -378,6 +382,7 @@ export function universalWorkProtocolOverview() {
   return Object.freeze({
     contract: UNIVERSAL_WORK_PROTOCOL_VERSION,
     events: UNIVERSAL_WORK_EVENTS,
+    handoffEvents: UNIVERSAL_WORK_HANDOFF_EVENTS,
     exceptionEvents: UNIVERSAL_WORK_EXCEPTION_EVENTS,
     statuses: UNIVERSAL_WORK_STATUSES,
     actors: UNIVERSAL_WORK_ACTORS,
