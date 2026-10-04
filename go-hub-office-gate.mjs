@@ -1,4 +1,5 @@
 import { officeShell, OFFICE_PAGES } from "./go-hub-office-shell.mjs";
+import { metroShell } from "./go-hub-metro-shell.mjs";
 import { createOfficeOverview } from "./go-hub-office-overview.mjs";
 // Compatibility contract: the human pages still preserve the Centre-backed
 // tracker selectors data-work-tracker, data-work-form, data-work-list,
@@ -21,6 +22,7 @@ const OFFICE_ASSET_MAX_BYTES = 10 * 1024 * 1024;
 const OFFICE_ASSET_TYPES = new Set(["image/png","image/jpeg","image/webp"]);
 
 const OFFICE_ALLOWED = new Map([
+  ["/metro", new Set(["GET"])],
   ["/office", new Set(["GET"])],
   ["/office/", new Set(["GET"])],
   ...Object.keys(OFFICE_PAGES).filter(path=>path!=="/office").map(path=>[path,new Set(["GET"])]),
@@ -300,7 +302,7 @@ function loginPage(errorCode = "") {
 export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, passkey = null, rateLimiter = null, audit = null, overview = null } = {}) {
   return Object.freeze({
     owns(pathname) {
-      return pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
+      return pathname === "/metro" || pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
     },
 
     async fetch(request, env) {
@@ -492,6 +494,8 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         await recordAudit(audit, "OFFICE_ASSET_UPLOADED", { assetId, key, size, type, sha256:hash });
         return json({ ok:true, asset:officeAssetSummary(readback) }, 201);
       }
+
+      if (url.pathname === "/metro") return html(metroShell());
 
       if (OFFICE_PAGES[url.pathname] || url.pathname === OFFICE_ROOT + "/") {
         return html(officeShell(OFFICE_PAGES[url.pathname] || "home"));
