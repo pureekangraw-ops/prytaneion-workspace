@@ -174,7 +174,6 @@
     "ERGASTERION_FACTORY_URL": "https://ergasterion-factory.pureekangraw.workers.dev",
     "PIXIE_REPOSITORY": "pureekangraw-ops/Ergasterion-factory",
     "PIXIE_RUNTIME_REF": "feat/ui-scene-runtime-readback-v1",
-    "PIXIE_WORKFLOW": "pixie-lab-v1.yml",
     "LIGHT_BELL_PAGE_ID": "88970e1da0a64ceebaa1ac1928361911",
     "COUNTER_HANDOFF_AGENT_URL": "agent://1277043d-9861-8158-a732-000347bf2bab/3e27043d-9861-8026-8e4b-009237cacaec",
     "MIRROR_REFRESH_AGENT_URL": "agent://1277043d-9861-8158-a732-000347bf2bab/3e27043d-9861-800e-9b05-00926ce24c3a",

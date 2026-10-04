@@ -748,7 +748,6 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         const pixie = createPixieCommandService({
           token: env?.GITHUB_TOKEN,
           repository: env?.PIXIE_REPOSITORY,
-          workflow: env?.PIXIE_WORKFLOW,
           ref: env?.PIXIE_RUNTIME_REF,
         });
         const bridge = createPixiePreviewBridge({
