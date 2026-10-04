@@ -95,7 +95,7 @@ test("Factory reality return preserves Centre identity and returns real workbenc
   assert.equal(packet.payload.status, "RETURNED");
   assert.equal(packet.payload.repository, "pureekangraw-ops/standard-");
   assert.equal(packet.payload.state, "CI_GREEN");
-  assert.equal(packet.payload.nextAction, "merge");
+  assert.equal(packet.payload.nextAction, "MERGE_READY");
   assert.equal(packet.payload.refs.headSha, "head-sha");
   assert.equal(packet.payload.pullRequest.number, 51);
   assert.equal(packet.payload.ci.status, "success");
