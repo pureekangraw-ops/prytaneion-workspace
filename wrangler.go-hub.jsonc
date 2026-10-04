@@ -3,6 +3,7 @@
   "name": "go-hub",
   "main": "go-hub-edge-worker.mjs",
   "compatibility_date": "2026-09-14",
+  "previews": {},
   "keep_vars": true,
   "browser": {
     "binding": "BROWSER"
