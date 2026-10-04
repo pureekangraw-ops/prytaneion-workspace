@@ -182,3 +182,18 @@ export function createVerifiedReturn(input = {}) {
 export function reportAudience(agentId) {
   return getAgentRole(agentId).reportsTo;
 }
+
+
+export function agentRuntimeDescriptor(agentId) {
+  const role = getAgentRole(agentId);
+  return Object.freeze({
+    contract:AGENT_FAMILY_VERSION,
+    agentId:role.id,
+    role:role.role,
+    counterSeat:role.counterSeat,
+    homeRuntime:role.homeRuntime,
+    reportsTo:role.reportsTo,
+    workTruthOwner:AGENT_FAMILY_POLICY.workTruthOwner,
+    intakeSurface:AGENT_FAMILY_POLICY.intakeSurface,
+  });
+}
