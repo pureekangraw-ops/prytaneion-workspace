@@ -30,6 +30,7 @@ const OFFICE_ALLOWED = new Map([
   [OFFICE_LOGOUT, new Set(["POST"])],
   [OFFICE_SESSION, new Set(["GET"])],
   ...["works","activity","health","system","sales"].map(name=>["/office/api/"+name,new Set(["GET"])]),
+  ["/office/api/quotes", new Set(["POST"])],
   ["/office/api/work", new Set(["GET"])],
   ["/office/api/command", new Set(["POST"])],
   ["/office/api/eye", new Set(["GET"])],
@@ -506,6 +507,17 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         const view = overview || createOfficeOverview({centre:centreLive});
         try { return json(await view[url.pathname.split("/").pop()]({view:url.searchParams.get("view")||"all",offset:Number(url.searchParams.get("offset")||0),cursor:url.searchParams.get("cursor")||undefined})); }
         catch { return json({code:"OFFICE_OVERVIEW_UNAVAILABLE",state:"UNKNOWN"},503); }
+      }
+
+      if (url.pathname === "/office/api/quotes") {
+        if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
+        if (!centreLive || typeof centreLive.action !== "function") return json({ code:"OFFICE_CENTRE_UNAVAILABLE" }, 503);
+        const body=await request.json().catch(()=>null),allowed=new Set(["quoteId","customerId","workId","amount","currency","status"]);
+        if(!body||typeof body!=="object"||Array.isArray(body)||Object.keys(body).some(key=>!allowed.has(key)))return json({code:"OFFICE_QUOTE_INVALID"},400);
+        const response=await centreLive.action({action:"quote_record",payload:body}),payload=await response.json().catch(()=>null);
+        if(!response.ok||!payload?.quote)return json({code:String(payload?.code||"OFFICE_QUOTE_REJECTED")},response.status||502);
+        await recordAudit(audit,"OFFICE_QUOTE_RECORDED",{quoteId:payload.quote.quoteId,workId:payload.quote.workId,status:payload.quote.status});
+        return json(payload,payload.duplicate?200:201);
       }
 
       if (url.pathname === "/office/api/work") {
