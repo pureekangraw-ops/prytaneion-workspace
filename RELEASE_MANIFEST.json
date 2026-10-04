@@ -222,6 +222,12 @@
     },
     {
       "path": "go-hub-office-login.js"
+    },
+    {
+      "path": "go-hub-ui-design-lane.js"
+    },
+    {
+      "path": "go-hub-ui-design-lane-model.mjs"
     }
   ],
   "serverRuntimeFiles": [

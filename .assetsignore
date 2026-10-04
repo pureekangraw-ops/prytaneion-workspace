@@ -58,6 +58,8 @@ node_modules/**
 !/pixie-visual-workbench.css
 !/pixie-visual-workbench.js
 !/go-hub-visual-workbench-model.js
+!/go-hub-ui-design-lane.js
+!/go-hub-ui-design-lane-model.mjs
 !/project-viewer.html
 !/project-viewer.css
 !/project-viewer.js

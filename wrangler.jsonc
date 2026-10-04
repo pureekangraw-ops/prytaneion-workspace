@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "normalpocket",
   "compatibility_date": "2026-08-02",
+  "previews": {},
   "assets": {
     "directory": "."
   }
