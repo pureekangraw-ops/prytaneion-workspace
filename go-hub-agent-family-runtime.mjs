@@ -109,3 +109,11 @@ export function agentFamilyOverview(){
     ),
   });
 }
+
+
+export function agentFamilyStatus(input={}) {
+  const action=String(input.action||"overview").trim().toLowerCase();
+  if(action==="overview") return agentFamilyOverview();
+  if(action==="route") return getAgentHomeRoute(input.agentId);
+  throw new Error("AGENT_FAMILY_ACTION_INVALID:"+action);
+}
