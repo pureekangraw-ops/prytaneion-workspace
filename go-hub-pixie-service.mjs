@@ -1,4 +1,3 @@
-import { agentRuntimeDescriptor } from "./go-hub-agent-family.mjs";
 const PIXIE_REPOSITORY = "pureekangraw-ops/Go-Calalog-";
 const PIXIE_WORKFLOW = "pixie-lab-v1.yml";
 const PIXIE_REF = "main";
@@ -96,7 +95,6 @@ export function createPixieCommandService({
       }
       return json({
         ok:true,
-        agent:agentRuntimeDescriptor("PIXIE"),
         status:"QUEUED",
         requestId:id,
         command:envelope.name,
@@ -123,7 +121,7 @@ export function createPixieCommandService({
         return json({ code:"PIXIE_RESULT_UNREACHABLE", message:error?.message || "GitHub result read failed" }, 502);
       }
       if (response.status === 404) {
-        return json({ ok:true, agent:agentRuntimeDescriptor("PIXIE"), status:"WAIT", requestId:id, reason:"PIXIE_RESULT_NOT_READY" });
+        return json({ ok:true, status:"WAIT", requestId:id, reason:"PIXIE_RESULT_NOT_READY" });
       }
       if (!response.ok) {
         return json({ code:"PIXIE_RESULT_UPSTREAM_ERROR", upstreamStatus:response.status }, 502);
@@ -141,7 +139,6 @@ export function createPixieCommandService({
       if (observedRequestId !== id) {
         return json({
           ok:true,
-          agent:agentRuntimeDescriptor("PIXIE"),
           status:"WAIT",
           requestId:id,
           reason:"PIXIE_RESULT_NOT_READY",
@@ -151,7 +148,6 @@ export function createPixieCommandService({
 
       return json({
         ok:true,
-        agent:agentRuntimeDescriptor("PIXIE"),
         status:result?.ok === true ? "ANSWERED" : "FAILED",
         requestId:id,
         result,
