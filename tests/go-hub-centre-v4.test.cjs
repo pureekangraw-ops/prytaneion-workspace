@@ -19,16 +19,13 @@ test("one active Work has one holder and Work Pass destinations", async () => {
   assert.equal(work.pass.openedBy,"heimdall");
 });
 
-test("Maintenance Pass exposes all GO Hub owned areas but remains Work-bound", async () => {
+test("Maintenance Pass reuses Work authority and stays inside explicit Work scope", async () => {
   const { createWorkRecord,claimWork,openWorkPass }=await mod();
   let work=createWorkRecord({workId:"WM",name:"Maintenance",command:"repair route",expectedResult:"route verified",requestedDestinations:["maintenance"]});
   work=claimWork(work,{actor:"GO"});
-  assert.throws(()=>openWorkPass(work,{kind:"MAINTENANCE"}),/BIG-approved repair scope/);
-  assert.throws(()=>openWorkPass(work,{kind:"MAINTENANCE",audit:{ownerApproval:"BIG_APPROVED"}}),/repair scope/);
-  work=openWorkPass(work,{kind:"MAINTENANCE",audit:{ownerApproval:"BIG_APPROVED",approvedBy:"BIG",repairScope:["repair route"]}});
-  assert.deepEqual(work.pass.allowedDestinations,["ALL_GO_HUB_OWNED_AREAS"]);
-  assert.equal(work.pass.audit.ownerApproval,"BIG_APPROVED");
-  assert.deepEqual(work.pass.audit.repairScope,["repair route"]);
+  work=openWorkPass(work,{kind:"MAINTENANCE"});
+  assert.deepEqual(work.pass.allowedDestinations,["maintenance"]);
+  assert.equal(work.pass.audit,null);
 });
 
 test("Return can only be written by holder and closes Pass", async () => {
