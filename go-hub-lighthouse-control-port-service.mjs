@@ -99,8 +99,15 @@ export function prismPairingPage() {
 <p id="status" role="status" aria-live="polite"></p><label>ข้อมูลจับคู่<textarea id="bootstrap" readonly spellcheck="false" placeholder="ข้อมูลจะแสดงหลังสร้าง session สำเร็จ"></textarea></label><p><button id="copy" type="button" disabled>คัดลอกข้อมูลจับคู่</button></p>
 <p>เปิด PRISM → Home → เชื่อมต่อฮับ → วางข้อมูลจับคู่ → เชื่อม GO Hub รอจนแอปแสดง “เชื่อม GO Hub แล้ว”</p>
 <p>เก็บข้อมูลจับคู่นี้เป็นส่วนตัว การสร้าง session ใหม่จะเปลี่ยน session เดิม</p>
+<hr style="margin:30px 0;border:0;border-top:1px solid #343b48">
+<h2>จับคู่ Browser Eye กับ Factory</h2>
+<p>ใช้ส่วนนี้เมื่อ PRISM แสดง <code>PAIRING_REQUIRED</code> ใต้ “อ่านหน้าเว็บให้โก” ข้อมูลนี้ผูกกับ Work + Checkpoint เดียวและให้สิทธิ์อ่านหลักฐานหน้าเว็บเท่านั้น</p>
+<form id="observer-pair"><label>รหัสเจ้าของ GO Hub<input id="observer-passcode" type="password" autocomplete="current-password" required></label><label>Work ID<input id="observer-work" value="WORK-FINISH-PRISM-WEB-EYE-20261004-20261004-001" maxlength="240" required></label><label>Checkpoint ID<input id="observer-checkpoint" value="CP-WORK-FINISH-PRISM-WEB-EYE-20261004-20261004-001" maxlength="240" required></label><label>ชื่ออะแดปเตอร์<input id="observer-adapter" value="PRISM-ANDROID" maxlength="160" required></label><button type="submit">สร้าง Browser Eye pairing</button></form>
+<p id="observer-status" role="status" aria-live="polite"></p><label>ข้อมูลจับคู่จาก Factory<textarea id="observer-bootstrap" readonly spellcheck="false" placeholder="ข้อมูลจะแสดงหลังสร้าง pairing สำเร็จ"></textarea></label><p><button id="observer-copy" type="button" disabled>คัดลอก Browser Eye pairing</button></p>
+<p>นำ JSON นี้ไปวางใน PRISM → Home → “อ่านหน้าเว็บให้โก” → “ข้อมูลจับคู่จาก Factory” → “จับคู่การอ่านหน้าเว็บ”</p>
 <script>
 const pair=document.getElementById('pair'),passcode=document.getElementById('passcode'),label=document.getElementById('label'),bootstrap=document.getElementById('bootstrap'),status=document.getElementById('status'),copy=document.getElementById('copy');
+const observerPair=document.getElementById('observer-pair'),observerPasscode=document.getElementById('observer-passcode'),observerWork=document.getElementById('observer-work'),observerCheckpoint=document.getElementById('observer-checkpoint'),observerAdapter=document.getElementById('observer-adapter'),observerBootstrap=document.getElementById('observer-bootstrap'),observerStatus=document.getElementById('observer-status'),observerCopy=document.getElementById('observer-copy');
 let creating=false;
 pair.addEventListener('submit',async e=>{
   e.preventDefault();if(creating)return;creating=true;bootstrap.value='';copy.disabled=true;status.textContent='กำลังสร้าง session…';
@@ -117,6 +124,23 @@ copy.addEventListener('click',async()=>{
   if(!bootstrap.value)return;
   try{await navigator.clipboard.writeText(bootstrap.value);status.textContent='คัดลอกแล้ว เปิด PRISM แล้ววางในช่องเชื่อมต่อฮับ';}
   catch{status.textContent='คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกและคัดลอกข้อมูลจากช่องด้านบน';}
+});
+let observerCreating=false;
+observerPair.addEventListener('submit',async e=>{
+  e.preventDefault();if(observerCreating)return;observerCreating=true;observerBootstrap.value='';observerCopy.disabled=true;observerStatus.textContent='กำลังสร้าง Browser Eye pairing…';
+  try{
+    const pending=fetch('/hub/api/lighthouse-control-port/prism/observer/session/start',{method:'POST',headers:{'content-type':'application/json','x-go-owner-passcode':observerPasscode.value},body:JSON.stringify({workContext:{workId:observerWork.value,checkpointId:observerCheckpoint.value},adapterId:observerAdapter.value,ttlSeconds:86400})});
+    observerPasscode.value='';
+    const response=await pending;const body=await response.json().catch(()=>null);
+    if(!response.ok||!body?.ok)throw new Error(body?.code||'PRISM_OBSERVER_PAIRING_FAILED');
+    observerBootstrap.value=JSON.stringify(body,null,2);observerCopy.disabled=false;observerStatus.textContent='Browser Eye pairing พร้อมแล้ว นำไปวางใน PRISM';
+  }catch(error){observerStatus.textContent=error.message==='OWNER_AUTH_FAILED'?'รหัสเจ้าของไม่ถูกต้อง กรุณาลองใหม่':('สร้าง Browser Eye pairing ไม่สำเร็จ: '+(error.message||'PRISM_OBSERVER_PAIRING_FAILED'));}
+  finally{observerPasscode.value='';observerCreating=false;}
+});
+observerCopy.addEventListener('click',async()=>{
+  if(!observerBootstrap.value)return;
+  try{await navigator.clipboard.writeText(observerBootstrap.value);observerStatus.textContent='คัดลอกแล้ว กลับ PRISM แล้ววางในช่องข้อมูลจับคู่จาก Factory';}
+  catch{observerStatus.textContent='คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกและคัดลอกจากช่องด้านบน';}
 });
 </script></main></body></html>`,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'}});
 }
@@ -304,7 +328,7 @@ transfer.addEventListener('submit',async e=>{
   });
 }
 
-export function createLighthouseControlPortHttpService({ namespace, ownerPasscode, prismService = null } = {}) {
+export function createLighthouseControlPortHttpService({ namespace, ownerPasscode, prismService = null, prismEye = null } = {}) {
   return Object.freeze({
     async fetch(request) {
       const url = new URL(request.url);
@@ -389,6 +413,34 @@ export function createLighthouseControlPortHttpService({ namespace, ownerPasscod
           const code = clean(error?.message || "HUB_UNAVAILABLE");
           return json({ code }, statusFor(code));
         }
+      }
+
+      if (url.pathname === `${LIGHTHOUSE_CONTROL_PORT_API_ROOT}/prism/observer/session/start`) {
+        const configured = clean(ownerPasscode);
+        const supplied = clean(request.headers.get("x-go-owner-passcode"));
+        if (!configured) return json({ code:"OWNER_AUTH_NOT_CONFIGURED" }, 503);
+        if (!constantTimeEqual(supplied, configured)) return json({ code:"OWNER_AUTH_FAILED" }, 403);
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json({ code:"INVALID_JSON" }, 400);
+        const workContext = {
+          workId:clean(body?.workContext?.workId),
+          checkpointId:clean(body?.workContext?.checkpointId),
+        };
+        const adapterId = clean(body?.adapterId) || "PRISM-ANDROID";
+        if (!workContext.workId || !workContext.checkpointId) return json({ code:"WORK_CONTEXT_REQUIRED" }, 400);
+        if (!prismEye?.session) return json({ code:"PRISM_FACTORY_TRANSPORT_NOT_CONFIGURED" }, 503);
+        const response = await prismEye.session({
+          action:"issue",
+          adapterId,
+          ttlSeconds:body.ttlSeconds == null ? 86400 : body.ttlSeconds,
+          requestId:clean(body.requestId) || crypto.randomUUID(),
+          workContext,
+        });
+        const raw = await response.text();
+        let result = null;
+        try { result = raw ? JSON.parse(raw) : {}; }
+        catch { return json({ code:"PRISM_FACTORY_NON_JSON" }, 502); }
+        return json(result, response.status, cors || {});
       }
 
       if (url.pathname === `${LIGHTHOUSE_CONTROL_PORT_API_ROOT}/session/start`) {
