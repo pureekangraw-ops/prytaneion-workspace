@@ -29,6 +29,7 @@ import { createAgentMissionService } from "./go-hub-agent-mission.mjs";
 import { createAgentPersonaRoom } from "./go-hub-agent-persona-room.mjs";
 import { createAgentLensRoom } from "./go-hub-agent-lens-room.mjs";
 import { createAgentFittingRoom } from "./go-hub-agent-fitting-room.mjs";
+import { agentFamilyStatus } from "./go-hub-agent-family-runtime.mjs";
 import { sealReadyGate } from "./go-hub-ready-gate.js";
 
 const LIGHT_REPOSITORY_READ_TOOLS = new Set([
@@ -883,6 +884,7 @@ export function createFactoryMcpWorker({ fetchImpl = fetch } = {}) {
           ergasterionHandoff: input => runMutation("factory.ergasterion_handoff", input, () => ergasterion.handoff(input)),
           aionResolve: async input => json(await olympusAion.resolve(input)),
           aionRegistry: async () => json(await olympusAion.registry()),
+          agentFamilyStatus: input => json(agentFamilyStatus(input)),
           factoryV4: async input => {
             const routed = { ...input, workId:input?.workContext?.workId };
             if (input.action === "inspect") return factoryV4(routed);
