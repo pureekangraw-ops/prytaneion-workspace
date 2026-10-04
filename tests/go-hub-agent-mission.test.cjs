@@ -1431,8 +1431,8 @@ test("HERMES mission return adapter preserves Work identity and waits for VERIFY
     assert.equal(returned.lifecycle.workStatus, expectedStatus);
     assert.equal(returned.lifecycle.nextEvent, "VERIFY");
     assert.equal(returned.lifecycle.closeAllowed, false);
-    assert.equal(returned.card.workId, workContext.workId);
-    assert.equal(returned.card.checkpointId, workContext.checkpointId);
+    assert.equal(returned.workContext.workId, workContext.workId);
+    assert.equal(returned.workContext.checkpointId, workContext.checkpointId);
 
     const inspected = await body(await centreLive.action({ action:"v4_mission_get", ...workContext }));
     assert.equal(inspected.work.workId, workContext.workId);
