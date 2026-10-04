@@ -1,79 +1,66 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
+const test=require("node:test");
+const assert=require("node:assert/strict");
 
-test("PIXIE runtime response carries shared Agent family identity without new authority", async () => {
-  const { createPixieCommandService } = await import("../go-hub-pixie-service.mjs");
-  const service = createPixieCommandService({
-    token:"test-token",
-    fetchImpl:async () => new Response(null, { status:204 }),
+test("Agent runtime routes preserve Work identity and do not expand authority", async()=>{
+  const { prepareAgentDispatch }=await import("../go-hub-agent-family-runtime.mjs");
+  const prepared=prepareAgentDispatch({
+    agentId:"PIXIE",
+    workId:"WORK-1",
+    checkpointId:"CP-1",
+    requestedResult:"inspect factory state",
+    acceptanceCriteria:["owner source readback"],
   });
-  const response = await service.command({ requestId:"REQ-AGENT-FAMILY-1", command:"inspect", args:{} });
-  const body = await response.json();
-  assert.equal(response.status, 202);
-  assert.equal(body.agent.agentId, "PIXIE");
-  assert.equal(body.agent.homeRuntime, "PIXIE_LAB_GO_WORKS");
-  assert.equal(body.agent.workTruthOwner, "CENTRE");
-  assert.deepEqual(body.agent.reportsTo, ["GO"]);
+  assert.equal(prepared.envelope.workId,"WORK-1");
+  assert.equal(prepared.envelope.checkpointId,"CP-1");
+  assert.equal(prepared.handoff.to,"PIXIE_LAB_GO_WORKS");
+  assert.equal(prepared.handoff.authorityExpanded,false);
+  assert.equal(prepared.handoff.checkpointPreserved,true);
 });
 
-test("SPECTRUM sales seam identifies Web/Office home while preserving receipt behavior", async () => {
-  const { createSalesStore } = await import("../go-hub-sales-store.mjs");
-  const rows = new Map();
-  const storage = {
-    get:async key => rows.get(key),
-    put:async (key,value) => rows.set(key, structuredClone(value)),
-    list:async ({prefix}) => new Map([...rows].filter(([key]) => key.startsWith(prefix))),
-  };
-  const store = createSalesStore({ storage });
-  const saved = await store.brief("upsert", {
-    briefId:"BRIEF-1",
-    clientId:"CLIENT-1",
-    conversationId:"CONV-1",
-    brief:{ goal:"website" },
-  });
-  assert.equal(saved.agent.agentId, "SPECTRUM");
-  assert.equal(saved.agent.homeRuntime, "WEB_OFFICE_STOREFRONT");
-  assert.ok(saved.receipt);
-  const listed = await store.list();
-  assert.equal(listed.agent.agentId, "SPECTRUM");
-  assert.equal(listed.source, "CENTRE_SPECTRUM_INTAKE");
+test("HERMES remains stationary transport home", async()=>{
+  const { getAgentHomeRoute }=await import("../go-hub-agent-family-runtime.mjs");
+  const route=getAgentHomeRoute("HERMES");
+  assert.equal(route.home,"CENTRE_TRANSPORT_STATION");
+  assert.deepEqual(route.entryTools,["go_hub_agent_mission"]);
 });
 
-test("MIMIR housekeeping plan is an Agent-family projection but remains non-mutating", async () => {
-  const { planReturnHousekeeping, assertMimirHousekeepingSafety } = await import("../go-hub-mimir-logic-v1.mjs");
-  const plan = planReturnHousekeeping({
-    planId:"PLAN-1",
-    policy:{ policyRef:"POLICY-1", allowDeleteCandidates:false },
-    returnEnvelope:{
-      returnId:"RETURN-1",
-      workId:"WORK-1",
-      checkpointId:"CP-1",
-      items:[{
-        itemId:"ITEM-1",
-        kind:"RESULT",
-        ref:"result://1",
-        lifecycleStatus:"current",
-        duplicateState:"none",
-        protected:false,
-        evidenceRefs:["evidence://1"],
-        lineageRefs:[],
-      }],
-    },
-  });
-  assert.equal(plan.agent.agentId, "MIMIR");
-  assert.equal(plan.agent.homeRuntime, "CENTRE_HOUSEKEEPING");
-  assert.equal(plan.writePerformed, false);
-  assert.equal(plan.sourceMutationAllowed, false);
-  assert.equal(assertMimirHousekeepingSafety(plan), true);
+test("MIMIR receives Centre returns rather than acting as general Counter helper", async()=>{
+  const { getAgentHomeRoute }=await import("../go-hub-agent-family-runtime.mjs");
+  const route=getAgentHomeRoute("MIMIR");
+  assert.equal(route.receive,"CENTRE_RETURN");
+  assert.equal(route.agent.counterSeat,"DEFINED_NOT_PUBLISHED");
+  assert.equal(route.home,"CENTRE_HOUSEKEEPING");
 });
 
-test("HERMES and LIGHT share the same family contract with different homes", async () => {
-  const { agentRuntimeDescriptor } = await import("../go-hub-agent-family.mjs");
-  const hermes = agentRuntimeDescriptor("HERMES");
-  const light = agentRuntimeDescriptor("LIGHT");
-  assert.equal(hermes.contract, light.contract);
-  assert.equal(hermes.homeRuntime, "CENTRE_TRANSPORT_STATION");
-  assert.equal(light.homeRuntime, "NOTION_KNOWLEDGE_RUNTIME");
-  assert.ok(hermes.reportsTo.includes("LIGHT"));
-  assert.ok(light.reportsTo.includes("BIG"));
+test("verified return goes back to Centre and COMPLETE still needs readback", async()=>{
+  const { prepareAgentReturn }=await import("../go-hub-agent-family-runtime.mjs");
+  assert.throws(()=>prepareAgentReturn({
+    agentId:"SPECTRUM",
+    workId:"WORK-2",
+    checkpointId:"CP-2",
+    requestedResult:"web status",
+    status:"COMPLETE",
+  }),/AGENT_COMPLETE_REQUIRES_EVIDENCE_AND_READBACK/);
+
+  const returned=prepareAgentReturn({
+    agentId:"SPECTRUM",
+    workId:"WORK-2",
+    checkpointId:"CP-2",
+    requestedResult:"web status",
+    status:"COMPLETE",
+    evidenceRefs:["office://readback/1"],
+    readback:{source:"OFFICE",state:"MATCHED"},
+    result:{summary:"healthy"},
+  });
+  assert.equal(returned.to,"CENTRE");
+  assert.equal(returned.from,"WEB_OFFICE_STOREFRONT");
+  assert.equal(returned.authorityExpanded,false);
+});
+
+test("BIG GO and LIGHT receive reports from the intended agents", async()=>{
+  const { agentRuntimeDescriptor }=await import("../go-hub-agent-family.mjs");
+  assert.deepEqual(agentRuntimeDescriptor("PIXIE").reportsTo,["GO"]);
+  assert.ok(agentRuntimeDescriptor("SPECTRUM").reportsTo.includes("BIG"));
+  assert.ok(agentRuntimeDescriptor("HERMES").reportsTo.includes("LIGHT"));
+  assert.ok(agentRuntimeDescriptor("LIGHT").reportsTo.includes("GO"));
 });
