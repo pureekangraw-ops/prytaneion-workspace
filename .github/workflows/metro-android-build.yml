@@ -1,0 +1,43 @@
+name: METRO Android build
+
+on:
+  pull_request:
+    paths:
+      - "android/metro/**"
+      - ".github/workflows/metro-android-build.yml"
+  workflow_dispatch:
+    inputs:
+      metro_url:
+        description: "HTTPS METRO URL to package"
+        required: false
+        default: "https://office.yggmetro.com/metro"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android/metro
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Build METRO debug APK
+        run: >-
+          gradle --no-daemon :app:assembleDebug
+          -PmetroUrl=${{ inputs.metro_url || 'https://office.yggmetro.com/metro' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metro-android-debug
+          path: android/metro/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
