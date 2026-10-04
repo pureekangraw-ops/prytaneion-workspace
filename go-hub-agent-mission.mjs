@@ -2,6 +2,7 @@ import { createMissionCard, missionTicketSearchCode } from "./go-hub-mission-car
 import { workCardView } from "./go-hub-work-card.js";
 import { CARD_HISTORY_RESET, currentCardHistoryPins, cardHistoryPolicyView } from "./go-hub-card-history-policy.mjs";
 import { translateAgentAction } from "./go-hub-agent-family-runtime.mjs";
+import { createInterruptionRecovery, normalizeWorkLineage } from "./go-hub-master-architecture.mjs";
 
 const text = value => String(value ?? "").trim();
 const clone = value => value == null ? value : structuredClone(value);
@@ -443,25 +444,23 @@ export function createAgentMissionService({
     const unknownGap = input.unknownGap !== undefined
       ? input.unknownGap
       : input.unknowns !== undefined ? input.unknowns : (reality.unknownGap || reality.unknowns || []);
-    return {
-      mode:text(input.recoveryMode || input.mode || mode).toUpperCase(),
-      custody:"HERMES",
+    return createInterruptionRecovery({
+      workId:resolved.workContext?.workId || resolved.work?.workId,
+      checkpointId:resolved.workContext?.checkpointId || resolved.work?.checkpointId,
       actor:text(input.actor || resolved.current?.mission?.session?.agentId || ticket.agentId || "GO").toUpperCase(),
       lastSafePoint:text(input.lastSafePoint || input.safePoint || input.lastLocation || ticket.lastSafePoint || reality.lastKnownState) || null,
       lastAction:text(input.lastAction || ticket.lastAction) || null,
       lastLocation:text(input.lastLocation || ticket.lastLocation || reality.lastLocation) || null,
       observedAt,
-      timestamp:observedAt,
-      evidenceRefs:clone(evidenceRefs(evidence)),
+      evidenceRefs:evidenceRefs(evidence),
       receipt:clone(input.receipt || reality.receipt || null),
       repo:text(input.repo || input.repository || reality.repo || reality.repository) || null,
       pr:text(input.pr || input.pullRequest || reality.pr || reality.pullRequest) || null,
       sha:text(input.sha || input.commitSha || reality.sha || reality.commitSha) || null,
       unknownGap:unique(unknownGap),
       interruptCause:text(input.interruptCause || input.cause || reality.interruptCause || reality.cause) || null,
-      autoRetry:false,
-      autoRollback:false,
-    };
+      mode:text(input.recoveryMode || input.mode || mode).toUpperCase(),
+    });
   }
 
   async function inspectWork(workContext) {
@@ -979,8 +978,10 @@ export function createAgentMissionService({
     const recommendedTools = unique(input.recommendedTools?.length
       ? input.recommendedTools
       : unique(input.destinations).flatMap(destinationTools));
+    const creationAction = text(input.creationAction || "v4_create");
     const created = await centre({
-      action:"v4_create",
+      action:creationAction,
+      ...(creationAction === "v4_create_derived" ? { sourceWorkId:text(input.sourceWorkId) } : {}),
       workId,
       work:{
         workId,
@@ -990,6 +991,7 @@ export function createAgentMissionService({
         requestedDestinations:unique(input.destinations),
         scope:unique(input.scope),
         workType:text(input.workType || "NORMAL").toUpperCase(),
+        lineage:normalizeWorkLineage(input.lineage || {}),
       },
     });
     const work = created.work;
@@ -1087,6 +1089,7 @@ export function createAgentMissionService({
       task:text(ticket.task || ticket.intent?.mission || current?.mission?.memory?.mission || current?.work?.command) || null,
       initialContext:clone(ticket.initialContext !== undefined ? ticket.initialContext : (ticket.context || current?.mission?.memory?.selectedContext || {})),
       status:text(ticket.status || reality.missionStatus || current?.work?.status) || null,
+      lineage:clone(current?.work?.lineage || reality.lineage || null),
       result:clone(ticket.result !== undefined ? ticket.result : (reality.result ?? null)),
       evidence:clone(ticket.evidence !== undefined ? ticket.evidence : (reality.evidence || [])),
       lastLocation:text(ticket.lastLocation || reality.lastLocation) || null,
@@ -1159,6 +1162,7 @@ export function createAgentMissionService({
       tabletId:tablet?.tabletId || resolved.tabletId || null,
       tablet,
       workContext:clone(resolved.workContext),
+      lineage:clone(resolved.work?.lineage || null),
       ownerReadback:clone(legacy.ownerReadback),
       compatibility:clone(resolved.compatibility || {
         mode:"CURRENT_TABLET",
@@ -1240,6 +1244,18 @@ export function createAgentMissionService({
       chooser:"GO",
       prompt:"สร้าง Work Tablet และเข้าใช้งานแล้ว จากนี้ GO เลือกข้อมูล/target/tool ใส่แท็บเล็ตเองได้",
     }, 201);
+  }
+
+  async function createDerivedTablet(input = {}) {
+    const sourceWorkId = text(input.sourceWorkId);
+    if (!sourceWorkId) return json({ code:"HERMES_SOURCE_WORK_ID_REQUIRED" }, 400);
+    const result = await createTablet({
+      ...input,
+      creationAction:"v4_create_derived",
+      sourceWorkId,
+      lineage:normalizeWorkLineage({ ...input.lineage, derivedFrom:sourceWorkId }),
+    });
+    return result;
   }
 
   async function pickupTablet(input = {}) {
@@ -2147,6 +2163,7 @@ export function createAgentMissionService({
       try {
         switch (text(input.action).toLowerCase()) {
           case "create_tablet": return await createTablet(input);
+          case "create_derived_tablet": return await createDerivedTablet(input);
           case "pickup_tablet": return await pickupTablet(input);
           case "emergency_enter": return await emergencyTabletEnter(input);
           case "help_choose": return await helpChooseTablet(input);
