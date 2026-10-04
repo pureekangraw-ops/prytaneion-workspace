@@ -10,7 +10,30 @@ async function setup() {
   const { LighthouseControlPortSessionRegistry } = await import(pathToFileURL(path.resolve(__dirname, '../go-hub-lighthouse-control-port-session.js')));
   const data = new Map();
   const registry = new LighthouseControlPortSessionRegistry({ storage:{get:async k=>data.get(k),put:async(k,v)=>data.set(k,v)} });
-  const env = { GOHUB_OWNER_PASSCODE:'test-owner', LIGHTHOUSE_CONTROL_PORT_SESSIONS:{getByName:()=>registry} };
+  const env = {
+    GOHUB_OWNER_PASSCODE:'test-owner',
+    ERGASTERION_HUB_SHARED_SECRET:'factory-secret',
+    LIGHTHOUSE_CONTROL_PORT_SESSIONS:{getByName:()=>registry},
+    ERGASTERION_FACTORY:{fetch:async request=>{
+      const payload=await request.clone().json();
+      const workContext=payload.workContext||{};
+      if(payload.operation!=='issue')return Response.json({ok:false,code:'UNEXPECTED_OPERATION',source:'PRISM_BROWSER',workContext},{status:400});
+      return Response.json({
+        ok:true,
+        schemaVersion:'PRISM_OBSERVER_BOOTSTRAP_V1',
+        factoryOrigin:'https://ergasterion-factory.pureekangraw.workers.dev',
+        source:'PRISM_BROWSER',
+        observerVersion:'0.3.1',
+        sessionId:'observer-session-1',
+        adapterId:payload.adapterId,
+        sessionToken:'a'.repeat(64),
+        expiresAt:Date.now()+3600000,
+        workContext,
+        screenshotConsent:false,
+        createsAuthority:false,
+      },{status:201});
+    }},
+  };
   const handler = createEdgeWorkerHandler({delegate:{fetch:async()=>new Response('delegate')},factoryMcp:{fetch:async()=>new Response('mcp')}});
   return {data,fetch:(url,init)=>handler.fetch(new Request(new URL(url,origin),init),env)};
 }
@@ -33,7 +56,7 @@ test('rendered PRISM form issues a real session, clears passcode and copies only
   const html = await (await app.fetch('/hub/prism/pairing')).text();
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script,'pairing page must include its working form controller');
-  const nodes = Object.fromEntries(['pair','passcode','label','bootstrap','status','copy'].map(id=>[id,{value:'',textContent:'',disabled:false,addEventListener(event,fn){this[event]=fn;}}]));
+  const nodes = Object.fromEntries(['pair','passcode','label','bootstrap','status','copy','observer-pair','observer-passcode','observer-work','observer-checkpoint','observer-adapter','observer-bootstrap','observer-status','observer-copy'].map(id=>[id,{value:'',textContent:'',disabled:false,addEventListener(event,fn){this[event]=fn;}}]));
   nodes.passcode.value='test-owner'; nodes.label.value='PRISM phone';
   let copied;
   vm.runInNewContext(script,{document:{getElementById:id=>nodes[id]},fetch:app.fetch,navigator:{clipboard:{writeText:async value=>{copied=value;}}}});
@@ -53,6 +76,48 @@ test('rendered PRISM form issues a real session, clears passcode and copies only
   const read = await app.fetch('/hub/api/lighthouse-control-port/pull',{method:'POST',headers:{'x-lighthouse-session-id':bootstrap.session_id,'x-lighthouse-session-token':bootstrap.session_token}});
   assert.equal(read.status,200);
 });
+test('PRISM pairing page also issues a Factory Browser Eye bootstrap for one Work',async()=>{
+  const app=await setup();
+  const html=await (await app.fetch('/hub/prism/pairing')).text();
+  assert.match(html,/Browser Eye/);
+  assert.match(html,/observer-work/);
+  assert.match(html,/ข้อมูลจับคู่จาก Factory/);
+
+  const workContext={workId:'WORK-PRISM-EYE',checkpointId:'CP-WORK-PRISM-EYE'};
+  const response=await app.fetch('/hub/api/lighthouse-control-port/prism/observer/session/start',{
+    method:'POST',
+    headers:{'content-type':'application/json','x-go-owner-passcode':'test-owner'},
+    body:JSON.stringify({workContext,adapterId:'PRISM-ANDROID',ttlSeconds:3600}),
+  });
+  assert.equal(response.status,201);
+  const body=await response.json();
+  assert.equal(body.ok,true);
+  assert.equal(body.schemaVersion,'PRISM_OBSERVER_BOOTSTRAP_V1');
+  assert.equal(body.source,'PRISM_BROWSER');
+  assert.equal(body.adapterId,'PRISM-ANDROID');
+  assert.deepEqual(body.workContext,workContext);
+  assert.match(body.sessionToken,/^[a-f0-9]{64}$/);
+  assert.equal(body.createsAuthority,false);
+  assert.equal(JSON.stringify(body).includes('test-owner'),false);
+});
+
+test('Browser Eye pairing rejects wrong owner code and missing Work context',async()=>{
+  const app=await setup();
+  const wrong=await app.fetch('/hub/api/lighthouse-control-port/prism/observer/session/start',{
+    method:'POST',headers:{'content-type':'application/json','x-go-owner-passcode':'wrong'},
+    body:JSON.stringify({workContext:{workId:'W',checkpointId:'CP'}}),
+  });
+  assert.equal(wrong.status,403);
+  assert.equal((await wrong.json()).code,'OWNER_AUTH_FAILED');
+
+  const missing=await app.fetch('/hub/api/lighthouse-control-port/prism/observer/session/start',{
+    method:'POST',headers:{'content-type':'application/json','x-go-owner-passcode':'test-owner'},
+    body:JSON.stringify({workContext:{workId:'W',checkpointId:''}}),
+  });
+  assert.equal(missing.status,400);
+  assert.equal((await missing.json()).code,'WORK_CONTEXT_REQUIRED');
+});
+
 test('session issuer denies missing and wrong owner code without creating a session',async()=>{
   const app = await setup();
   for(const code of ['', 'wrong']){

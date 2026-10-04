@@ -981,6 +981,12 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
         return createLighthouseControlPortHttpService({
           namespace:env?.LIGHTHOUSE_CONTROL_PORT_SESSIONS,
           ownerPasscode:env?.GOHUB_OWNER_PASSCODE,
+          prismEye:createPrismEyeService({
+            fetchImpl,
+            endpoint:env?.ERGASTERION_FACTORY_URL,
+            secret:env?.ERGASTERION_HUB_SHARED_SECRET,
+            binding:env?.ERGASTERION_FACTORY,
+          }),
           prismService:createPrismControlPortService({
             centre:createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE}),
             counter:createCounterService({namespace:env?.GO_HUB_COUNTER_STATE,inboxNamespace:env?.GO_HUB_COUNTER_INBOX}),
