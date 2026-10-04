@@ -5,12 +5,13 @@ async function cookie(gate){const r=await gate.fetch(new Request('https://office
 test('Office navigation opens distinct authenticated pages, rather than scrolling a diagnostic feed',async()=>{
  const {createOfficeGate}=await mod('go-hub-office-gate.mjs'),gate=createOfficeGate(),auth=await cookie(gate);
  const home=await (await gate.fetch(new Request('https://office.example/office',{headers:{cookie:auth}}),env)).text();
- assert.match(home,/href="\/office\/work"/);assert.doesNotMatch(home,/href="#office-/);assert.doesNotMatch(home,/data-overview-system/);
+ assert.match(home,/href="\/office\/work"/);assert.match(home,/data-overview-activity/);assert.doesNotMatch(home,/href="#office-/);assert.doesNotMatch(home,/data-overview-system/);
  for(const [page,marker] of [['work','data-overview-works'],['results','data-overview-results'],['sales','data-overview-sales'],['files','data-office-assets']]){
   const r=await gate.fetch(new Request('https://office.example/office/'+page,{headers:{cookie:auth}}),env);assert.equal(r.status,200);const html=await r.text();assert.ok(html.includes(marker));assert.doesNotMatch(html,/data-overview-system/);
   assert.equal((await gate.fetch(new Request('https://office.example/office/'+page),env)).status,401);
  }
  const tools=await (await gate.fetch(new Request('https://office.example/office/tools',{headers:{cookie:auth}}),env)).text();assert.match(tools,/https:\/\/go-hub\.pureekangraw\.workers\.dev\/pixie-visual-workbench/);
+ const system=await (await gate.fetch(new Request('https://office.example/office/system',{headers:{cookie:auth}}),env)).text();assert.match(system,/data-overview-health/);assert.match(system,/data-overview-mismatches/);
 });
 test('current inventory filters history before pagination and puts owner decisions first',async()=>{
  const {GoHubCentreState}=await mod('go-hub-centre-live.mjs'),{createWorkRecord}=await mod('go-hub-centre-v4.js');
