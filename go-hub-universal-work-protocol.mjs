@@ -1,4 +1,4 @@
-export const UNIVERSAL_WORK_PROTOCOL_VERSION = "UNIVERSAL_WORK_PROTOCOL_V1.1";
+export const UNIVERSAL_WORK_PROTOCOL_VERSION = "UNIVERSAL_WORK_PROTOCOL_V1";
 
 export const UNIVERSAL_WORK_EVENTS = Object.freeze([
   "CREATE",
@@ -56,8 +56,11 @@ const ACTOR_ACTION_MAP = Object.freeze({
     create: "CREATE",
     seen: "RECEIVED",
     pickup: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     answer: "RETURN",
     readback: "VERIFY",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   GO: Object.freeze({
     create: "CREATE",
@@ -69,6 +72,8 @@ const ACTOR_ACTION_MAP = Object.freeze({
     verify: "VERIFY",
     verification: "VERIFY",
     close: "CLOSE",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   LIGHT: Object.freeze({
     claim: "RECEIVED",
@@ -79,6 +84,8 @@ const ACTOR_ACTION_MAP = Object.freeze({
     wait: "WAIT",
     answer: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   PIXIE: Object.freeze({
     dispatch: "RECEIVED",
@@ -89,6 +96,8 @@ const ACTOR_ACTION_MAP = Object.freeze({
     result: "RETURN",
     result_packet: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   SPECTRUM: Object.freeze({
     intake: "RECEIVED",
@@ -98,6 +107,8 @@ const ACTOR_ACTION_MAP = Object.freeze({
     execute: "EXECUTE",
     status_brief: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   HERMES: Object.freeze({
     create_tablet: "CREATE",
@@ -117,6 +128,8 @@ const ACTOR_ACTION_MAP = Object.freeze({
     execute: "EXECUTE",
     housekeeping_report: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   HUMAN: Object.freeze({
     create: "CREATE",
@@ -127,6 +140,8 @@ const ACTOR_ACTION_MAP = Object.freeze({
     return: "RETURN",
     verify: "VERIFY",
     close: "CLOSE",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
 });
 
