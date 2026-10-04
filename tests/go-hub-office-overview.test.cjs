@@ -26,7 +26,7 @@ test('Office system probes isolate failures and never expose provider secrets',a
 });
 test('new overview routes require Office login',async()=>{
   const {createOfficeGate}=await mod('go-hub-office-gate.mjs');
-  for(const route of ['works','system','sales']){
+  for(const route of ['works','activity','health','system','sales']){
     const response=await createOfficeGate().fetch(new Request('https://office.example/office/api/'+route),{GOHUB_OFFICE_SESSION_KEY:'test-key'});
     assert.equal(response.status,401);
   }
@@ -42,4 +42,24 @@ test('Centre global inventory supports stable pages without requiring one Work I
   const response=await service.action({action:'v4_inventory',limit:25,offset:0});
   const body=await response.json();
   assert.equal(response.status,200);assert.equal(body.total,28);assert.equal(body.works.length,25);assert.equal(body.nextOffset,25);
+});
+
+test('Office activity and health turn Work truth into owner-visible movement and mismatch signals',async()=>{
+  const {createOfficeOverview}=await mod('go-hub-office-overview.mjs');
+  const works=[
+    {workId:'W1',checkpointId:'CP1',status:'ON PROCESS',name:'งานหนึ่ง',holder:'GO',lastUpdated:'2026-10-04T01:00:00.000Z'},
+    {workId:'W2',checkpointId:'CP2',status:'ON PROCESS',name:'งานสอง',holder:null,lastUpdated:'2026-10-04T02:00:00.000Z'},
+    {workId:'W3',checkpointId:'CP3',status:'WAIT CONFIRM',name:'งานสาม',holder:'GO',lastUpdated:'2026-10-04T03:00:00.000Z',waitReason:'รอบิ๊กตรวจ'},
+  ];
+  const centre={action:async input=>input.action==='v4_inventory'
+    ?Response.json({ok:true,works,total:works.length,nextOffset:null})
+    :Response.json({work:works.find(w=>w.workId===input.workId)})};
+  const office=createOfficeOverview({centre});
+  const activity=await office.activity({limit:2});
+  assert.deepEqual(activity.items.map(i=>i.workId),['W3','W2']);
+  assert.match(activity.items[0].movement,/รอ:/);
+  const health=await office.health();
+  assert.equal(health.state,'ATTENTION');
+  assert.equal(health.counts.mismatches,1);
+  assert.equal(health.mismatches[0].kind,'OWNER_MISSING');
 });

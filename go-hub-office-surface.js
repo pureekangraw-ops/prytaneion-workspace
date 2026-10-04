@@ -465,6 +465,10 @@ const overviewResults=document.querySelector('[data-overview-results]');
 const overviewCoverage=document.querySelector('[data-overview-coverage]');
 const overviewMore=document.querySelector('[data-overview-more]');
 const overviewSales=document.querySelector('[data-overview-sales]');
+const overviewActivity=document.querySelector('[data-overview-activity]');
+const overviewActivityStatus=document.querySelector('[data-overview-activity-status]');
+const overviewHealth=document.querySelector('[data-overview-health]');
+const overviewMismatches=document.querySelector('[data-overview-mismatches]');
 const salesMore=document.querySelector('[data-sales-more]');
 const officePage=document.body.dataset.officePage||'home';
 const workView=document.querySelector('[data-work-view]')?.dataset.workView||'current';
@@ -473,6 +477,13 @@ const briefLabels={goal:'โจทย์',jobType:'ประเภทงาน',
 let overviewOffset=null,salesCursor=null,loadedWorks=new Map(),loadedSales=new Map(),overviewBusy=false;
 function overviewText(parent,tag,value,className){const node=document.createElement(tag);node.textContent=String(value||'—');if(className)node.className=className;parent.append(node);return node;}
 function overviewCard(parent,title,status,lines){const card=document.createElement('article');card.className='office-work-card';overviewText(card,'strong',workLabels[status]||status,'office-work-status');overviewText(card,'h4',title);for(const line of lines.filter(Boolean))overviewText(card,'p',line,'office-muted');parent.append(card);return card;}
+function appendWorkFlow(card,status){
+ const s=normalizedStatus(status),steps=['รับงาน','กำลังทำ','รอตรวจ','เสร็จ'];
+ let current=s==='COMPLETE'||s==='DONE'?3:s.includes('WAIT')||s.includes('VERIFY')?2:['ON PROCESS','ON_PROCESS','DOING','ACTIVE'].includes(s)?1:0;
+ const flow=document.createElement('div');flow.className='office-flow';flow.setAttribute('aria-label','เส้นทางงาน');
+ steps.forEach((label,index)=>{const step=document.createElement('span');step.textContent=label;step.className=index<current?'is-done':index===current?'is-current':'';flow.append(step);});
+ card.append(flow);
+}
 function workDetails(card,w){const details=document.createElement('details');overviewText(details,'summary','ดูรายละเอียด');overviewText(details,'code',w.workId);overviewText(details,'small','ตรวจล่าสุด '+displayTime(w.checkedAt));if(w.lastUpdated)overviewText(details,'p','อัปเดตงาน '+displayTime(w.lastUpdated));card.append(details);return details;}
 function evidenceLinks(card,w){
  for(const evidence of w.readback?.evidence||[]){const ref=String(evidence.ref||evidence.evidenceRef||'');try{const url=new URL(ref);if(url.protocol!=='https:'||url.username||url.password)throw Error();const link=overviewText(card,'a',evidence.label||'เปิดผลลัพธ์ / หลักฐาน ↗','office-result-link');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';}catch{overviewText(card,'code',ref);}}
@@ -482,7 +493,7 @@ function renderOverviewWorks(){
  overviewWorks?.replaceChildren();overviewResults?.replaceChildren();
  const items=[...loadedWorks.values()];
  for(const w of officePage==='home'?items.slice(0,6):items){
-  if(overviewWorks){const card=overviewCard(overviewWorks,w.name||'งานที่ยังไม่มีชื่อ',w.status,[w.waitReason||'',w.holder?'ผู้ดูแลงาน: '+String(w.holder):'']);const details=workDetails(card,w);if(w.readback?.result){const result=w.readback.result;overviewText(details,'p',typeof result==='string'?result:result.summary||result.reason||'มีผลกลับจากงาน');}evidenceLinks(details,w);}
+  if(overviewWorks){const card=overviewCard(overviewWorks,w.name||'งานที่ยังไม่มีชื่อ',w.status,[w.waitReason||'',w.holder?'ผู้ดูแลงาน: '+String(w.holder):'']);appendWorkFlow(card,w.status);const details=workDetails(card,w);if(w.readback?.result){const result=w.readback.result;overviewText(details,'p',typeof result==='string'?result:result.summary||result.reason||'มีผลกลับจากงาน');}evidenceLinks(details,w);}
   if(overviewResults){const result=w.readback?.result??w.result;const summary=typeof result==='string'?result:result?.summary||result?.reason||'ยังไม่มีสรุปผลที่แสดงได้';const card=overviewCard(overviewResults,w.name||'ผลงาน',w.status,[summary]);evidenceLinks(card,w);workDetails(card,w);}
  }
  if(overviewWorks&&!overviewWorks.children.length)overviewText(overviewWorks,'p',officePage==='history'?'ยังไม่มีประวัติในรายการนี้':'ตอนนี้ไม่มีงานที่รอบิ๊กดูหรือกำลังทำ');
@@ -494,6 +505,33 @@ async function loadOverviewWorks(append=false){
  const counts={};for(const w of loadedWorks.values())counts[w.status]=(counts[w.status]||0)+1;
  overviewCoverage.textContent=officePage==='home'?'แสดง '+Math.min(6,loadedWorks.size)+' จาก '+data.total+' งานปัจจุบัน':'แสดง '+loadedWorks.size+' จาก '+data.total+' รายการ · อัปเดต '+displayTime(data.checkedAt);
  }catch{overviewCoverage.textContent='ตอนนี้อ่านงานล่าสุดไม่ได้'+(loadedWorks.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':' · ลองกดอัปเดตอีกครั้ง');}
+}
+async function loadOverviewActivity(){
+ if(!overviewActivity)return;
+ try{
+  const data=await overviewRead('activity?limit=12');overviewActivity.replaceChildren();
+  for(const item of data.items||[]){
+   const card=overviewCard(overviewActivity,item.name||item.workId,item.status,[item.movement||'',item.movedAt?'ขยับล่าสุด '+displayTime(item.movedAt):'']);
+   appendWorkFlow(card,item.status);
+  }
+  if(!(data.items||[]).length)overviewText(overviewActivity,'p','ตอนนี้ยังไม่มีการเคลื่อนไหวของงาน');
+  if(overviewActivityStatus)overviewActivityStatus.textContent='อ่านจาก Centre Work truth · อัปเดต '+displayTime(data.checkedAt);
+ }catch{overviewActivity.replaceChildren();overviewText(overviewActivity,'p','ตอนนี้อ่านการเคลื่อนไหวไม่ได้');if(overviewActivityStatus)overviewActivityStatus.textContent='สถานะ UNKNOWN';}
+}
+async function loadOverviewHealth(){
+ if(!overviewHealth&&!overviewMismatches)return;
+ try{
+  const data=await overviewRead('health');
+  overviewHealth?.replaceChildren();overviewMismatches?.replaceChildren();
+  if(overviewHealth){
+   const state=data.state==='STABLE'?'เสถียรตามสิ่งที่ตรวจได้':'มีจุดที่ควรดู';
+   overviewCard(overviewHealth,'ภาพรวม',state,[`งานปัจจุบัน ${data.counts.current} · รอ ${data.counts.waiting} · UNKNOWN ${data.counts.unknown} · mismatch ${data.counts.mismatches}`, 'ตรวจ '+displayTime(data.checkedAt)]);
+  }
+  if(overviewMismatches){
+   for(const m of data.mismatches||[])overviewCard(overviewMismatches,m.workId,'MISMATCH',[m.message,m.kind]);
+   if(!(data.mismatches||[]).length)overviewText(overviewMismatches,'p','ยังไม่พบ state / owner mismatch ในชุดงานที่ตรวจ','office-muted');
+  }
+ }catch{overviewHealth?.replaceChildren();overviewMismatches?.replaceChildren();if(overviewHealth)overviewText(overviewHealth,'p','ตอนนี้อ่านสุขภาพระบบไม่ได้');}
 }
 async function loadOverviewSystem(){
  const root=document.querySelector('[data-overview-system]');if(!root)return;
@@ -511,7 +549,7 @@ async function loadOverviewSales(append=false){
 }
 async function refreshOverview(){
  if(overviewBusy)return;overviewBusy=true;const workTarget=loadedWorks.size,salesTarget=loadedSales.size;
- try{await Promise.all([(async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),loadOverviewSystem(),(async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()]);}finally{overviewBusy=false;}
+ try{await Promise.all([(async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),loadOverviewActivity(),loadOverviewHealth(),loadOverviewSystem(),(async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()]);}finally{overviewBusy=false;}
 }
 document.querySelector('[data-overview-refresh]')?.addEventListener('click',refreshOverview);
 overviewMore?.addEventListener('click',async()=>{overviewMore.disabled=true;try{await loadOverviewWorks(true);}finally{overviewMore.disabled=false;}});
