@@ -1480,21 +1480,43 @@ test("HERMES Tablet HOLD exposes recovery custody and resumes the same Work", as
   });
 
   const held = await body(await service.action({
-    action:"return_tablet",
+    action:"eject_tablet",
     tabletId:created.tabletId,
-    status:"WAIT",
     result:{ summary:"Paused after safe stop" },
     evidence:[{ ref:"test://hermes/recovery" }],
     unknowns:["post-safe-point effect"],
+    lastSafePoint:"before-commit",
+    lastAction:"prepare commit",
     lastLocation:"GITHUB",
+    interruptCause:"session lost after timeout",
+    actor:"GO",
+    observedAt:"2026-10-04T18:00:00.000Z",
+    receipt:{ id:"RECEIPT-HERMES-001", status:"SAFE_STOP_RECORDED" },
+    repo:"pureekangraw-ops/prytaneion-workspace",
+    pr:"398",
+    sha:"07bd7c72ccf08c0d73676f4525f255062fda7537",
     nextAction:"Inspect actual branch state before resume",
   }));
   assert.equal(held.ok, true);
   assert.equal(held.tablet.recovery.mode, "HOLD");
   assert.equal(held.tablet.recovery.custody, "HERMES");
+  assert.equal(held.tablet.recovery.lastSafePoint, "before-commit");
+  assert.equal(held.tablet.recovery.lastAction, "prepare commit");
   assert.equal(held.tablet.recovery.lastLocation, "GITHUB");
-  assert.equal(held.tablet.recovery.nextAction, "Inspect actual branch state before resume");
+  assert.equal(held.tablet.recovery.interruptCause, "session lost after timeout");
+  assert.equal(held.tablet.recovery.actor, "GO");
+  assert.equal(held.tablet.recovery.observedAt, "2026-10-04T18:00:00.000Z");
+  assert.equal(held.tablet.recovery.timestamp, "2026-10-04T18:00:00.000Z");
+  assert.equal(held.tablet.recovery.repo, "pureekangraw-ops/prytaneion-workspace");
+  assert.equal(held.tablet.recovery.pr, "398");
+  assert.equal(held.tablet.recovery.sha, "07bd7c72ccf08c0d73676f4525f255062fda7537");
   assert.deepEqual(held.tablet.recovery.unknowns, ["post-safe-point effect"]);
+  assert.deepEqual(held.tablet.recovery.unknownGap, ["post-safe-point effect"]);
+  assert.equal(held.tablet.recovery.receipt.id, "RECEIPT-HERMES-001");
+  assert.equal(held.tablet.recovery.autoRetry, false);
+  assert.equal(held.tablet.recovery.autoRollback, false);
+  assert.equal(held.noAutoRetry, true);
+  assert.equal(held.noAutoRollback, true);
   assert.equal(held.tablet.recovery.resumeAllowed, true);
 
   const resumed = await body(await service.action({

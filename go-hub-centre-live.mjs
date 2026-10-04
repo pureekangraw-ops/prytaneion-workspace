@@ -508,6 +508,9 @@ function v4MissionAction(state, action, input = {}) {
       unknowns:missionUnique(input.unknowns),
       lastLocation:String(input.lastLocation || mission.session.lastDestination || "").trim() || null,
       mode:String(input.mode || "NORMAL_RETURN").trim().toUpperCase(),
+      recovery:input.recovery && typeof input.recovery === "object" && !Array.isArray(input.recovery)
+        ? clone(input.recovery)
+        : null,
       universalLifecycle:input.universalLifecycle && typeof input.universalLifecycle === "object"
         ? clone(input.universalLifecycle)
         : null,
