@@ -1,4 +1,3 @@
-import { agentRuntimeDescriptor } from "./go-hub-agent-family.mjs";
 import { createMissionCard, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 import { workCardView } from "./go-hub-work-card.js";
 import { CARD_HISTORY_RESET, currentCardHistoryPins, cardHistoryPolicyView } from "./go-hub-card-history-policy.mjs";
@@ -985,7 +984,6 @@ export function createAgentMissionService({
     const reality = ticket.last_return || current?.mission?.memory?.latestReality || {};
     return {
       kind:"HERMES_WORK_TABLET",
-      agent:agentRuntimeDescriptor("HERMES"),
       version:Number(ticket.version || 1),
       tabletId:tabletIdFromTicket(ticket, fallbackId),
       agentId:text(ticket.agentId || current?.mission?.session?.agentId) || null,
