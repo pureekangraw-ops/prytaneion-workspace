@@ -1,0 +1,82 @@
+name: Deploy approved ERGASTERION owner ref
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ergasterion-owner-deploy.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ergasterion-approved-owner-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-owner-ref:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      FACTORY_SOURCE_SHA: 707a5e7267f29f56f81bc23dd28af17baa2d23c1
+      WORK_ID: WORK-FINISH-PRISM-WEB-EYE-20261004-20261004-001
+      CHECKPOINT_ID: CP-WORK-FINISH-PRISM-WEB-EYE-20261004-20261004-001
+    steps:
+      - name: Checkout the approved Factory owner source
+        uses: actions/checkout@v4
+        with:
+          repository: pureekangraw-ops/Ergasterion-factory
+          ref: 707a5e7267f29f56f81bc23dd28af17baa2d23c1
+          token: ${{ secrets.GOHUB_GITHUB_TOKEN || github.token }}
+
+      - name: Refuse an obsolete owner source or another Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$FACTORY_SOURCE_SHA"
+          owner_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$owner_main" = "$FACTORY_SOURCE_SHA"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          node -e "const fs=require('node:fs'),c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));if(c.name!=='ergasterion-factory'||c.main!=='cloudflare/worker.mjs')process.exit(1)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the exact owner source
+        run: npm test
+
+      - name: Deploy using the unchanged Factory owner configuration
+        run: npx --yes wrangler@4 deploy --config wrangler.jsonc
+
+      - name: Verify protected ingress and required bindings
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const origin='https://ergasterion-factory.pureekangraw.workers.dev';
+          const probe=await fetch(origin+'/api/prism-eye/admin',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+          const body=await probe.json();
+          if(probe.status!==401||body.source!=='PRISM_BROWSER'||body.code!=='PRISM_ADMIN_UNAUTHORIZED')throw Error('PRISM_INGRESS_NOT_VERIFIED');
+          let response;
+          for(let attempt=0;attempt<3;attempt++){
+            response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/workers/scripts/ergasterion-factory/settings',{headers:{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});
+            if(response.status!==429)break;
+            await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+          }
+          if(!response.ok)throw Error('FACTORY_SETTINGS_HTTP_'+response.status);
+          const settings=await response.json(),bindings=settings.result?.bindings||[];
+          for(const [name,type] of [['PRISM_EYE','durable_object_namespace'],['HANDOFF_LEDGER','durable_object_namespace'],['ERGASTERION_HUB_SHARED_SECRET','secret_text']]){
+            if(!bindings.some(b=>b.name===name&&b.type===type))throw Error('FACTORY_BINDING_MISSING_'+name);
+          }
+          fs.writeFileSync('factory-owner-deployment.json',JSON.stringify({repository:'pureekangraw-ops/Ergasterion-factory',sourceCommit:process.env.FACTORY_SOURCE_SHA,workId:process.env.WORK_ID,checkpointId:process.env.CHECKPOINT_ID,runId:process.env.GITHUB_RUN_ID,ingressVerified:true,bindingsVerified:true,secretsChanged:false,verifiedAt:new Date().toISOString()},null,2));
+          NODE
+
+      - name: Preserve owner deployment evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-owner-deployment-${{ github.run_id }}
+          path: factory-owner-deployment.json
+          if-no-files-found: error
+          retention-days: 90
