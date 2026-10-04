@@ -135,6 +135,29 @@ export function createSalesStore({storage}={}) {
       const record={eventId,type:payload.type,page:text(payload.page).split(/[?#]/)[0],source:text(payload.source),receivedAt:new Date().toISOString()};
       await storage.put(key,record);return {ok:true,event:record};
     },
+    async quoteRecord(payload={}) {
+      ready();const quoteId=id(payload.quoteId),customerId=id(payload.customerId),workId=id(payload.workId),key="quote:record:"+quoteId;
+      const amount=Number(payload.amount),currency=String(payload.currency||"").toUpperCase(),status=String(payload.status||"").toUpperCase();
+      if(!Number.isFinite(amount)||amount<=0)fail("QUOTE_AMOUNT_INVALID");
+      if(!/^[A-Z]{3}$/.test(currency))fail("QUOTE_CURRENCY_INVALID");
+      if(!["QUOTE_DRAFT","QUOTE_SENT"].includes(status))fail("QUOTE_STATUS_DENIED");
+      const previous=await storage.get(key);
+      if(previous&&(previous.customerId!==customerId||previous.workId!==workId))fail("QUOTE_IDENTITY_CONFLICT",409);
+      if(previous?.status==="QUOTE_SENT"){
+        if(previous.amount!==amount||previous.currency!==currency||status!=="QUOTE_SENT")fail("QUOTE_LOCKED",409);
+        return {ok:true,quote:previous,duplicate:true};
+      }
+      const now=new Date().toISOString(),record={quoteId,customerId,workId,amount,currency,status,source:"OFFICE_OWNER",createdAt:previous?.createdAt||now,updatedAt:now,sentAt:status==="QUOTE_SENT"?now:null};
+      await storage.put(key,record);const saved=await storage.get(key);if(saved?.quoteId!==quoteId)fail("QUOTE_READBACK_FAILED",502);
+      return {ok:true,quote:saved,duplicate:false};
+    },
+    async quoteGet(payload={}) {
+      ready();const quoteId=id(payload.quoteId),quote=await storage.get("quote:record:"+quoteId);if(!quote)fail("QUOTE_NOT_FOUND",404);return {ok:true,quote};
+    },
+    async quoteList({limit=50,cursor}={}) {
+      ready();const take=Math.min(100,Math.max(1,Number(limit)||50)),records=await storage.list({prefix:"quote:record:",limit:take,...(cursor?{startAfter:cursor}:{})});
+      const entries=[...records];return {ok:true,source:"OFFICE_OWNER",quotes:entries.map(([,value])=>value),coverage:"QUOTE_RECORDS_PAGE",nextCursor:entries.length>=take?entries.at(-1)[0]:null,checkedAt:new Date().toISOString()};
+    },
     async paymentRecord(payload={}) {
       ready();const paymentId=id(payload.paymentId),idempotencyKey=id(payload.idempotencyKey);
       const requestKey="payment:request:"+idempotencyKey,priorRequest=await storage.get(requestKey);
