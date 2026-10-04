@@ -19,6 +19,7 @@ import { FactoryEyeSessionRegistry } from "./go-hub-factory-eye-session.mjs";
 import { createCentreLiveService } from "./go-hub-centre-live.mjs";
 import { createCentreObjectStore } from "./go-hub-centre-object-store.mjs";
 import { createBroadcastService } from "./go-hub-broadcast-state.mjs";
+import { createPaymentAdapter } from "./go-hub-payment-adapter.mjs";
 import { createNotionLightService } from "./go-hub-notion-light.mjs";
 import { createCounterService } from "./go-hub-counter.mjs";
 import { createCounterDispatchService } from "./go-hub-counter-dispatcher.mjs";
@@ -726,6 +727,20 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
   return Object.freeze({
     async fetch(request, env) {
       const url = new URL(request.url);
+      if(url.pathname==="/internal/payment/checkout"){
+        if(url.hostname!=="go-hub.internal")return json({code:"INTERNAL_ROUTE_DENIED"},403);
+        if(request.method!=="POST")return json({code:"METHOD_NOT_ALLOWED"},405);
+        const body=await request.json().catch(()=>null);if(!body||typeof body!=="object"||Array.isArray(body))return json({code:"INVALID_JSON"},400);
+        const allowed=new Set(["version","surface","customerId","quoteId","workId","idempotencyKey","requestedAt"]);
+        if(Object.keys(body).some(key=>!allowed.has(key)))return json({code:"PAYMENT_INPUT_FORBIDDEN"},400);
+        try{
+          const payment=await createPaymentAdapter({binding:env?.PAYMENT_PROVIDER}).checkout(body);
+          const centreLive=createCentreLiveService({namespace:env?.GO_HUB_CENTRE_STATE});
+          const stored=await centreLive.action({action:"payment_record",payload:payment});const result=await stored.json().catch(()=>null);
+          if(!stored.ok||!result?.payment)return json({code:String(result?.code||"PAYMENT_RECORD_FAILED")},stored.status||502);
+          return json(result.payment);
+        }catch(error){return json({code:String(error?.message||"PAYMENT_CHECKOUT_FAILED")},Number(error?.status)||502);}
+      }
       if (url.pathname.startsWith("/internal/brief/") || url.pathname === "/internal/spectrum/event" || url.pathname === "/internal/spectrum/go-budget") {
         if(url.hostname!=="go-hub.internal")return json({code:"INTERNAL_ROUTE_DENIED"},403);
         if(request.method!=="POST")return json({code:"METHOD_NOT_ALLOWED"},405);
