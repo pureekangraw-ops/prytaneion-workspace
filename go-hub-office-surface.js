@@ -539,12 +539,15 @@ async function loadOverviewSystem(){
 }
 async function loadOverviewSales(append=false){
  if(!overviewSales)return;const status=document.querySelector('[data-overview-sales-status]');
- try{const data=await overviewRead('sales'+(append&&salesCursor?'?cursor='+encodeURIComponent(salesCursor):''));if(!append)loadedSales.clear();for(const b of data.briefs)loadedSales.set(b.briefId,b);for(const e of data.events)loadedSales.set(e.eventId,e);salesCursor=data.nextCursor;if(salesMore)salesMore.hidden=!salesCursor;overviewSales.replaceChildren();
+ const payments=document.querySelector('[data-overview-payments]');
+ try{const data=await overviewRead('sales'+(append&&salesCursor?'?cursor='+encodeURIComponent(salesCursor):''));if(!append)loadedSales.clear();for(const b of data.briefs)loadedSales.set(b.briefId,b);for(const e of data.events)loadedSales.set(e.eventId,e);salesCursor=data.nextCursor;if(salesMore)salesMore.hidden=!salesCursor;overviewSales.replaceChildren();payments?.replaceChildren();
  const briefs=[...loadedSales.values()].filter(i=>i.brief),events=[...loadedSales.values()].filter(i=>i.type);
  for(const item of briefs){const lines=Object.entries(item.brief).filter(([k,v])=>v&&k!=='goal').map(([k,v])=>(briefLabels[k]||k)+': '+v);const card=overviewCard(overviewSales,item.brief.goal||'บรีฟจากหน้าร้าน',item.status==='CONFIRMED'?'ลูกค้ายืนยันบรีฟแล้ว':'ร่างบรีฟ',lines);const details=document.createElement('details');overviewText(details,'summary','ดูข้อมูลการรับบรีฟ');overviewText(details,'code',item.briefId);overviewText(details,'p','เก็บข้อมูลเมื่อ '+displayTime(item.receivedAt));overviewText(details,'p',item.processing==='UNKNOWN'?'ยังไม่มีหลักฐานว่าประมวลผลต่อแล้ว':'สถานะต่อ: '+item.processing);card.append(details);}
  if(!briefs.length)overviewText(overviewSales,'p','ยังไม่มีบรีฟลูกค้าในรายการที่อ่าน');
  const views=events.filter(e=>e.type==='PAGE_VIEW').length,interest=events.filter(e=>e.type==='SERVICE_INTEREST').length;
- status.textContent='บรีฟ '+briefs.length+' รายการ · บันทึกการเปิดหน้า '+views+' ครั้ง · บันทึกความสนใจ '+interest+' ครั้งในรายการนี้';overviewText(overviewSales,'p','ยังไม่มีข้อมูลยืนยันการชำระเงิน','office-muted');
+ status.textContent='บรีฟ '+briefs.length+' รายการ · บันทึกการเปิดหน้า '+views+' ครั้ง · บันทึกความสนใจ '+interest+' ครั้งในรายการนี้';
+ for(const p of data.payments||[]){overviewCard(payments,p.customerId+' · '+p.workId,p.status,[p.quoteId+' · '+p.amount+' '+p.currency,'อ้างอิง '+(p.providerReference||'UNKNOWN'),'พร้อมเริ่มงาน '+p.fulfillmentReadiness,'หลักฐาน '+(p.evidenceFreshness?.state||'UNKNOWN')+' · '+displayTime(p.providerObservedAt),'ถัดไป '+p.nextAction]);}
+ if(payments&&!(data.payments||[]).length)overviewText(payments,'p','ยังไม่มีรายการชำระเงินจาก provider','office-muted');
  }catch{status.textContent='ตอนนี้อ่านข้อมูลหน้าร้านไม่ได้'+(loadedSales.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':'');}
 }
 async function refreshOverview(){
