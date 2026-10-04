@@ -53,6 +53,8 @@ const APP_SHELL = [
   "./go-hub-office-surface.css",
   "./go-hub-office-surface.js",
   "./go-hub-office-login.js",
+  "./go-hub-metro-surface.css",
+  "./go-hub-metro-surface.js",
   "./go-hub-workbench-model.js",
   "./pixie-visual-workbench.html",
   "./pixie-visual-workbench.css",
