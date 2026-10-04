@@ -16,3 +16,4 @@
 .office-flow span.is-current{color:#f3cf9e;border-color:#d6b89177;background:#d6b89112}
 .office-mismatch-list .office-work-card{border-color:#d7a06b55}
 @media(max-width:600px){.office-flow{gap:4px}.office-flow span{font-size:.66rem;padding:6px 3px}}
+.office-quote-form{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}.office-quote-form input,.office-quote-form select{min-width:0;padding:11px 12px;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:#0c1117;color:#fff;font:inherit}.office-quote-form button{min-height:44px}@media(max-width:760px){.office-quote-form{grid-template-columns:1fr}.office-quote-form button{width:100%}}
