@@ -57,6 +57,7 @@ const definitions = [
   def("go_hub_aion_open", "AION route pointer. Every OPEN reads CURRENT Control Room exposure and returns the current Agent Mission route/capabilities only. It never calls HERMES, creates a session, opens Work/Pass, selects a route, or grants authority.", "aionOpen", schema({ context: obj }), ann(true)),
   def("go_hub_aion_resolve", "Compatibility adapter to OLYMPUS-owned AION release truth. Read-only confirm of app/version/source/artifact/destination; never executes the target, creates authority, or selects Work routes.", "aionResolve", schema({ appId:str, version:str, sourceRevision:str, artifactSha:str, destination:str }, ["appId","version","sourceRevision","artifactSha","destination"]), ann(true)),
   def("go_hub_aion_registry", "Read OLYMPUS-owned AION registry through the GO Hub compatibility adapter. Legacy go_hub_aion_open remains available during coexistence.", "aionRegistry", schema({}), ann(true)),
+  def("go_hub_agent_family_status", "Read the shared Agent Family contract, roles, home runtimes, reporting targets, and one Agent home route without creating Work or authority.", "agentFamilyStatus", schema({ action:{ type:"string", enum:["overview","route"] }, agentId:str }, ["action"]), ann(true)),
   def("go_hub_agent_fitting_room", "Agent Capability Lane entry for choosing one Persona and one Lens without creating or changing Work, Tablet, Door/Gate, route, owner, authority, Pass, or tool access.", "agentFittingRoom", schema({ action:{ type:"string", enum:["list","fit"] }, agentId:str, personaId:str, lensId:str }, ["action"]), ann(false)),
   def("go_hub_agent_persona_room", "Explicitly enter the optional Agent Persona Room to list canonical Personas or equip one assigned Persona. This tool is never a mandatory gate, never auto-enters, and never changes Work, route, owner, or authority.", "agentPersonaRoom", schema({ action: { type:"string", enum:["list","equip"] }, agentId:str, personaId:str }, ["action"]), ann(false)),
   def("go_hub_agent_lens_room", "Agent Capability Lane Lens surface. List/compare/select is explicit and session-scoped, reads only existing Factory Eye evidence, and never requires or changes Work, Tablet, Door/Gate, route, authority, Pass, browser state, or credentials.", "agentLensRoom", schema({ action: { type:"string", enum:["list","compare","select"] }, agentId:str, lensId:str, lensIds:{ type:"array", items:str } }, ["action"]), ann(false)),
@@ -159,7 +160,7 @@ function assertWork(value) {
   for (const key of Object.keys(value)) if (!Object.hasOwn(workContext.properties, key)) throw new Error("unknown workContext field: " + key);
 }
 
-const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_aion_resolve","go_hub_aion_registry","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect","go_hub_notion_tools"]);
+const CARD_BOOTSTRAP_TOOLS = new Set(["go_hub_broadcast_read","go_hub_broadcast_activate","go_hub_aion_open","go_hub_aion_resolve","go_hub_aion_registry","go_hub_agent_family_status","go_hub_agent_mission","go_hub_notion_status","go_hub_notion_connect","go_hub_notion_tools"]);
 const CARD_READ_BYPASS_TOOLS = new Set([
   "go_hub_observer_latest",
   "go_hub_observer_screenshot",
