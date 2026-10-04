@@ -1004,9 +1004,34 @@ export function createAgentMissionService({
     return /^TABLET:/i.test(value) ? "CARD:" + value.slice(7) : value;
   }
 
+  function tabletRecoveryView(ticket, reality = {}, current = null) {
+    const sessionStatus = text(current?.mission?.session?.status).toUpperCase();
+    const currentStatus = text(current?.work?.status).toUpperCase();
+    const returnedStatus = text(reality.missionStatus).toUpperCase();
+    const activeSession = Boolean(sessionStatus && !["RETURNED", "EXITED"].includes(sessionStatus));
+    const status = (activeSession ? currentStatus : returnedStatus) || text(ticket?.status).toUpperCase() || currentStatus || "UNKNOWN";
+    const hold = new Set(["WAIT", "WAIT VERIFY", "BLOCKED", "UNKNOWN"]).has(status);
+    const lastLocation = text(ticket?.lastLocation || reality.lastLocation) || null;
+    const nextAction = text(ticket?.nextAction || reality.nextAction) || null;
+    const unknowns = unique(ticket?.unknowns || reality.unknowns);
+    const observedAt = text(ticket?.observedAt || reality.returnedAt || reality.observedAt || current?.work?.lastUpdated) || null;
+    return {
+      mode:hold ? "HOLD" : ["COMPLETE", "CANCEL"].includes(status) ? "TERMINAL" : "ACTIVE",
+      custody:hold ? "HERMES" : null,
+      status,
+      lastLocation,
+      nextAction,
+      unknowns,
+      observedAt,
+      safePoint:hold ? (lastLocation || text(reality.lastKnownState) || null) : null,
+      resumeAllowed:hold ? status !== "UNKNOWN" || Boolean(lastLocation || nextAction) : !["COMPLETE", "CANCEL"].includes(status),
+    };
+  }
+
   function tabletView(ticket, fallbackId = null, current = null) {
     if (!ticket) return null;
     const reality = ticket.last_return || current?.mission?.memory?.latestReality || {};
+    const recovery = tabletRecoveryView(ticket, reality, current);
     return {
       kind:"HERMES_WORK_TABLET",
       version:Number(ticket.version || 1),
@@ -1020,6 +1045,11 @@ export function createAgentMissionService({
       status:text(ticket.status || reality.missionStatus || current?.work?.status) || null,
       result:clone(ticket.result !== undefined ? ticket.result : (reality.result ?? null)),
       evidence:clone(ticket.evidence !== undefined ? ticket.evidence : (reality.evidence || [])),
+      lastLocation:text(ticket.lastLocation || reality.lastLocation) || null,
+      nextAction:text(ticket.nextAction || reality.nextAction) || null,
+      unknowns:unique(ticket.unknowns || reality.unknowns),
+      recovery,
+      readbackVerified:reality.readbackVerified === true || Boolean(reality.ownerReadback),
     };
   }
 
@@ -1323,6 +1353,39 @@ export function createAgentMissionService({
       chooser:"GO",
       selectedAutomatically:false,
       prompt:"บันทึกข้อมูลใบงานแล้ว ความพร้อมใช้งานและเส้นทางถูกตัดสินโดย backend policy",
+    });
+  }
+
+  async function resumeTablet(input = {}) {
+    const resolvedBefore = await resolveTabletContext(input);
+    const currentTicket = resolvedBefore.current.mission?.memory?.cardMachine?.current || resolvedBefore.card;
+    const reality = resolvedBefore.current.mission?.memory?.latestReality || {};
+    const recovery = tabletRecoveryView(currentTicket, reality, resolvedBefore.current);
+    if (recovery.mode !== "HOLD") {
+      return json({
+        code:"HERMES_TABLET_NOT_ON_HOLD",
+        action:"resume_tablet",
+        tabletId:resolvedBefore.tabletId,
+        workContext:resolvedBefore.workContext,
+        recovery,
+      }, 409);
+    }
+    const resumed = await ensurePickupState(resolvedBefore);
+    const current = await readMission(resumed.workContext);
+    const resolved = {
+      ...resumed,
+      current,
+      work:current.work,
+      card:current.mission?.memory?.cardMachine?.current || resumed.card,
+      tabletId:tabletIdFromTicket(current.mission?.memory?.cardMachine?.current, resumed.tabletId),
+    };
+    return json({
+      ok:true,
+      action:"resume_tablet",
+      ...tabletPacket(resolved),
+      resumed:true,
+      resumedFrom:recovery,
+      prompt:"Resume แล้ว ต่อจาก Work และ checkpoint เดิม โดย HERMES ไม่สร้าง Work ใหม่",
     });
   }
 
@@ -2001,6 +2064,7 @@ export function createAgentMissionService({
           case "emergency_enter": return await emergencyTabletEnter(input);
           case "help_choose": return await helpChooseTablet(input);
           case "update_tablet": return await updateTablet(input);
+          case "resume_tablet": return await resumeTablet(input);
           case "return_tablet": return await returnTablet(input);
           case "pickup_card": return await pickupCard(input);
           case "apply_selection": return await applySelection(input);
