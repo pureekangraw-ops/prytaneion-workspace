@@ -7,6 +7,7 @@
   <title>PIXIE Visual Workbench</title>
   <link rel="manifest" href="./go-hub.webmanifest">
   <link rel="stylesheet" href="./pixie-visual-workbench.css">
+  <link rel="stylesheet" href="./go-hub-ui-design-lane.css">
 </head>
 <body>
   <header class="visual-header">
@@ -144,6 +145,49 @@
       </div>
     </section>
 
+
+    <section class="ui-design-lane" data-ui-design-lane aria-labelledby="ui-design-lane-title">
+      <div class="ui-design-lane__header">
+        <div>
+          <p class="visual-kicker">UI DESIGN LANE · V1 VERTICAL SLICE</p>
+          <h2 id="ui-design-lane-title">Canvas Workbench</h2>
+          <small>Scene document เป็น owner truth · หน้าจอเป็น projection / command surface</small>
+        </div>
+        <span class="ui-design-badge" data-ui-design-state>DRAFT · 0 frames · 0 nodes</span>
+      </div>
+      <div class="ui-design-lane__tools">
+        <button type="button" class="ui-design-lane__button ui-design-lane__button--primary" data-ui-design-seed>Seed YGG METRO Hero + Product Card</button>
+        <button type="button" class="ui-design-lane__button" data-ui-design-create-desktop>+ Desktop Frame</button>
+        <button type="button" class="ui-design-lane__button" data-ui-design-create-mobile>+ Mobile Frame</button>
+        <select data-ui-design-node-kind aria-label="Node kind"><option value="RECTANGLE">Rectangle</option><option value="TEXT">Text</option><option value="IMAGE">Image</option></select>
+        <button type="button" class="ui-design-lane__button" data-ui-design-add-node>+ Add Node</button>
+      </div>
+      <div class="ui-design-lane__grid">
+        <aside class="ui-design-panel ui-design-panel--layers">
+          <h3>Layers / Frames</h3>
+          <div class="ui-design-layers" data-ui-design-layers></div>
+        </aside>
+        <section class="ui-design-panel ui-design-canvas-wrap" aria-label="UI design canvas">
+          <div data-ui-design-canvas></div>
+        </section>
+        <aside class="ui-design-panel ui-design-panel--inspector">
+          <h3>Inspect</h3>
+          <div class="ui-design-inspector" data-ui-design-inspector></div>
+        </aside>
+      </div>
+      <div class="ui-design-lane__snapshots">
+        <input type="text" data-ui-design-version-label placeholder="Snapshot label">
+        <button type="button" class="ui-design-lane__button" data-ui-design-snapshot>Snapshot</button>
+        <select data-ui-design-versions aria-label="Version"></select>
+        <button type="button" class="ui-design-lane__button" data-ui-design-restore>Restore</button>
+        <select data-ui-design-compare multiple size="1" aria-label="Compare versions"></select>
+        <button type="button" class="ui-design-lane__button" data-ui-design-compare-action>Compare</button>
+        <button type="button" class="ui-design-lane__button ui-design-lane__button--primary" data-ui-design-approve>Approve</button>
+        <button type="button" class="ui-design-lane__button" data-ui-design-export-json>Export JSON</button>
+        <button type="button" class="ui-design-lane__button" data-ui-design-export-svg>Export SVG</button>
+      </div>
+      <div class="ui-design-lane__footer"><span data-ui-design-status>Create a frame or seed the acceptance example.</span><span>V1: Frame → Node → Layout → Inspect → Snapshot → Approve → Export</span></div>
+    </section>
     <p class="visual-footnote">
       โต๊ะนี้เตรียม source, brief, render packet และ local verification เท่านั้น · การสร้างภาพจริงยังเป็นงานของ GO image tool
       <span data-storage-status role="status"></span>
@@ -153,3 +197,4 @@
   <script type="module" src="./pixie-visual-workbench.js"></script>
 </body>
 </html>
+

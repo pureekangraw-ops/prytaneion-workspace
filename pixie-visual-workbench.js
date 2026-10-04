@@ -16,6 +16,7 @@ import {
   attachPixieDraft,
   createPixieHandshake,
 } from "./go-hub-visual-workbench-model.js";
+import { mountUiDesignLane } from "./go-hub-ui-design-lane.js";
 
 const STORAGE_KEY = "go-hub:pixie-visual-workbench:v1";
 const MAX_IMPORT_BYTES = 18 * 1024 * 1024;
@@ -499,3 +500,4 @@ dropzone?.addEventListener("keydown", event => {
 });
 
 render();
+mountUiDesignLane(document.querySelector("[data-ui-design-lane]"));
