@@ -148,3 +148,129 @@ export function masterArchitectureOverview() {
     ]),
   });
 }
+
+export const ACTION_CRITICAL_FIELDS = Object.freeze({
+  RECEIVE: Object.freeze(["workId", "checkpointId", "requestedResult"]),
+  HANDOFF: Object.freeze(["workId", "checkpointId", "receipt"]),
+  BRIEF: Object.freeze(["requestedResult"]),
+  RETURN: Object.freeze(["workId", "checkpointId", "result", "evidence"]),
+  MERGE: Object.freeze(["repo", "branch", "sha", "pr"]),
+  RELEASE: Object.freeze(["repo", "sha", "version"]),
+});
+
+export function criticalFieldsForAction(action) {
+  return ACTION_CRITICAL_FIELDS[text(action).toUpperCase()] || Object.freeze([]);
+}
+
+export function validateCriticalFields(action, payload = {}) {
+  const requiredFields = criticalFieldsForAction(action);
+  const missing = requiredFields.filter(field => {
+    const value = payload?.[field];
+    return value == null || (Array.isArray(value) ? value.length === 0 : text(value) === "");
+  });
+  return freeze({
+    action:text(action).toUpperCase(),
+    policy:"ACTION_DEPENDENT",
+    requiredFields,
+    missing,
+    complete:missing.length === 0,
+  });
+}
+
+export function assertHandoffIdentity({ sent = {}, acknowledged = {} } = {}) {
+  const sentWork = required(sent.workId, "sent.workId");
+  const sentCheckpoint = required(sent.checkpointId, "sent.checkpointId");
+  const ackWork = required(acknowledged.workId, "acknowledged.workId");
+  const ackCheckpoint = required(acknowledged.checkpointId, "acknowledged.checkpointId");
+  if (sentWork !== ackWork || sentCheckpoint !== ackCheckpoint) {
+    throw new Error("HANDOFF_IDENTITY_MISMATCH");
+  }
+  return freeze({ workId:sentWork, checkpointId:sentCheckpoint, matched:true });
+}
+
+export function createGapConfirmation({ actor, confirmedAt, missingFields = [] } = {}) {
+  return freeze({
+    actor:required(actor, "gap confirmation actor"),
+    confirmedAt:required(confirmedAt, "gap confirmation time"),
+    missingFields:freeze(unique(missingFields)),
+    action:"BACKFILL_ALLOWED",
+  });
+}
+
+export function resolveBranchContinuity({ requestedBranch, candidates = [] } = {}) {
+  const requested = text(requestedBranch);
+  const matches = candidates.filter(candidate => text(candidate?.branch) === requested);
+  if (!requested) return freeze({ decision:"UNKNOWN", reuseAllowed:false, reason:"BRANCH_REQUIRED", createAllowed:false });
+  if (matches.length > 1) return freeze({ decision:"CONFLICT", reuseAllowed:false, reason:"MULTIPLE_BRANCH_OWNERS", createAllowed:false });
+  if (!matches.length) return freeze({ decision:"NOT_FOUND", reuseAllowed:false, reason:"INSPECT_REQUIRED", createAllowed:false });
+  const branch = matches[0];
+  const status = text(branch.status).toUpperCase();
+  if (["ACTIVE", "OPEN", "READY"].includes(status) && branch.conflict !== true) {
+    return freeze({ decision:"REUSE", reuseAllowed:true, reason:"EXISTING_BRANCH_USABLE", createAllowed:false, branch:requested, sha:text(branch.sha) || null });
+  }
+  if (branch.conflict === true) return freeze({ decision:"CONFLICT", reuseAllowed:false, reason:"BRANCH_CONFLICT", createAllowed:false, branch:requested });
+  return freeze({ decision:"UNKNOWN", reuseAllowed:false, reason:"BRANCH_REQUIRES_INSPECTION", createAllowed:false, branch:requested });
+}
+
+export function createHermesMovementRecord(input = {}) {
+  const movement = {
+    contract:MASTER_ARCHITECTURE_VERSION,
+    workId:required(input.workId, "movement.workId"),
+    checkpointId:required(input.checkpointId, "movement.checkpointId"),
+    from:required(input.from, "movement.from"),
+    to:required(input.to, "movement.to"),
+    actionType:required(input.actionType, "movement.actionType"),
+    subject:text(input.subject) || null,
+    before:clone(input.before || null),
+    changed:clone(input.changed || null),
+    after:clone(input.after || null),
+    evidence:clone(input.evidence || []),
+    receipt:clone(input.receipt || null),
+    repo:text(input.repo) || null,
+    pr:text(input.pr) || null,
+    sha:text(input.sha) || null,
+    occurredAt:required(input.occurredAt, "movement.occurredAt"),
+    semanticTruthOwner:text(input.semanticTruthOwner) || null,
+    semanticMutation:false,
+  };
+  return freeze(movement);
+}
+
+export function assertHermesSemanticBoundary(movement = {}) {
+  if (movement.semanticMutation === true || movement.mutatesSemanticTruth === true) {
+    throw new Error("HERMES_SEMANTIC_TRUTH_MUTATION_FORBIDDEN");
+  }
+  return true;
+}
+
+export function classifyMimirRelation({ explicitDuplicate = false, lineage = null, conflict = false } = {}) {
+  if (conflict) return "CONFLICT_QUARANTINE";
+  if (lineage && (text(lineage.continuedFrom) || text(lineage.derivedFrom) || unique(lineage.relatedTo).length)) return "LINEAGE";
+  if (explicitDuplicate) return "DUPLICATE_CANDIDATE";
+  return "UNKNOWN_REQUIRES_OWNER";
+}
+
+export function normalizeSpectrumSignal({ source, sourceReceipt, payload, observedAt } = {}) {
+  return freeze({
+    source:required(source, "signal.source"),
+    sourceReceipt:clone(sourceReceipt || null),
+    payload:clone(payload || null),
+    observedAt:required(observedAt, "signal.observedAt"),
+    receiptPreserved:sourceReceipt != null,
+    status:sourceReceipt == null ? "UNKNOWN" : "RECEIVED",
+  });
+}
+
+export function projectOwnerTruth({ value, observedAt, now, maxAgeMs = null } = {}) {
+  if (value === undefined || value === null) return freeze({ status:"UNKNOWN", value:null, observedAt:null });
+  const observed = Date.parse(text(observedAt));
+  const current = Date.parse(text(now));
+  if (maxAgeMs != null && Number.isFinite(observed) && Number.isFinite(current) && current - observed > Number(maxAgeMs)) {
+    return freeze({ status:"STALE", value:clone(value), observedAt:text(observedAt) || null });
+  }
+  return freeze({ status:"KNOWN", value:clone(value), observedAt:text(observedAt) || null });
+}
+
+export function legacyCapabilityBoundary() {
+  return freeze({ executableAuthority:0, canRoute:false, canMutateTruth:false, status:"HISTORY_ONLY" });
+}

@@ -100,3 +100,51 @@ test("Master Architecture overview states all role boundaries", async () => {
   assert.equal(overview.truthOwners.SPECTRUM_PRIME, "OPERATIONS_INTELLIGENCE");
   assert.ok(overview.invariants.includes("SPECTRUM_DOES_NOT_EXECUTE_WORK"));
 });
+
+test("V5 gates handoff identity and uses action-dependent critical fields", async () => {
+  const api = await import(masterUrl + "?contract=" + Date.now());
+  assert.deepEqual(api.assertHandoffIdentity({
+    sent:{ workId:"W1", checkpointId:"C1" },
+    acknowledged:{ workId:"W1", checkpointId:"C1" },
+  }), { workId:"W1", checkpointId:"C1", matched:true });
+  assert.throws(() => api.assertHandoffIdentity({
+    sent:{ workId:"W1", checkpointId:"C1" },
+    acknowledged:{ workId:"W2", checkpointId:"C1" },
+  }), /HANDOFF_IDENTITY_MISMATCH/);
+  assert.equal(api.validateCriticalFields("BRIEF", { requestedResult:"brief" }).complete, true);
+  assert.equal(api.validateCriticalFields("MERGE", { repo:"org/repo" }).complete, false);
+  assert.deepEqual(api.createGapConfirmation({ actor:"GO", confirmedAt:"2026-10-04T18:00:00Z", missingFields:["sha"] }).missingFields, ["sha"]);
+});
+
+test("V5 inspects branch continuity before reuse or creation", async () => {
+  const api = await import(masterUrl + "?branch=" + Date.now());
+  assert.equal(api.resolveBranchContinuity({ requestedBranch:"work/a", candidates:[{ branch:"work/a", status:"ACTIVE", sha:"abc" }] }).decision, "REUSE");
+  assert.equal(api.resolveBranchContinuity({ requestedBranch:"work/a", candidates:[] }).createAllowed, false);
+  assert.equal(api.resolveBranchContinuity({ requestedBranch:"work/a", candidates:[{ branch:"work/a", status:"ACTIVE" }, { branch:"work/a", status:"ACTIVE" }] }).decision, "CONFLICT");
+});
+
+test("V5 keeps Hermes movement semantic-neutral and MIMIR non-destructive", async () => {
+  const api = await import(masterUrl + "?roles=" + Date.now());
+  const movement = api.createHermesMovementRecord({
+    workId:"W1", checkpointId:"C1", from:"GO", to:"PIXIE", actionType:"HANDOFF",
+    before:{ status:"READY" }, changed:{ location:"PIXIE" }, after:{ status:"RECEIVED" },
+    receipt:{ id:"R1" }, occurredAt:"2026-10-04T18:00:00Z", semanticTruthOwner:"CENTRE",
+  });
+  assert.equal(movement.semanticMutation, false);
+  assert.equal(api.assertHermesSemanticBoundary(movement), true);
+  assert.throws(() => api.assertHermesSemanticBoundary({ semanticMutation:true }), /SEMANTIC_TRUTH_MUTATION_FORBIDDEN/);
+  assert.equal(api.classifyMimirRelation({ lineage:{ derivedFrom:"W0" } }), "LINEAGE");
+  assert.equal(api.classifyMimirRelation({ explicitDuplicate:true }), "DUPLICATE_CANDIDATE");
+  assert.equal(api.classifyMimirRelation({}), "UNKNOWN_REQUIRES_OWNER");
+});
+
+test("V5 preserves Spectrum receipts and projection uncertainty", async () => {
+  const api = await import(masterUrl + "?signals=" + Date.now());
+  const signal = api.normalizeSpectrumSignal({ source:"OBSERVER", sourceReceipt:{ id:"R1" }, payload:{ status:"WAIT" }, observedAt:"2026-10-04T18:00:00Z" });
+  assert.equal(signal.receiptPreserved, true);
+  assert.equal(signal.status, "RECEIVED");
+  assert.equal(api.normalizeSpectrumSignal({ source:"OBSERVER", payload:{ status:"WAIT" }, observedAt:"2026-10-04T18:00:00Z" }).status, "UNKNOWN");
+  assert.equal(api.projectOwnerTruth({ value:{ status:"WAIT" } }).status, "KNOWN");
+  assert.equal(api.projectOwnerTruth({ value:{ status:"WAIT" }, observedAt:"2020-01-01T00:00:00Z", now:"2026-10-04T18:00:00Z", maxAgeMs:1000 }).status, "STALE");
+  assert.deepEqual(api.legacyCapabilityBoundary(), { executableAuthority:0, canRoute:false, canMutateTruth:false, status:"HISTORY_ONLY" });
+});
