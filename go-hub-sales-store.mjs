@@ -4,6 +4,8 @@ const id = value => /^[A-Za-z0-9:_-]{1,160}$/.test(String(value||"")) ? String(v
 const optionalId = value => String(value||"") ? id(value) : null;
 const text = value => String(value||"").slice(0,4000);
 const listText = (value,maxItems=12,maxLen=800) => Array.isArray(value) ? value.slice(-maxItems).map(item=>text(item).slice(0,maxLen)).filter(Boolean) : [];
+const GO_BUDGET_LIMITS=Object.freeze({whisperPerConversation:3,takeoverPerConversation:3,dailyTotal:80,dailyTakeover:20});
+const bangkokDay = now => new Date(Number(now||Date.now()) + 7*60*60*1000).toISOString().slice(0,10);
 function normalizeHandoff(value={}) {
   const h=value&&typeof value==="object"&&!Array.isArray(value)?value:{};
   const identity=h.identity&&typeof h.identity==="object"?h.identity:{};
@@ -94,6 +96,37 @@ export function createSalesStore({storage}={}) {
       await storage.put(key,record);
       const saved=await storage.get(key);if(saved?.receivedAt!==receivedAt)fail("BRIEF_READBACK_FAILED",502);
       return {ok:true,brief:saved,receipt:receivedAt};
+    },
+    async goBudget(payload={}) {
+      ready();
+      const clientId=id(payload.clientId),conversationId=id(payload.conversationId),requestId=id(payload.requestId);
+      const kind=String(payload.kind||"").toUpperCase();
+      if(!["WHISPER","TAKEOVER"].includes(kind))fail("GO_BUDGET_KIND_DENIED");
+      const day=bangkokDay();
+      const requestKey="spectrum:go:request:"+requestId;
+      const prior=await storage.get(requestKey);
+      if(prior){
+        if(prior.clientId!==clientId||prior.conversationId!==conversationId||prior.kind!==kind)fail("GO_BUDGET_REQUEST_CONFLICT",409);
+        return {ok:true,allowed:prior.allowed,duplicate:true,reason:prior.reason||null,budget:prior.budget};
+      }
+      const conversationKey="spectrum:go:conversation:"+day+":"+conversationId;
+      const globalKey="spectrum:go:global:"+day;
+      const conversation=await storage.get(conversationKey)||{day,conversationId,whisper:0,takeover:0,total:0};
+      const global=await storage.get(globalKey)||{day,whisper:0,takeover:0,total:0};
+      let allowed=true,reason=null;
+      if(global.total>=GO_BUDGET_LIMITS.dailyTotal){allowed=false;reason="GO_DAILY_TOTAL_LIMIT";}
+      else if(kind==="TAKEOVER"&&global.takeover>=GO_BUDGET_LIMITS.dailyTakeover){allowed=false;reason="GO_DAILY_TAKEOVER_LIMIT";}
+      else if(kind==="WHISPER"&&conversation.whisper>=GO_BUDGET_LIMITS.whisperPerConversation){allowed=false;reason="GO_CONVERSATION_WHISPER_LIMIT";}
+      else if(kind==="TAKEOVER"&&conversation.takeover>=GO_BUDGET_LIMITS.takeoverPerConversation){allowed=false;reason="GO_CONVERSATION_TAKEOVER_LIMIT";}
+      if(allowed){
+        conversation.total+=1;global.total+=1;
+        if(kind==="WHISPER"){conversation.whisper+=1;global.whisper+=1;}else{conversation.takeover+=1;global.takeover+=1;}
+        await storage.put(conversationKey,conversation);await storage.put(globalKey,global);
+      }
+      const budget={day,conversation:{whisper:conversation.whisper,takeover:conversation.takeover,total:conversation.total},global:{whisper:global.whisper,takeover:global.takeover,total:global.total},limits:GO_BUDGET_LIMITS};
+      const record={requestId,clientId,conversationId,kind,allowed,reason,budget,reservedAt:new Date().toISOString()};
+      await storage.put(requestKey,record);
+      return {ok:true,allowed,duplicate:false,reason,budget};
     },
     async event(payload={}) {
       ready();if(!["PAGE_VIEW","SERVICE_INTEREST","BRIEF_STARTED","CTA_CLICK"].includes(payload.type))fail("SALES_EVENT_TYPE_DENIED");
