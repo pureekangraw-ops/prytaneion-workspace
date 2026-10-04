@@ -1,3 +1,4 @@
+import { agentRuntimeDescriptor } from "./go-hub-agent-family.mjs";
 /**
  * MIMIR Logic v1
  *
@@ -577,6 +578,7 @@ export function planReturnHousekeeping(input = {}) {
 
   return deepFreeze({
     schemaVersion: MIMIR_LOGIC_VERSION,
+    agent: agentRuntimeDescriptor("MIMIR"),
     planId: text(input.planId, "planId"),
     returnId: text(envelope.returnId, "returnEnvelope.returnId"),
     workId: text(envelope.workId, "returnEnvelope.workId"),
