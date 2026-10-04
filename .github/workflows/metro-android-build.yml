@@ -29,9 +29,14 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+      - name: Verify build toolchain
+        run: |
+          java -version
+          gradle --version
       - name: Build METRO debug APK
         run: >-
           gradle --no-daemon :app:assembleDebug
