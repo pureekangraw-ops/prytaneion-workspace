@@ -3,7 +3,6 @@ package com.yggmetro.metro
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -52,12 +51,12 @@ class MainActivity : Activity() {
             settings.userAgentString = "${settings.userAgentString} YGG-METRO-Android/0.1.0"
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                    progress.visibility = View.VISIBLE
-                    offlinePanel.visibility = View.GONE
+                    this@MainActivity.progress.visibility = View.VISIBLE
+                    this@MainActivity.offlinePanel.visibility = View.GONE
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    progress.visibility = View.GONE
+                    this@MainActivity.progress.visibility = View.GONE
                 }
 
                 override fun onReceivedError(
@@ -90,13 +89,13 @@ class MainActivity : Activity() {
             visibility = View.GONE
             addView(TextView(this@MainActivity).apply {
                 text = "METRO ยังเชื่อมต่อไม่ได้"
-                textColor = Color.WHITE
+                setTextColor(Color.WHITE)
                 textSize = 20f
                 gravity = Gravity.CENTER
             })
             addView(TextView(this@MainActivity).apply {
                 text = "ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่อีกครั้ง"
-                textColor = Color.LTGRAY
+                setTextColor(Color.LTGRAY)
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setPadding(0, 12, 0, 20)
