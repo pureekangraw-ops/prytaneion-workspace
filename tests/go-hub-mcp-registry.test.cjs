@@ -158,7 +158,7 @@ test("registry publishes lifecycle plus one Hephaestus Foreman tool with safe an
   assert.equal(calls.at(-1).name, "agentFamilyStatus");
 
   await registry.callTool("go_hub_inspect_repository", { repository: "pureekangraw-ops/standard-", branch: "main", workContext: factoryWorkContext });
-  assert.equal(calls[0].name, "inspect");
+  assert.equal(calls.at(-1).name, "inspect");
 
   await registry.callTool("go_hub_counter_create", {
     counterId: "COUNTER-0001", request: "Find GO Hub source", context: {}, workContext: counterWorkContext,
