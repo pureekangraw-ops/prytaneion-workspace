@@ -30,7 +30,7 @@ test("confirmed brief preserves deterministic Work identity", async () => {
 });
 
 test("confirmed brief rejects a changed payload", async () => {
-  const { createSalesStore } = await import("./go-hub-sales-store.mjs");
+  const { createSalesStore } = await import("../go-hub-sales-store.mjs");
   const store = createSalesStore({ storage: memoryStorage() });
   const base = { briefId: "BRIEF-2", clientId: "CLIENT-1", conversationId: "CONV-1", workId: "WORK-SPECTRUM-BRIEF-2", brief: { goal: "A" } };
   await store.brief("confirm", base);
