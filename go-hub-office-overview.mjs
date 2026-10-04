@@ -18,6 +18,45 @@ export function createOfficeOverview({centre,probes={}}={}) {
       const counts={active:0,waiting:0,done:0,attention:0,cancelled:0,unknown:0};for(const w of works)counts[bucket(w.status)]++;
       return {ok:true,works,counts,total:index.total,nextOffset:index.nextOffset,coverage:"INDEXED_WORKS",countsCoverage:"CURRENT_PAGE",checkedAt:new Date().toISOString()};
     },
+    async activity({limit=12}={}) {
+      const current=await this.works({offset:0,limit:Math.max(25,Number(limit)||12),view:"current"});
+      const items=current.works
+        .filter(w=>!["CANCEL","CANCELLED"].includes(String(w.status||"").toUpperCase()))
+        .sort((a,b)=>String(b.lastUpdated||b.checkedAt||"").localeCompare(String(a.lastUpdated||a.checkedAt||"")))
+        .slice(0,Math.min(25,Math.max(1,Number(limit)||12)))
+        .map(w=>({
+          workId:w.workId,
+          checkpointId:w.checkpointId,
+          name:w.name,
+          status:w.status,
+          holder:w.holder||null,
+          waitReason:w.waitReason||null,
+          movedAt:w.lastUpdated||w.checkedAt,
+          source:w.source,
+          movement:w.waitReason?("รอ: "+w.waitReason):w.holder?("อยู่กับ "+w.holder):("สถานะ "+w.status),
+        }));
+      return {ok:true,items,coverage:current.coverage,checkedAt:new Date().toISOString()};
+    },
+    async health() {
+      const current=await this.works({offset:0,limit:50,view:"current"});
+      const mismatches=[];
+      for(const w of current.works){
+        const s=String(w.status||"UNKNOWN").toUpperCase();
+        if(["ON PROCESS","ON_PROCESS","DOING"].includes(s) && !w.holder)mismatches.push({workId:w.workId,kind:"OWNER_MISSING",message:"งานกำลังทำแต่ยังไม่เห็นผู้ถือ Work"});
+        if(["OPEN"].includes(s) && w.holder)mismatches.push({workId:w.workId,kind:"OPEN_WITH_HOLDER",message:"งานยัง OPEN แต่มีผู้ถือ Work"});
+        if(s==="UNKNOWN")mismatches.push({workId:w.workId,kind:"OWNER_TRUTH_UNKNOWN",message:"อ่าน Owner Source ไม่สำเร็จ"});
+      }
+      const unknown=current.works.filter(w=>String(w.status||"").toUpperCase()==="UNKNOWN").length;
+      const waiting=current.works.filter(w=>bucket(w.status)==="waiting").length;
+      return {
+        ok:true,
+        state:mismatches.length||unknown?"ATTENTION":"STABLE",
+        counts:{current:current.works.length,waiting,unknown,mismatches:mismatches.length},
+        mismatches:mismatches.slice(0,20),
+        checkedAt:new Date().toISOString(),
+        basis:"CENTRE_WORK_OWNER"
+      };
+    },
     async system() {
       const components=await Promise.all(names.map(async name=>{
         let status="UNKNOWN";
