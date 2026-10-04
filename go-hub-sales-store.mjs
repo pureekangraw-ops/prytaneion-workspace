@@ -11,7 +11,8 @@ export function createSalesStore({storage}={}) {
       const briefId=id(payload.briefId),clientId=id(payload.clientId),conversationId=id(payload.conversationId),requestedWorkId=optionalId(payload.workId);
       const key="spectrum:brief:"+briefId, previous=await storage.get(key);
       if(previous && (previous.clientId!==clientId || previous.conversationId!==conversationId))fail("BRIEF_IDENTITY_CONFLICT",409);
-      const brief=Object.fromEntries(["goal","jobType","audience","materials","pageCount","package","desiredDate","deadlineText"].map(k=>[k,text(payload.brief?.[k])]));
+      const brief=Object.fromEntries(["goal","serviceLine","entryService","sourcePage","jobType","audience","materials","pageCount","package","desiredDate","deadlineText"].map(k=>[k,text(payload.brief?.[k])]));
+      brief.sourcePage=brief.sourcePage.split(/[?#]/)[0];
       if(previous?.status==="CONFIRMED") {
         if(operation==="confirm" && JSON.stringify(previous.brief)!==JSON.stringify(brief))fail("BRIEF_CONFIRM_CONFLICT",409);
         if(operation==="confirm") {
