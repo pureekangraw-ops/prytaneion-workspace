@@ -3,7 +3,7 @@ import { createSalesStore } from "./go-hub-sales-store.mjs";
 import { CENTRE_STATES, createCentrePassage } from "./go-hub-centre.js";
 import { routeInterruptionReturn } from "./go-hub-city-route.js";
 import { createGlobalAuditService } from "./go-hub-global-audit.mjs";
-import { createWorkRecord as createV4WorkRecord, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, reopenWork as reopenV4Work, emergencyEnterWork as emergencyEnterV4Work, emergencyExitWork as emergencyExitV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
+import { createWorkRecord as createV4WorkRecord, createDerivedWork as createDerivedV4Work, claimWork as claimV4Work, updateWorkDestinations as updateV4WorkDestinations, waitForConfirmation as waitV4Work, resumeWork as resumeV4Work, reopenWork as reopenV4Work, emergencyEnterWork as emergencyEnterV4Work, emergencyExitWork as emergencyExitV4Work, returnWork as returnV4Work, boardView as v4BoardView, createCentreBackedWorkIndex } from "./go-hub-centre-v4.js";
 import { createHeimdallV4 } from "./go-hub-heimdall-v4.js";
 import { prepareStandardMissionTicket, issueStandardMissionTicket, replaceStandardMissionTicket, missionTicketSearchCode } from "./go-hub-mission-card.mjs";
 import { resolveCentreWork } from "./go-hub-centre-resolver.mjs";
@@ -508,6 +508,9 @@ function v4MissionAction(state, action, input = {}) {
       unknowns:missionUnique(input.unknowns),
       lastLocation:String(input.lastLocation || mission.session.lastDestination || "").trim() || null,
       mode:String(input.mode || "NORMAL_RETURN").trim().toUpperCase(),
+      recovery:input.recovery && typeof input.recovery === "object" && !Array.isArray(input.recovery)
+        ? clone(input.recovery)
+        : null,
       universalLifecycle:input.universalLifecycle && typeof input.universalLifecycle === "object"
         ? clone(input.universalLifecycle)
         : null,
@@ -734,6 +737,22 @@ export class GoHubCentreState {
       const index = createCentreBackedWorkIndex({ storage:this.ctx.storage, source:"CENTRE_GLOBAL_INDEX" });
       const works = await index.all();
       return json(resolveCentreWork(works, input));
+    }
+
+    if (action === "v4_create_derived") {
+      if (state) throw Object.assign(new Error("CENTRE_WORK_ALREADY_EXISTS"), { status: 409 });
+      const sourceWorkId = required(input.sourceWorkId, "Source Work ID");
+      const index = createCentreBackedWorkIndex({ storage: this.ctx.storage });
+      const source = await index.get(sourceWorkId);
+      if (!source) throw Object.assign(new Error("CENTRE_SOURCE_WORK_NOT_FOUND"), { status: 404 });
+      const supplied = input.work || input;
+      if (supplied.workId && supplied.workId !== input.workId) {
+        throw Object.assign(new Error("CENTRE_IDENTITY_CONFLICT"), { status: 409 });
+      }
+      const work = createDerivedV4Work(source, { ...supplied, workId: input.workId, sourceWorkId, lineage:input.lineage });
+      await index.put(work);
+      state = await this.save({ v4: true, work, phase: "V4_OPEN_DERIVED", ownership: { revision: 0, enforced: false }, effectLedger: { revision: 0, entries: [] }, executionCheckpoint: { revision: 0, latest: null } });
+      return json({ ok: true, v4: true, work, derivedFrom:sourceWorkId });
     }
 
     if (action === "v4_create") {

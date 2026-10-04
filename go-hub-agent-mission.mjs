@@ -2,6 +2,7 @@ import { createMissionCard, missionTicketSearchCode } from "./go-hub-mission-car
 import { workCardView } from "./go-hub-work-card.js";
 import { CARD_HISTORY_RESET, currentCardHistoryPins, cardHistoryPolicyView } from "./go-hub-card-history-policy.mjs";
 import { translateAgentAction } from "./go-hub-agent-family-runtime.mjs";
+import { createInterruptionRecovery, normalizeWorkLineage } from "./go-hub-master-architecture.mjs";
 
 const text = value => String(value ?? "").trim();
 const clone = value => value == null ? value : structuredClone(value);
@@ -433,6 +434,33 @@ export function createAgentMissionService({
 
   async function readMission(workContext) {
     return centre({ action:"v4_mission_get", ...workContext });
+  }
+
+  function recoveryDetails(input = {}, resolved = {}, mode = "INTERRUPTED") {
+    const ticket = resolved.current?.mission?.memory?.cardMachine?.current || resolved.card || {};
+    const reality = resolved.current?.mission?.memory?.latestReality || {};
+    const observedAt = text(input.observedAt || input.timestamp || now()) || null;
+    const evidence = input.evidence === undefined ? (ticket.evidence || reality.evidence || []) : input.evidence;
+    const unknownGap = input.unknownGap !== undefined
+      ? input.unknownGap
+      : input.unknowns !== undefined ? input.unknowns : (reality.unknownGap || reality.unknowns || []);
+    return createInterruptionRecovery({
+      workId:resolved.workContext?.workId || resolved.work?.workId,
+      checkpointId:resolved.workContext?.checkpointId || resolved.work?.checkpointId,
+      actor:text(input.actor || resolved.current?.mission?.session?.agentId || ticket.agentId || "GO").toUpperCase(),
+      lastSafePoint:text(input.lastSafePoint || input.safePoint || input.lastLocation || ticket.lastSafePoint || reality.lastKnownState) || null,
+      lastAction:text(input.lastAction || ticket.lastAction) || null,
+      lastLocation:text(input.lastLocation || ticket.lastLocation || reality.lastLocation) || null,
+      observedAt,
+      evidenceRefs:evidenceRefs(evidence),
+      receipt:clone(input.receipt || reality.receipt || null),
+      repo:text(input.repo || input.repository || reality.repo || reality.repository) || null,
+      pr:text(input.pr || input.pullRequest || reality.pr || reality.pullRequest) || null,
+      sha:text(input.sha || input.commitSha || reality.sha || reality.commitSha) || null,
+      unknownGap:unique(unknownGap),
+      interruptCause:text(input.interruptCause || input.cause || reality.interruptCause || reality.cause) || null,
+      mode:text(input.recoveryMode || input.mode || mode).toUpperCase(),
+    });
   }
 
   async function inspectWork(workContext) {
@@ -950,8 +978,10 @@ export function createAgentMissionService({
     const recommendedTools = unique(input.recommendedTools?.length
       ? input.recommendedTools
       : unique(input.destinations).flatMap(destinationTools));
+    const creationAction = text(input.creationAction || "v4_create");
     const created = await centre({
-      action:"v4_create",
+      action:creationAction,
+      ...(creationAction === "v4_create_derived" ? { sourceWorkId:text(input.sourceWorkId) } : {}),
       workId,
       work:{
         workId,
@@ -961,6 +991,7 @@ export function createAgentMissionService({
         requestedDestinations:unique(input.destinations),
         scope:unique(input.scope),
         workType:text(input.workType || "NORMAL").toUpperCase(),
+        lineage:normalizeWorkLineage(input.lineage || {}),
       },
     });
     const work = created.work;
@@ -1004,9 +1035,49 @@ export function createAgentMissionService({
     return /^TABLET:/i.test(value) ? "CARD:" + value.slice(7) : value;
   }
 
+  function tabletRecoveryView(ticket, reality = {}, current = null) {
+    const sessionStatus = text(current?.mission?.session?.status).toUpperCase();
+    const currentStatus = text(current?.work?.status).toUpperCase();
+    const returnedStatus = text(reality.missionStatus).toUpperCase();
+    const activeSession = Boolean(sessionStatus && !["RETURNED", "EXITED"].includes(sessionStatus));
+    const status = (activeSession ? currentStatus : returnedStatus) || text(ticket?.status).toUpperCase() || currentStatus || "UNKNOWN";
+    const hold = new Set(["WAIT", "WAIT VERIFY", "BLOCKED", "UNKNOWN"]).has(status);
+    const recovery = ticket?.recovery || reality.recovery || {};
+    const lastLocation = text(recovery.lastLocation || ticket?.lastLocation || reality.lastLocation) || null;
+    const nextAction = text(ticket?.nextAction || reality.nextAction) || null;
+    const unknowns = unique(ticket?.unknowns || reality.unknowns);
+    const observedAt = text(recovery.observedAt || recovery.timestamp || ticket?.observedAt || reality.returnedAt || reality.observedAt || current?.work?.lastUpdated) || null;
+    const lastSafePoint = text(recovery.lastSafePoint || recovery.safePoint || reality.lastKnownState || lastLocation) || null;
+    return {
+      mode:hold ? "HOLD" : ["COMPLETE", "CANCEL"].includes(status) ? "TERMINAL" : "ACTIVE",
+      custody:hold ? "HERMES" : null,
+      status,
+      actor:text(recovery.actor || ticket?.agentId || current?.mission?.session?.agentId) || null,
+      lastSafePoint,
+      lastAction:text(recovery.lastAction) || null,
+      lastLocation,
+      nextAction,
+      interruptCause:text(recovery.interruptCause || recovery.cause) || null,
+      unknowns,
+      unknownGap:unique(recovery.unknownGap || reality.unknownGap || unknowns),
+      observedAt,
+      timestamp:text(recovery.timestamp || observedAt) || null,
+      evidenceRefs:clone(recovery.evidenceRefs || reality.evidence || []),
+      receipt:clone(recovery.receipt || reality.receipt || null),
+      repo:text(recovery.repo || reality.repo || reality.repository) || null,
+      pr:text(recovery.pr || reality.pr || reality.pullRequest) || null,
+      sha:text(recovery.sha || reality.sha || reality.commitSha) || null,
+      safePoint:hold ? lastSafePoint : null,
+      autoRetry:false,
+      autoRollback:false,
+      resumeAllowed:hold ? status !== "UNKNOWN" || Boolean(lastSafePoint || lastLocation || nextAction) : !["COMPLETE", "CANCEL"].includes(status),
+    };
+  }
+
   function tabletView(ticket, fallbackId = null, current = null) {
     if (!ticket) return null;
     const reality = ticket.last_return || current?.mission?.memory?.latestReality || {};
+    const recovery = tabletRecoveryView(ticket, reality, current);
     return {
       kind:"HERMES_WORK_TABLET",
       version:Number(ticket.version || 1),
@@ -1018,8 +1089,14 @@ export function createAgentMissionService({
       task:text(ticket.task || ticket.intent?.mission || current?.mission?.memory?.mission || current?.work?.command) || null,
       initialContext:clone(ticket.initialContext !== undefined ? ticket.initialContext : (ticket.context || current?.mission?.memory?.selectedContext || {})),
       status:text(ticket.status || reality.missionStatus || current?.work?.status) || null,
+      lineage:clone(current?.work?.lineage || reality.lineage || null),
       result:clone(ticket.result !== undefined ? ticket.result : (reality.result ?? null)),
       evidence:clone(ticket.evidence !== undefined ? ticket.evidence : (reality.evidence || [])),
+      lastLocation:text(ticket.lastLocation || reality.lastLocation) || null,
+      nextAction:text(ticket.nextAction || reality.nextAction) || null,
+      unknowns:unique(ticket.unknowns || reality.unknowns),
+      recovery,
+      readbackVerified:reality.readbackVerified === true || Boolean(reality.ownerReadback),
     };
   }
 
@@ -1085,6 +1162,7 @@ export function createAgentMissionService({
       tabletId:tablet?.tabletId || resolved.tabletId || null,
       tablet,
       workContext:clone(resolved.workContext),
+      lineage:clone(resolved.work?.lineage || null),
       ownerReadback:clone(legacy.ownerReadback),
       compatibility:clone(resolved.compatibility || {
         mode:"CURRENT_TABLET",
@@ -1166,6 +1244,18 @@ export function createAgentMissionService({
       chooser:"GO",
       prompt:"สร้าง Work Tablet และเข้าใช้งานแล้ว จากนี้ GO เลือกข้อมูล/target/tool ใส่แท็บเล็ตเองได้",
     }, 201);
+  }
+
+  async function createDerivedTablet(input = {}) {
+    const sourceWorkId = text(input.sourceWorkId);
+    if (!sourceWorkId) return json({ code:"HERMES_SOURCE_WORK_ID_REQUIRED" }, 400);
+    const result = await createTablet({
+      ...input,
+      creationAction:"v4_create_derived",
+      sourceWorkId,
+      lineage:normalizeWorkLineage({ ...input.lineage, derivedFrom:sourceWorkId }),
+    });
+    return result;
   }
 
   async function pickupTablet(input = {}) {
@@ -1326,6 +1416,39 @@ export function createAgentMissionService({
     });
   }
 
+  async function resumeTablet(input = {}) {
+    const resolvedBefore = await resolveTabletContext(input);
+    const currentTicket = resolvedBefore.current.mission?.memory?.cardMachine?.current || resolvedBefore.card;
+    const reality = resolvedBefore.current.mission?.memory?.latestReality || {};
+    const recovery = tabletRecoveryView(currentTicket, reality, resolvedBefore.current);
+    if (recovery.mode !== "HOLD") {
+      return json({
+        code:"HERMES_TABLET_NOT_ON_HOLD",
+        action:"resume_tablet",
+        tabletId:resolvedBefore.tabletId,
+        workContext:resolvedBefore.workContext,
+        recovery,
+      }, 409);
+    }
+    const resumed = await ensurePickupState(resolvedBefore);
+    const current = await readMission(resumed.workContext);
+    const resolved = {
+      ...resumed,
+      current,
+      work:current.work,
+      card:current.mission?.memory?.cardMachine?.current || resumed.card,
+      tabletId:tabletIdFromTicket(current.mission?.memory?.cardMachine?.current, resumed.tabletId),
+    };
+    return json({
+      ok:true,
+      action:"resume_tablet",
+      ...tabletPacket(resolved),
+      resumed:true,
+      resumedFrom:recovery,
+      prompt:"Resume แล้ว ต่อจาก Work และ checkpoint เดิม โดย HERMES ไม่สร้าง Work ใหม่",
+    });
+  }
+
   async function returnTablet(input = {}) {
     const resolvedBefore = await ensurePickupState(await resolveTabletContext(input));
     const returnedResponse = await returnCard({
@@ -1353,6 +1476,43 @@ export function createAgentMissionService({
       prompt:resolvedBefore.compatibility?.migrationRecommended
         ? "คืนงานและ readback แล้วโดยไม่บังคับย้ายบัตร · ครั้งถัดไปแนะนำใช้ " + resolvedBefore.tabletId
         : "คืน Work Tablet แล้ว ผลและหลักฐานถูกเก็บไว้สำหรับหยิบมาทำต่อครั้งหน้า",
+    });
+  }
+
+  async function ejectTablet(input = {}) {
+    const resolvedBefore = await ensurePickupState(await resolveTabletContext(input));
+    if (resolvedBefore.terminal) {
+      return json({ code:"HERMES_TERMINAL_TABLET_EJECT_FORBIDDEN", tabletId:resolvedBefore.tabletId }, 409);
+    }
+    const recovery = recoveryDetails(input, resolvedBefore, "INTERRUPTED");
+    const returnedResponse = await returnCard({
+      ...input,
+      workContext:resolvedBefore.workContext,
+      status:text(input.status || "WAIT").toUpperCase(),
+      mode:"INTERRUPTED_EJECT",
+      recovery,
+      unknowns:input.unknowns === undefined ? recovery.unknownGap : input.unknowns,
+      lastLocation:input.lastLocation || recovery.lastLocation,
+    });
+    const returnedBody = await payload(returnedResponse);
+    if (!okResponse(returnedResponse)) return returnedResponse;
+    await centre({ action:"v4_mission_card_update", ...resolvedBefore.workContext });
+    await centre({ action:"v4_mission_exit", ...resolvedBefore.workContext });
+    const final = await resolveTabletContext({ tabletId:resolvedBefore.tabletId });
+    return json({
+      ok:true,
+      action:"eject_tablet",
+      ...tabletPacket(final),
+      ejected:true,
+      interrupted:true,
+      exitMode:"EJECT",
+      recovery:clone(final.current?.mission?.memory?.latestReality?.recovery || recovery),
+      readbackVerified:returnedBody.readbackVerified === true || returnedBody.idempotent === true,
+      noAutoRetry:true,
+      noAutoRollback:true,
+      sessionClosed:true,
+      retrievalCode:final.card?.snapshot_key || missionTicketSearchCode(final.workContext.workId),
+      prompt:"หยุด action ใหม่แล้ว เก็บ Last Known State ไว้ใน HERMES HOLD; ห้าม retry/rollback อัตโนมัติก่อน inspect และ reconcile",
     });
   }
 
@@ -1926,6 +2086,11 @@ export function createAgentMissionService({
       evidence,
     });
     const work = returned.work;
+    const recovery = input.recovery && typeof input.recovery === "object" && !Array.isArray(input.recovery)
+      ? clone(input.recovery)
+      : ["INTERRUPTED", "EJECT", "INTERRUPTED_EJECT"].includes(text(input.mode).toUpperCase())
+        ? recoveryDetails(input, { ...resolvedBefore, current:await readMission(workContext) }, "INTERRUPTED")
+        : null;
     const recorded = await centre({
       action:"v4_mission_return",
       ...workContext,
@@ -1936,6 +2101,7 @@ export function createAgentMissionService({
       unknowns:unique(input.unknowns),
       lastLocation:text(input.lastLocation) || null,
       mode:text(input.mode || "NORMAL_RETURN").toUpperCase(),
+      recovery,
       universalLifecycle:lifecycle,
       ownerReadback:{
         sourceStatus:work.status,
@@ -1997,10 +2163,13 @@ export function createAgentMissionService({
       try {
         switch (text(input.action).toLowerCase()) {
           case "create_tablet": return await createTablet(input);
+          case "create_derived_tablet": return await createDerivedTablet(input);
           case "pickup_tablet": return await pickupTablet(input);
           case "emergency_enter": return await emergencyTabletEnter(input);
           case "help_choose": return await helpChooseTablet(input);
           case "update_tablet": return await updateTablet(input);
+          case "resume_tablet": return await resumeTablet(input);
+          case "eject_tablet": return await ejectTablet(input);
           case "return_tablet": return await returnTablet(input);
           case "pickup_card": return await pickupCard(input);
           case "apply_selection": return await applySelection(input);

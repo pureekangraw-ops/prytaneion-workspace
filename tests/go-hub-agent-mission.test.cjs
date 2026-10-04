@@ -1441,3 +1441,92 @@ test("HERMES mission return adapter preserves Work identity and waits for VERIFY
     assert.equal(inspected.mission.memory.latestReality.universalLifecycle.nextEvent, "VERIFY");
   }
 });
+
+test("HERMES Tablet HOLD exposes recovery custody and resumes the same Work", async () => {
+  const { createAgentMissionService } = await import(agentUrl + "?tablet-recovery=" + Date.now());
+  const { GoHubCentreState, createCentreLiveService } = await import(centreUrl + "?tablet-recovery=" + Date.now());
+  const namespace = namespaceFor(GoHubCentreState);
+  const centreLive = createCentreLiveService({ namespace });
+  const pins = [];
+  const boardRead = async () => new Response(JSON.stringify({ ok:true, pins }), { headers:{ "content-type":"application/json" } });
+  const service = createAgentMissionService({
+    centreLive,
+    counterDispatch:{ async create(){ throw new Error("unused"); } },
+    boardRead,
+    createId:prefix => prefix + "-RECOVERY",
+  });
+
+  const created = await body(await service.action({
+    action:"create_tablet",
+    mission:"Implement Hermes recovery seam",
+    requestedResult:"Preserve a resumable HOLD record",
+    workKey:"HERMES-RECOVERY-SEAM",
+  }));
+  pins.push({
+    workId:created.workContext.workId,
+    checkpointId:created.workContext.checkpointId,
+    jobCode:created.tabletId.slice("TABLET:".length),
+    status:"ON PROCESS",
+    title:"Implement Hermes recovery seam",
+    detail:"Preserve a resumable HOLD record",
+    card:{
+      cardId:"CARD:" + created.tabletId.slice("TABLET:".length),
+      tabletId:created.tabletId,
+      checkpointId:created.workContext.checkpointId,
+      jobCode:created.tabletId.slice("TABLET:".length),
+      sourceStatus:"ON PROCESS",
+      tool_access:[],
+    },
+  });
+
+  const held = await body(await service.action({
+    action:"eject_tablet",
+    tabletId:created.tabletId,
+    result:{ summary:"Paused after safe stop" },
+    evidence:[{ ref:"test://hermes/recovery" }],
+    unknowns:["post-safe-point effect"],
+    lastSafePoint:"before-commit",
+    lastAction:"prepare commit",
+    lastLocation:"GITHUB",
+    interruptCause:"session lost after timeout",
+    actor:"GO",
+    observedAt:"2026-10-04T18:00:00.000Z",
+    receipt:{ id:"RECEIPT-HERMES-001", status:"SAFE_STOP_RECORDED" },
+    repo:"pureekangraw-ops/prytaneion-workspace",
+    pr:"398",
+    sha:"07bd7c72ccf08c0d73676f4525f255062fda7537",
+    nextAction:"Inspect actual branch state before resume",
+  }));
+  assert.equal(held.ok, true);
+  assert.equal(held.tablet.recovery.mode, "HOLD");
+  assert.equal(held.tablet.recovery.custody, "HERMES");
+  assert.equal(held.tablet.recovery.lastSafePoint, "before-commit");
+  assert.equal(held.tablet.recovery.lastAction, "prepare commit");
+  assert.equal(held.tablet.recovery.lastLocation, "GITHUB");
+  assert.equal(held.tablet.recovery.interruptCause, "session lost after timeout");
+  assert.equal(held.tablet.recovery.actor, "GO");
+  assert.equal(held.tablet.recovery.observedAt, "2026-10-04T18:00:00.000Z");
+  assert.equal(held.tablet.recovery.timestamp, "2026-10-04T18:00:00.000Z");
+  assert.equal(held.tablet.recovery.repo, "pureekangraw-ops/prytaneion-workspace");
+  assert.equal(held.tablet.recovery.pr, "398");
+  assert.equal(held.tablet.recovery.sha, "07bd7c72ccf08c0d73676f4525f255062fda7537");
+  assert.deepEqual(held.tablet.recovery.unknowns, ["post-safe-point effect"]);
+  assert.deepEqual(held.tablet.recovery.unknownGap, ["post-safe-point effect"]);
+  assert.equal(held.tablet.recovery.receipt.id, "RECEIPT-HERMES-001");
+  assert.equal(held.tablet.recovery.autoRetry, false);
+  assert.equal(held.tablet.recovery.autoRollback, false);
+  assert.equal(held.noAutoRetry, true);
+  assert.equal(held.noAutoRollback, true);
+  assert.equal(held.tablet.recovery.resumeAllowed, true);
+
+  const resumed = await body(await service.action({
+    action:"resume_tablet",
+    tabletId:created.tabletId,
+  }));
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.resumedFrom.mode, "HOLD");
+  assert.equal(resumed.workContext.workId, created.workContext.workId);
+  assert.equal(resumed.workContext.checkpointId, created.workContext.checkpointId);
+  assert.notEqual(resumed.tablet.recovery.mode, "HOLD");
+});

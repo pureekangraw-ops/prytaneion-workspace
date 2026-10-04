@@ -10,11 +10,17 @@ export const UNIVERSAL_WORK_EVENTS = Object.freeze([
   "CLOSE",
 ]);
 
+export const UNIVERSAL_WORK_HANDOFF_EVENTS = Object.freeze([
+  "ACKNOWLEDGE",
+]);
+
 export const UNIVERSAL_WORK_EXCEPTION_EVENTS = Object.freeze([
   "WAIT",
   "BLOCKED",
   "UNKNOWN",
   "REPAIR_REQUIRED",
+  "INTERRUPTED",
+  "EJECTED",
   "CANCELLED",
 ]);
 
@@ -43,6 +49,7 @@ export const UNIVERSAL_WORK_ACTORS = Object.freeze([
 
 const ALL_EVENTS = new Set([
   ...UNIVERSAL_WORK_EVENTS,
+  ...UNIVERSAL_WORK_HANDOFF_EVENTS,
   ...UNIVERSAL_WORK_EXCEPTION_EVENTS,
 ]);
 const STATUS_SET = new Set(UNIVERSAL_WORK_STATUSES);
@@ -53,82 +60,109 @@ const ACTOR_ACTION_MAP = Object.freeze({
     create: "CREATE",
     seen: "RECEIVED",
     pickup: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     answer: "RETURN",
     readback: "VERIFY",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   GO: Object.freeze({
     create: "CREATE",
     receive: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     resume: "RESUME",
     execute: "EXECUTE",
     return: "RETURN",
     verify: "VERIFY",
     verification: "VERIFY",
     close: "CLOSE",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   LIGHT: Object.freeze({
     claim: "RECEIVED",
     pickup: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     resume: "RESUME",
     execute: "EXECUTE",
     wait: "WAIT",
     answer: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   PIXIE: Object.freeze({
     dispatch: "RECEIVED",
     receive: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     resume: "RESUME",
     execute: "EXECUTE",
     result: "RETURN",
     result_packet: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   SPECTRUM: Object.freeze({
     intake: "RECEIVED",
     receive: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     resume: "RESUME",
     execute: "EXECUTE",
     status_brief: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   HERMES: Object.freeze({
     create_tablet: "CREATE",
     pickup_tablet: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     resume: "RESUME",
     update_tablet: "EXECUTE",
     return_tablet: "RETURN",
+    eject_tablet: "EJECTED",
+    interrupt: "INTERRUPTED",
     verify: "VERIFY",
   }),
   MIMIR: Object.freeze({
     receive: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     resume: "RESUME",
     execute: "EXECUTE",
     housekeeping_report: "RETURN",
     return: "RETURN",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
   HUMAN: Object.freeze({
     create: "CREATE",
     receive: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
     resume: "RESUME",
     execute: "EXECUTE",
     return: "RETURN",
     verify: "VERIFY",
     close: "CLOSE",
+    interrupt: "INTERRUPTED",
+    eject: "EJECTED",
   }),
 });
 
 const NEXT_EVENTS = Object.freeze({
-  CREATE: new Set(["RECEIVED", "WAIT", "BLOCKED", "UNKNOWN"]),
-  RECEIVED: new Set(["RESUME", "EXECUTE", "RETURN", "WAIT", "BLOCKED", "UNKNOWN"]),
-  RESUME: new Set(["EXECUTE", "RETURN", "WAIT", "BLOCKED", "UNKNOWN"]),
-  EXECUTE: new Set(["EXECUTE", "RETURN", "WAIT", "BLOCKED", "UNKNOWN"]),
-  RETURN: new Set(["VERIFY", "RESUME", "WAIT", "BLOCKED", "UNKNOWN"]),
+  CREATE: new Set(["RECEIVED", "ACKNOWLEDGE", "WAIT", "BLOCKED", "UNKNOWN"]),
+  RECEIVED: new Set(["ACKNOWLEDGE", "RESUME", "EXECUTE", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "INTERRUPTED"]),
+  ACKNOWLEDGE: new Set(["RESUME", "EXECUTE", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "INTERRUPTED"]),
+  RESUME: new Set(["EXECUTE", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "INTERRUPTED"]),
+  EXECUTE: new Set(["EXECUTE", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "INTERRUPTED"]),
+  RETURN: new Set(["VERIFY", "RESUME", "WAIT", "BLOCKED", "UNKNOWN", "INTERRUPTED"]),
   VERIFY: new Set(["CLOSE", "RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN"]),
-  WAIT: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN"]),
-  BLOCKED: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "REPAIR_REQUIRED"]),
-  UNKNOWN: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "REPAIR_REQUIRED"]),
-  REPAIR_REQUIRED: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN"]),
+  WAIT: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "INTERRUPTED"]),
+  BLOCKED: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "REPAIR_REQUIRED", "INTERRUPTED"]),
+  UNKNOWN: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "REPAIR_REQUIRED", "INTERRUPTED"]),
+  REPAIR_REQUIRED: new Set(["RESUME", "RETURN", "WAIT", "BLOCKED", "UNKNOWN", "INTERRUPTED"]),
+  INTERRUPTED: new Set(["EJECTED", "RESUME", "WAIT", "RETURN", "BLOCKED", "UNKNOWN"]),
+  EJECTED: new Set(["VERIFY", "RESUME", "WAIT", "RETURN", "BLOCKED", "UNKNOWN"]),
 });
 
 function freezeArray(values = []) {
@@ -262,6 +296,9 @@ export function createLifecycleEvent(input = {}) {
     sourceEvent,
     reason: input.reason == null ? null : String(input.reason),
     evidenceRefs: freezeArray(input.evidenceRefs),
+    receiptRef: input.receiptRef == null ? null : String(input.receiptRef),
+    readback: input.readback == null ? null : String(input.readback),
+    handoffComplete: input.handoffComplete === true,
     occurredAt: input.occurredAt == null ? null : String(input.occurredAt),
   });
 }
@@ -345,6 +382,7 @@ export function universalWorkProtocolOverview() {
   return Object.freeze({
     contract: UNIVERSAL_WORK_PROTOCOL_VERSION,
     events: UNIVERSAL_WORK_EVENTS,
+    handoffEvents: UNIVERSAL_WORK_HANDOFF_EVENTS,
     exceptionEvents: UNIVERSAL_WORK_EXCEPTION_EVENTS,
     statuses: UNIVERSAL_WORK_STATUSES,
     actors: UNIVERSAL_WORK_ACTORS,
@@ -352,7 +390,10 @@ export function universalWorkProtocolOverview() {
       "LIFECYCLE_EVENT_IS_NOT_WORK_STATUS",
       "LIFECYCLE_EVENT_IS_NOT_ACTOR_ACTION",
       "HANDOFF_IS_NOT_NEW_WORK",
+      "SEND_IS_NOT_HANDOFF_COMPLETE",
+      "RETURN_IS_NOT_COMPLETE",
       "RESUME_IS_NOT_NEW_OWNER",
+      "HOLD_IS_HERMES_RECOVERY_CUSTODY",
       "RETURN_IS_NOT_COMPLETE",
       "VERIFY_IS_NOT_EXECUTE_AUTHORITY",
       "CONTEXT_IS_NOT_CURRENT_TRUTH",
