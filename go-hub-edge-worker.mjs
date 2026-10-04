@@ -3,6 +3,7 @@ import githubWorker, { createGithubLifecycleService } from "./go-hub-worker.mjs"
 import { createBrowserInterface } from "./go-hub-browser-interface.js";
 import { createFactoryMcpWorker, createCounterDispatchLifecycle } from "./go-hub-factory-mcp-worker.mjs";
 import { createFactoryActionService, createFactoryV4Service } from "./go-hub-factory-service.mjs";
+import { createPrismEyeService } from "./go-hub-prism-eye.mjs";
 import { createCloudflareService } from "./go-hub-cloudflare-service.mjs";
 import { createDeploymentProvenanceReader } from "./go-hub-deployment-provenance.mjs";
 import { createProjectStatusReadService } from "./go-hub-project-status-service.mjs";
@@ -781,12 +782,19 @@ export function createEdgeWorkerHandler({ delegate = githubWorker, factoryMcp = 
           counterDispatch,
           boardRead:() => lighthouseControlPort.boardRead(),
         });
+        const prismEye = createPrismEyeService({
+          fetchImpl,
+          endpoint:env?.ERGASTERION_FACTORY_URL,
+          secret:env?.ERGASTERION_HUB_SHARED_SECRET,
+          binding:env?.ERGASTERION_FACTORY,
+        });
         const officeGate = createOfficeGate({
           centreLive,
           overview:createOfficeOverview({centre:centreLive,probes:{Centre:async()=>{const r=await centreLive.action({action:"v4_inventory",limit:1});return {ok:r.ok};},SPECTRUM:async()=>{const r=await centreLive.action({action:"spectrum_list",limit:1});return {ok:r.ok};}}}),
           agentMission,
           agentMissionActions:AGENT_MISSION_ACTIONS,
           factoryEye:factoryEyeSessionsFor(env),
+          prismEye,
           passkey:createOfficePasskeyService({ namespace:env?.GO_HUB_OFFICE_PASSKEY }),
           rateLimiter:createOfficeRateLimiter({
             namespace:env?.GO_HUB_OFFICE_RATE_LIMIT,

@@ -34,6 +34,7 @@ const OFFICE_ALLOWED = new Map([
   ["/office/api/command", new Set(["POST"])],
   ["/office/api/eye", new Set(["GET"])],
   ["/office/api/eye/refresh", new Set(["POST"])],
+  ["/office/api/prism/latest", new Set(["GET"])],
   [OFFICE_ASSET_ROOT, new Set(["GET","POST"])],
   ["/office/passkey/status", new Set(["GET"])],
   ["/office/passkey/register/options", new Set(["POST"])],
@@ -299,7 +300,7 @@ function loginPage(errorCode = "") {
 }
 
 
-export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, passkey = null, rateLimiter = null, audit = null, overview = null } = {}) {
+export function createOfficeGate({ centreLive = null, agentMission = null, agentMissionActions = [], factoryEye = null, prismEye = null, passkey = null, rateLimiter = null, audit = null, overview = null } = {}) {
   return Object.freeze({
     owns(pathname) {
       return pathname === "/metro" || pathname === OFFICE_ROOT || pathname.startsWith(OFFICE_ROOT + "/");
@@ -554,6 +555,27 @@ export function createOfficeGate({ centreLive = null, agentMission = null, agent
         }
       }
 
+      if (url.pathname === "/office/api/prism/latest") {
+        if (!prismEye || typeof prismEye.latest !== "function") {
+          return json({ code:"OFFICE_PRISM_LIVE_UNAVAILABLE", source:"PRISM_BROWSER" }, 503);
+        }
+        const workId = String(url.searchParams.get("workId") || "").trim();
+        const checkpointId = String(url.searchParams.get("checkpointId") || "").trim();
+        if (!workId || !checkpointId) return json({ code:"OFFICE_PRISM_WORK_CONTEXT_REQUIRED", source:"PRISM_BROWSER" }, 400);
+        try {
+          const response = await prismEye.latest({ workContext:{ workId, checkpointId } });
+          const payload = await response.clone().json().catch(() => ({}));
+          return json({
+            ...payload,
+            source:"PRISM_BROWSER",
+            mode:"READ_ONLY_LIVE_READBACK",
+            createsAuthority:false,
+          }, response.status);
+        } catch {
+          return json({ code:"OFFICE_PRISM_LIVE_READ_FAILED", source:"PRISM_BROWSER" }, 502);
+        }
+      }
+
       if (url.pathname === "/office/api/eye/refresh") {
         if (!sameOrigin(request)) return json({ code:"OFFICE_ORIGIN_DENIED" }, 403);
         if (!factoryEye || typeof factoryEye.requestObservation !== "function") {
@@ -623,5 +645,6 @@ export const OFFICE_GATE_CONTRACT = Object.freeze({
   allowedRoutes:[...OFFICE_ALLOWED.keys()],
   workTruthOwner:"CENTRE",
   eyeTruthOwner:"FACTORY_EYE",
+  prismTruthOwner:"PRISM_BROWSER",
   sessionRevocation:"rotate GOHUB_OFFICE_SESSION_EPOCH or GOHUB_OFFICE_SESSION_KEY; logout clears browser cookie",
 });
