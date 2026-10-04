@@ -6,6 +6,7 @@ import {
   createAgentWorkEnvelope,
   createVerifiedReturn,
 } from "./go-hub-agent-family.mjs";
+import { adaptActorAction } from "./go-hub-universal-work-protocol.mjs";
 
 export const AGENT_HOME_ROUTES = Object.freeze({
   PIXIE:Object.freeze({
@@ -46,6 +47,24 @@ function required(value,label){
   return out;
 }
 
+const RECEIVE_ACTIONS = Object.freeze({
+  PIXIE:"receive",
+  SPECTRUM:"intake",
+  HERMES:"pickup_tablet",
+  MIMIR:"receive",
+  LIGHT:"claim",
+});
+
+export function translateAgentAction({ agentId, action, sourceEvent = action } = {}) {
+  return adaptActorAction({ actor:agentId, action, sourceEvent });
+}
+
+function translateAgentReceive(agentId, sourceEvent) {
+  const action=RECEIVE_ACTIONS[agentId];
+  if(!action) throw new Error("AGENT_RECEIVE_ACTION_UNKNOWN:"+agentId);
+  return translateAgentAction({ agentId, action, sourceEvent });
+}
+
 export function getAgentHomeRoute(agentId){
   const id=required(agentId,"agentId").toUpperCase();
   const route=AGENT_HOME_ROUTES[id];
@@ -69,6 +88,7 @@ export function prepareAgentDispatch(input={}){
     nextAction:input.nextAction||"ENTER_HOME_RUNTIME",
     state:"RECEIVE",
   });
+  const lifecycle=translateAgentReceive(agentId, input.sourceEvent || agentId+"_DISPATCH");
   return Object.freeze({
     contract:AGENT_FAMILY_VERSION,
     envelope,
@@ -79,6 +99,12 @@ export function prepareAgentDispatch(input={}){
       authorityExpanded:false,
       workTruthOwner:AGENT_FAMILY_POLICY.workTruthOwner,
       checkpointPreserved:true,
+      lifecycle:Object.freeze({
+        event:lifecycle.event,
+        actorAction:lifecycle.actorAction,
+        sourceEvent:lifecycle.sourceEvent,
+        adapter:lifecycle.adapter,
+      }),
     }),
   });
 }
@@ -86,6 +112,12 @@ export function prepareAgentDispatch(input={}){
 export function prepareAgentReturn(input={}){
   const returned=createVerifiedReturn(input);
   const route=getAgentHomeRoute(returned.agentId);
+  const actorAction=input.actorAction || (returned.agentId === "HERMES" ? "return_tablet" : "return");
+  const lifecycle=translateAgentAction({
+    agentId:returned.agentId,
+    action:actorAction,
+    sourceEvent:input.sourceEvent || actorAction,
+  });
   return Object.freeze({
     contract:AGENT_FAMILY_VERSION,
     from:route.home,
@@ -94,6 +126,17 @@ export function prepareAgentReturn(input={}){
     resultTools:route.resultTools,
     authorityExpanded:false,
     checkpointPreserved:true,
+    lifecycle:Object.freeze({
+      event:lifecycle.event,
+      actorAction:lifecycle.actorAction,
+      sourceEvent:lifecycle.sourceEvent,
+      adapter:lifecycle.adapter,
+      nextEvent:lifecycle.event === "RETURN" ? "VERIFY" : null,
+      workStatus:returned.agentId === "PIXIE" && returned.status === "COMPLETE"
+        ? "WAIT_VERIFY"
+        : null,
+      closeAllowed:false,
+    }),
   });
 }
 
