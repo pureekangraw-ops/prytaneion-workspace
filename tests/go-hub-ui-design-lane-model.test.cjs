@@ -64,3 +64,47 @@ test("handoff requires explicit approval and carries provenance", () => {
   assert.equal(packet.provenance.decisionRef, "DEC-001");
   assert.equal(packet.productionAuthority, false);
 });
+
+test("approved design closes the preview, readback, and evidence loop", () => {
+  let design = api.addFrame(api.createUiDesignDocument({ workId: "WORK-YGG-METRO" }), { frameId: "FRAME-DESKTOP", width: 1440, height: 900 });
+  design = api.addNode(design, { nodeId: "NODE-HERO", parentId: "FRAME-DESKTOP", kind: "RECTANGLE", geometry: { x: 24, y: 24, width: 900, height: 420 } });
+  design = api.createDesignVersion(design, { versionId: "V2", changeSummary: "spacing and text approved" });
+  design = api.approveDesignVersion(design, "V2", { decisionRef: "DEC-YGG-METRO-V2" });
+  const request = api.createPixiePreviewRequest(design, { previewId: "PREVIEW-V2" });
+  const preview = api.createPreviewResult(request, { artifactRef: "pixie://preview/V2" });
+  design = api.recordPreviewResult(design, preview);
+  const readback = api.createReadbackReport(request, preview, { readbackId: "READBACK-V2" });
+  assert.equal(readback.status, "PASS");
+  design = api.recordReadback(design, readback);
+  assert.equal(design.status, "VERIFIED");
+  assert.equal(design.approvedVersionId, "V2");
+  assert.equal(design.evidence[0].approvedVersionId, "V2");
+  assert.equal(design.evidence[0].status, "PASS");
+});
+
+test("preview failure and node mismatch never rewrite approval", () => {
+  let design = api.addFrame(api.createUiDesignDocument({ workId: "WORK-YGG-METRO" }), { frameId: "FRAME-MOBILE", width: 390, height: 844 });
+  design = api.addNode(design, { nodeId: "NODE-CARD", parentId: "FRAME-MOBILE", kind: "RECTANGLE", geometry: { x: 20, y: 20, width: 240, height: 120 } });
+  design = api.createDesignVersion(design, { versionId: "V2" });
+  design = api.approveDesignVersion(design, "V2", { decisionRef: "DEC-002" });
+  const request = api.createPixiePreviewRequest(design, { previewId: "PREVIEW-FAIL" });
+  const failedPreview = api.createPreviewResult(request, { status: "FAILED", error: "PIXIE_TIMEOUT" });
+  design = api.recordPreviewResult(design, failedPreview);
+  assert.equal(design.status, "APPROVED");
+  assert.equal(design.approvedVersionId, "V2");
+  const unknownReadback = api.createReadbackReport(request, failedPreview, { readbackId: "READBACK-FAIL" });
+  design = api.recordReadback(design, unknownReadback);
+  assert.equal(design.status, "APPROVED");
+  const mismatchScene = structuredClone(request.scene);
+  mismatchScene.frames = mismatchScene.frames.map(frame => ({ ...frame, width: frame.width + 1 }));
+  const renderedPreview = api.createPreviewResult(request, { previewId: "PREVIEW-MISMATCH", observedScene: mismatchScene });
+  const mismatch = api.createReadbackReport(request, renderedPreview, { readbackId: "READBACK-MISMATCH" });
+  assert.equal(mismatch.status, "PASS");
+  // Frame-only changes are intentionally outside the first node-level readback scope.
+  const nodeMismatchScene = structuredClone(request.scene);
+  nodeMismatchScene.nodes = [{ ...nodeMismatchScene.nodes[0], geometry: { ...nodeMismatchScene.nodes[0].geometry, width: 999 } }];
+  const nodePreview = api.createPreviewResult(request, { previewId: "PREVIEW-NODE-MISMATCH", observedScene: nodeMismatchScene });
+  const nodeMismatch = api.createReadbackReport(request, nodePreview, { readbackId: "READBACK-NODE-MISMATCH" });
+  assert.equal(nodeMismatch.status, "FAIL");
+  assert.equal(nodeMismatch.checks[0].nodeId, nodeMismatchScene.nodes[0]?.nodeId);
+});

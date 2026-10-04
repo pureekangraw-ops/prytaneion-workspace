@@ -9,6 +9,11 @@ import {
   restoreDesignVersion,
   approveDesignVersion,
   createDesignHandoffPacket,
+  createPixiePreviewRequest,
+  createPreviewResult,
+  recordPreviewResult,
+  createReadbackReport,
+  recordReadback,
   serializeUiDesignDocument,
 } from "./go-hub-ui-design-lane-model.mjs";
 
@@ -242,6 +247,34 @@ export function mountUiDesignLane(root) {
     }));
   }
 
+  function renderPreview() {
+    const state = q(root, "[data-ui-design-preview-state]");
+    const previewTarget = q(root, "[data-ui-design-preview]");
+    const reportTarget = q(root, "[data-ui-design-readback-report]");
+    const preview = design.previews?.at(-1) || null;
+    const readback = design.readbacks?.at(-1) || null;
+    if (state) state.textContent = preview ? `${preview.status} · ${preview.approvedVersionId}` : "NO PREVIEW";
+    if (previewTarget) {
+      if (!preview) previewTarget.innerHTML = `<p class="ui-design-empty">Approve a version, then generate a PIXIE preview.</p>`;
+      else {
+        const frame = selectedFrame(preview.observedScene, frameId);
+        const svg = frame ? svgForFrame(preview.observedScene, frame) : "";
+        previewTarget.innerHTML = frame ? `<img class="ui-design-preview-image" alt="PIXIE rendered preview" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}">` : `<p class="ui-design-empty">Preview has no selected frame.</p>`;
+      }
+    }
+    if (reportTarget) {
+      if (!readback) reportTarget.textContent = "Readback not run.";
+      else {
+        const lines = [`${readback.status} · approvedVersionId=${readback.approvedVersionId}`, `evidence=${readback.evidenceRef}`];
+        for (const check of readback.checks || []) {
+          const detail = check.mismatches?.length ? ` · ${check.mismatches.join(", ")}` : "";
+          lines.push(`${check.status} · ${check.nodeId || check.checkId}${detail}`);
+        }
+        reportTarget.textContent = lines.join("\n");
+      }
+    }
+  }
+
   function renderVersions() {
     const target = q(root, "[data-ui-design-versions]");
     if (!target) return;
@@ -255,6 +288,7 @@ export function mountUiDesignLane(root) {
     renderCanvas();
     renderInspector();
     renderVersions();
+    renderPreview();
     const state = q(root, "[data-ui-design-state]");
     if (state) state.textContent = `${design.status} · ${design.frames.length} frames · ${design.nodes.length} nodes`;
   }
@@ -273,6 +307,24 @@ export function mountUiDesignLane(root) {
     commit(nextDesign);
     status(`${type} added to ${parentId}`);
   });
+  q(root, "[data-ui-design-preview-action]")?.addEventListener("click", () => {
+    try {
+      const request = createPixiePreviewRequest(design, { target: "PIXIE" });
+      const preview = createPreviewResult(request, { renderer: "PIXIE_LOCAL_PREVIEW_V1" });
+      commit(recordPreviewResult(design, preview));
+      status(`PIXIE preview rendered · ${preview.approvedVersionId}`);
+    } catch (error) { status(error.message); }
+  });
+  q(root, "[data-ui-design-readback-action]")?.addEventListener("click", () => {
+    try {
+      const preview = design.previews?.at(-1);
+      if (!preview) return status("Generate a PIXIE preview first");
+      const request = createPixiePreviewRequest(design, { target: "PIXIE" });
+      const readback = createReadbackReport(request, preview);
+      commit(recordReadback(design, readback));
+      status(readback.status === "PASS" ? `Readback PASS · ${readback.evidenceRef}` : `Readback ${readback.status} · inspect node report`);
+    } catch (error) { status(error.message); }
+  });
   q(root, "[data-ui-design-snapshot]")?.addEventListener("click", () => { commit(createDesignVersion(design, { changeSummary: text(q(root, "[data-ui-design-version-label]")?.value) || "Canvas snapshot" })); status("Snapshot created"); });
   q(root, "[data-ui-design-compare-action]")?.addEventListener("click", () => {
     const values = [...(q(root, "[data-ui-design-compare]")?.selectedOptions || [])].map(option => option.value);
@@ -282,7 +334,20 @@ export function mountUiDesignLane(root) {
   });
   q(root, "[data-ui-design-restore]")?.addEventListener("click", () => { const versionId = q(root, "[data-ui-design-versions]")?.value; if (versionId) { commit(restoreDesignVersion(design, versionId)); status(`Restored ${versionId} as a new draft`); } });
   q(root, "[data-ui-design-approve]")?.addEventListener("click", () => { const versionId = q(root, "[data-ui-design-versions]")?.value || design.versions.at(-1)?.versionId; if (!versionId) return status("Create a snapshot before approval"); commit(approveDesignVersion(design, versionId, { decisionRef: "DEC-UI-DESIGN-V1" })); status(`Approved ${versionId}`); });
-  q(root, "[data-ui-design-export-json]")?.addEventListener("click", () => { try { const packet = design.status === "APPROVED" ? createDesignHandoffPacket(design, { target: "PIXIE" }) : design; download("go-ui-design-scene.json", JSON.stringify(packet, null, 2), "application/json"); status("Scene packet exported"); } catch (error) { status(error.message); } });
+  q(root, "[data-ui-design-export-json]")?.addEventListener("click", () => {
+    try {
+      const packet = design.approvedVersionId
+        ? {
+            handoff: createDesignHandoffPacket(design, { target: "PIXIE" }),
+            preview: design.previews?.at(-1) || null,
+            readback: design.readbacks?.at(-1) || null,
+            evidence: design.evidence || [],
+          }
+        : design;
+      download("go-ui-design-scene.json", JSON.stringify(packet, null, 2), "application/json");
+      status("Scene packet exported");
+    } catch (error) { status(error.message); }
+  });
   q(root, "[data-ui-design-export-svg]")?.addEventListener("click", () => { const frame = selectedFrame(design, frameId); if (!frame) return status("Create a frame first"); download(`${frame.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.svg`, svgForFrame(design, frame), "image/svg+xml"); status("SVG exported"); });
 
   render();

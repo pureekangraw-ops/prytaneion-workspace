@@ -186,6 +186,18 @@
         <button type="button" class="ui-design-lane__button" data-ui-design-export-json>Export JSON</button>
         <button type="button" class="ui-design-lane__button" data-ui-design-export-svg>Export SVG</button>
       </div>
+      <div class="ui-design-lane__runtime">
+        <div class="ui-design-lane__runtime-head">
+          <div><h3>Runtime Loop</h3><p>Approved Design → PIXIE → Preview → Readback → Evidence</p></div>
+          <span class="ui-design-badge" data-ui-design-preview-state>NO PREVIEW</span>
+        </div>
+        <div class="ui-design-lane__runtime-actions">
+          <button type="button" class="ui-design-lane__button ui-design-lane__button--primary" data-ui-design-preview-action>PIXIE Preview</button>
+          <button type="button" class="ui-design-lane__button" data-ui-design-readback-action>Readback</button>
+        </div>
+        <div class="ui-design-preview" data-ui-design-preview><p class="ui-design-empty">Approve a version, then generate a PIXIE preview.</p></div>
+        <pre class="ui-design-readback" data-ui-design-readback-report>Readback not run.</pre>
+      </div>
       <div class="ui-design-lane__footer"><span data-ui-design-status>Create a frame or seed the acceptance example.</span><span>V1: Frame → Node → Layout → Inspect → Snapshot → Approve → Export</span></div>
     </section>
     <p class="visual-footnote">

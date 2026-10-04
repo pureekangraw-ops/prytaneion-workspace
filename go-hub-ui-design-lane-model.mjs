@@ -135,6 +135,9 @@ function normalizeDocument(seed = {}) {
     interactions,
     tokens: clone(seed.tokens || {}),
     versions,
+    previews: clone(Array.isArray(seed.previews) ? seed.previews : []),
+    readbacks: clone(Array.isArray(seed.readbacks) ? seed.readbacks : []),
+    evidence: clone(Array.isArray(seed.evidence) ? seed.evidence : []),
     provenance: normalizeProvenance(seed.provenance),
     createdAt: text(seed.createdAt) || nowIso(),
     updatedAt: text(seed.updatedAt) || nowIso(),
@@ -277,7 +280,7 @@ export function validateUiDesignDocument(document) {
 
 function snapshotOf(document) {
   const current = createUiDesignDocument(document);
-  const { versions, ...snapshot } = clone(current);
+  const { versions, previews, readbacks, evidence, ...snapshot } = clone(current);
   return { ...snapshot, versions: [] };
 }
 
@@ -345,7 +348,7 @@ export function approveDesignVersion(document, versionId, { decisionRef = null, 
 
 export function createDesignHandoffPacket(document, { packetId = null, target = "PIXIE" } = {}) {
   const current = createUiDesignDocument(document);
-  if (current.status !== "APPROVED" || !current.approvedVersionId) throw new Error("UI_DESIGN_APPROVAL_REQUIRED");
+  if (!["APPROVED", "VERIFIED"].includes(current.status) || !current.approvedVersionId) throw new Error("UI_DESIGN_APPROVAL_REQUIRED");
   const version = current.versions.find(item => item.versionId === current.approvedVersionId);
   if (!version) throw new Error("UI_DESIGN_APPROVED_VERSION_NOT_FOUND");
   const validation = validateUiDesignDocument(current);
@@ -366,6 +369,142 @@ export function createDesignHandoffPacket(document, { packetId = null, target = 
     approval: "APPROVED",
     createdAt: nowIso(),
   };
+}
+
+
+function sceneNodeMap(scene = {}) {
+  return new Map((Array.isArray(scene.nodes) ? scene.nodes : []).map(node => [node.nodeId, node]));
+}
+
+function compareSceneNodes(approvedScene, observedScene) {
+  const approved = sceneNodeMap(approvedScene);
+  const observed = sceneNodeMap(observedScene);
+  const ids = [...new Set([...approved.keys(), ...observed.keys()])];
+  const checks = [];
+  const fields = ["kind", "geometry", "text", "style", "layout", "componentId", "variant", "state"];
+  for (const nodeId of ids) {
+    const expected = approved.get(nodeId);
+    const actual = observed.get(nodeId);
+    if (!expected) {
+      checks.push({ checkId: `NODE:${nodeId}`, nodeId, status: "FAIL", mismatches: ["UNEXPECTED_NODE"], expected: null, actual });
+      continue;
+    }
+    if (!actual) {
+      checks.push({ checkId: `NODE:${nodeId}`, nodeId, status: "FAIL", mismatches: ["NODE_MISSING"], expected, actual: null });
+      continue;
+    }
+    const mismatches = fields.filter(field => JSON.stringify(expected[field] ?? null) !== JSON.stringify(actual[field] ?? null));
+    checks.push({ checkId: `NODE:${nodeId}`, nodeId, status: mismatches.length ? "FAIL" : "PASS", mismatches, expected, actual });
+  }
+  return checks;
+}
+
+export function createPixiePreviewRequest(document, { previewId = null, target = "PIXIE" } = {}) {
+  const current = createUiDesignDocument(document);
+  const packet = createDesignHandoffPacket(current, { target });
+  return {
+    previewId: text(previewId) || id("UI-PREVIEW"),
+    protocol: "GO_UI_DESIGN_PREVIEW_V1",
+    packetId: packet.packetId,
+    designId: packet.designId,
+    workId: packet.workId,
+    target: packet.target,
+    approvedVersionId: packet.approvedVersionId,
+    scene: packet.scene,
+    status: "REQUESTED",
+    externalExecutionRequired: true,
+    productionAuthority: false,
+    approval: "APPROVED",
+    createdAt: nowIso(),
+  };
+}
+
+export function createPreviewResult(request, { status = "RENDERED", observedScene = null, artifactRef = null, renderer = "PIXIE_LOCAL_PREVIEW_V1", error = null } = {}) {
+  if (!request?.previewId || request?.protocol !== "GO_UI_DESIGN_PREVIEW_V1") throw new Error("UI_DESIGN_PREVIEW_REQUEST_REQUIRED");
+  const normalizedStatus = ["RENDERED", "FAILED", "UNKNOWN"].includes(upper(status)) ? upper(status) : "UNKNOWN";
+  return {
+    previewId: request.previewId,
+    packetId: request.packetId,
+    designId: request.designId,
+    workId: request.workId,
+    approvedVersionId: request.approvedVersionId,
+    renderer: text(renderer) || "PIXIE_LOCAL_PREVIEW_V1",
+    status: normalizedStatus,
+    observedScene: clone(observedScene || request.scene),
+    artifactRef: text(artifactRef) || `preview://${request.previewId}`,
+    error: text(error) || null,
+    createdAt: nowIso(),
+    approval: "APPROVED",
+  };
+}
+
+export function recordPreviewResult(document, preview) {
+  const current = createUiDesignDocument(document);
+  if (!preview?.previewId || preview.approvedVersionId !== current.approvedVersionId) throw new Error("UI_DESIGN_PREVIEW_VERSION_MISMATCH");
+  return next(current, { previews: [...current.previews, clone(preview)].slice(-MAX_VERSIONS) });
+}
+
+export function createReadbackReport(request, preview, { readbackId = null } = {}) {
+  if (!request?.approvedVersionId || !preview?.previewId) throw new Error("UI_DESIGN_READBACK_INPUT_REQUIRED");
+  const idValue = text(readbackId) || id("UI-READBACK");
+  if (request.approvedVersionId !== preview.approvedVersionId) {
+    const evidenceRef = `evidence://ui-design-readback/${idValue}`;
+    return {
+      readbackId: idValue,
+      previewId: preview.previewId,
+      approvedVersionId: request.approvedVersionId,
+      status: "FAIL",
+      checks: [{ checkId: "APPROVED_VERSION", status: "FAIL", mismatches: ["APPROVED_VERSION_MISMATCH"], expected: request.approvedVersionId, actual: preview.approvedVersionId }],
+      evidenceRef,
+      createdAt: nowIso(),
+    };
+  }
+  if (preview.status !== "RENDERED") {
+    const evidenceRef = `evidence://ui-design-readback/${idValue}`;
+    return {
+      readbackId: idValue,
+      previewId: preview.previewId,
+      approvedVersionId: request.approvedVersionId,
+      status: "UNKNOWN",
+      checks: [{ checkId: "PREVIEW_STATUS", status: "UNKNOWN", mismatches: ["PREVIEW_NOT_RENDERED"], expected: "RENDERED", actual: preview.status }],
+      evidenceRef,
+      createdAt: nowIso(),
+    };
+  }
+  const checks = compareSceneNodes(request.scene, preview.observedScene);
+  const status = checks.some(check => check.status === "FAIL")
+    ? "FAIL"
+    : checks.some(check => check.status === "UNKNOWN") ? "UNKNOWN" : "PASS";
+  return {
+    readbackId: idValue,
+    previewId: preview.previewId,
+    approvedVersionId: request.approvedVersionId,
+    status,
+    checks,
+    evidenceRef: `evidence://ui-design-readback/${idValue}`,
+    createdAt: nowIso(),
+  };
+}
+
+export function recordReadback(document, readback) {
+  const current = createUiDesignDocument(document);
+  if (!readback?.readbackId || readback.approvedVersionId !== current.approvedVersionId) throw new Error("UI_DESIGN_READBACK_VERSION_MISMATCH");
+  const evidence = {
+    evidenceId: readback.evidenceRef,
+    kind: "UI_DESIGN_READBACK",
+    approvedVersionId: readback.approvedVersionId,
+    previewId: readback.previewId,
+    readbackId: readback.readbackId,
+    status: readback.status,
+    checks: clone(readback.checks || []),
+    createdAt: readback.createdAt || nowIso(),
+  };
+  const nextStatus = readback.status === "PASS" ? "VERIFIED" : current.status;
+  return next(current, {
+    status: nextStatus,
+    readbacks: [...current.readbacks, clone(readback)].slice(-MAX_VERSIONS),
+    evidence: [...current.evidence, evidence].slice(-MAX_VERSIONS),
+  });
 }
 
 export function serializeUiDesignDocument(document) {
