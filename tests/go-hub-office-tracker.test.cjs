@@ -51,3 +51,13 @@ test("Office degraded mode preserves cached reads without PRISM bypass",()=>{
   assert.match(surface,/NOT EXECUTED/);
   assert.doesNotMatch(surface,/office\/api\/prism|prism-control-port|PRISM_WORK_CONTEXT_REQUIRED/i);
 });
+
+test("Office sales readback shows every observed funnel stage as raw evidence counts",()=>{
+  const surface=read("go-hub-office-surface.js");
+  assert.match(surface,/events\.filter\(e=>e\.type==='CTA_CLICK'\)\.length/);
+  assert.match(surface,/events\.filter\(e=>e\.type==='SERVICE_INTEREST'\)\.length/);
+  assert.match(surface,/events\.filter\(e=>e\.type==='BRIEF_STARTED'\)\.length/);
+  assert.match(surface,/เปิดหน้า '\+views\+' → กดเริ่ม '\+ctaClicks\+' → สนใจบริการ '\+interest\+' → เริ่มบรีฟ '\+started/);
+  const sales=surface.slice(surface.indexOf('async function loadOverviewSales'),surface.indexOf('quoteForm?.addEventListener'));
+  assert.doesNotMatch(sales,/conversion|อัตรา|เปอร์เซ็นต์|%/i);
+});
