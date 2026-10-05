@@ -55,6 +55,9 @@ test("GO WORKS accepts active Work without a redundant local Factory Pass", asyn
   const state = enterFactoryV4({ work: { ...work, pass: null }, form });
   assert.equal(state.stage, "PLAN");
   assert.equal(state.intake.source, "PIXIE_LAB");
+  assert.equal(state.operatingDirective.mode, "MAXIMIZE_AUTHORIZED_CAPABILITY");
+  assert.match(state.operatingDirective.instruction, /available tools, capabilities, evidence, and resources/i);
+  assert.equal(state.operatingDirective.authorityBoundary, "DO_NOT_EXPAND_AUTHORITY");
 });
 
 test("GO WORKS requires direct PIXIE LAB handoff and preserves same Work continuity", async () => {
