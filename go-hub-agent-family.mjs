@@ -50,6 +50,8 @@ export const AGENT_ROLES = Object.freeze({
   }),
   SPECTRUM:freezeRole({
     id:"SPECTRUM",
+    displayName:"SPECTRUM PRIME",
+    rank:"PRIME",
     role:"BIG_SECRETARY_WEB_MANAGER_CENTRE_COORDINATOR",
     homeRuntime:"WEB_OFFICE_STOREFRONT",
     counterSeat:"ACTIVE",
