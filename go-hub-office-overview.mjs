@@ -69,7 +69,49 @@ export function createOfficeOverview({centre,probes={}}={}) {
       const [salesResponse,quoteResponse,paymentResponse]=await Promise.all([centre?.action({action:"spectrum_list",...input}),centre?.action({action:"quote_list",...input}),centre?.action({action:"payment_list",...input})]);
       if(!salesResponse?.ok||!quoteResponse?.ok||!paymentResponse?.ok)throw Error("OFFICE_SALES_UNAVAILABLE");
       const sales=await salesResponse.json(),quote=await quoteResponse.json(),payment=await paymentResponse.json();
-      return {...sales,quotes:quote.quotes||[],quoteSource:quote.source||"UNKNOWN",quoteCheckedAt:quote.checkedAt||null,payments:payment.payments||[],paymentSource:payment.source||"UNKNOWN",paymentCheckedAt:payment.checkedAt||null};
+      return {...sales,quotes:quote.quotes||[],quoteSource:quote.source||"UNKNOWN",quoteCheckedAt:quote.checkedAt||null,quoteNextCursor:quote.nextCursor||null,payments:payment.payments||[],paymentSource:payment.source||"UNKNOWN",paymentCheckedAt:payment.checkedAt||null,paymentNextCursor:payment.nextCursor||null};
+    },
+    async dailySummary() {
+      const [works,sales,system]=await Promise.all([this.works({offset:0,limit:50,view:"current"}),this.sales({limit:50}),this.system()]);
+      const quoteCounts={QUOTE_DRAFT:0,QUOTE_SENT:0};
+      for(const quote of sales.quotes||[]){const status=String(quote.status||"UNKNOWN").toUpperCase();if(Object.hasOwn(quoteCounts,status))quoteCounts[status]++;}
+      const confirmed={},reviewStatuses=new Set(["PAYMENT_CONFIRMED","PAYMENT_FAILED","REFUND_PENDING","REFUNDED","DISPUTED","UNKNOWN"]);
+      let pending=0,goReviewRequired=0;
+      for(const payment of sales.payments||[]){
+        const status=String(payment.status||"UNKNOWN").toUpperCase();
+        if(status==="PAYMENT_PENDING")pending++;
+        if(status==="PAYMENT_CONFIRMED"){
+          const currency=String(payment.currency||"UNKNOWN").toUpperCase(),amount=Number(payment.amount);
+          if(currency!=="UNKNOWN"&&Number.isFinite(amount))confirmed[currency]=(confirmed[currency]||0)+amount;
+        }
+        if(reviewStatuses.has(status)||String(payment.evidenceFreshness?.state||"UNKNOWN").toUpperCase()!=="FRESH")goReviewRequired++;
+      }
+      const ownerMismatches=works.works.filter(work=>{
+        const status=String(work.status||"UNKNOWN").toUpperCase();
+        return (["ON PROCESS","ON_PROCESS","DOING"].includes(status)&&!work.holder)||(status==="OPEN"&&Boolean(work.holder));
+      }).length;
+      const live=system.components.filter(component=>component.status==="LIVE").length;
+      const unknown=system.components.length-live;
+      const coverage={work:works.nextOffset===null,sales:!sales.nextCursor&&!sales.quoteNextCursor,money:!sales.paymentNextCursor};
+      const coverageIncomplete=Object.values(coverage).some(value=>!value)?1:0;
+      const attentionTotal=works.counts.unknown+ownerMismatches+goReviewRequired+coverageIncomplete;
+      const activity=works.works
+        .filter(work=>!["CANCEL","CANCELLED"].includes(String(work.status||"").toUpperCase()))
+        .sort((a,b)=>String(b.lastUpdated||b.checkedAt||"").localeCompare(String(a.lastUpdated||a.checkedAt||"")))
+        .slice(0,12)
+        .map(work=>({workId:work.workId,name:work.name,status:work.status,holder:work.holder||null,waitReason:work.waitReason||null,movedAt:work.lastUpdated||work.checkedAt,movement:work.waitReason?("รอ: "+work.waitReason):work.holder?("อยู่กับ "+work.holder):("สถานะ "+work.status)}));
+      return {
+        ok:true,
+        work:{active:works.counts.active,waiting:works.counts.waiting,attention:works.counts.attention,unknown:works.counts.unknown,total:works.total,observed:works.works.length,coverageComplete:coverage.work},
+        sales:{briefsReceived:(sales.briefs||[]).length,quoteDrafts:quoteCounts.QUOTE_DRAFT,quotesSent:quoteCounts.QUOTE_SENT,coverageComplete:coverage.sales},
+        money:{providerConfirmedByCurrency:confirmed,pending,goReviewRequired,authority:"GO_REVIEW_REQUIRED",coverageComplete:coverage.money},
+        system:{live,unknown,total:system.components.length},
+        attention:{total:attentionTotal,workUnknown:works.counts.unknown,ownerMismatches,moneyReview:goReviewRequired,coverageIncomplete,nextAction:attentionTotal?"GO_REVIEW":"NONE"},
+        worksPreview:works.works.slice(0,6),
+        activity,
+        source:{work:"CENTRE_WORK_OWNER",sales:sales.source||"UNKNOWN",money:sales.paymentSource||"UNKNOWN",system:system.coverage},
+        checkedAt:new Date().toISOString()
+      };
     }
   };
 }
