@@ -472,6 +472,8 @@ const overviewActivity=document.querySelector('[data-overview-activity]');
 const overviewActivityStatus=document.querySelector('[data-overview-activity-status]');
 const overviewHealth=document.querySelector('[data-overview-health]');
 const overviewMismatches=document.querySelector('[data-overview-mismatches]');
+const dailySummary=document.querySelector('[data-daily-summary]');
+const summaryStatus=document.querySelector('[data-summary-status]');
 const salesMore=document.querySelector('[data-sales-more]');
 const officePage=document.body.dataset.officePage||'home';
 const workView=document.querySelector('[data-work-view]')?.dataset.workView||'current';
@@ -509,16 +511,20 @@ async function loadOverviewWorks(append=false){
  overviewCoverage.textContent=officePage==='home'?'แสดง '+Math.min(6,loadedWorks.size)+' จาก '+data.total+' งานปัจจุบัน':'แสดง '+loadedWorks.size+' จาก '+data.total+' รายการ · อัปเดต '+displayTime(data.checkedAt);
  }catch{overviewCoverage.textContent='ตอนนี้อ่านงานล่าสุดไม่ได้'+(loadedWorks.size?' · ด้านล่างเป็นข้อมูลครั้งก่อน':' · ลองกดอัปเดตอีกครั้ง');}
 }
-async function loadOverviewActivity(){
+function renderOverviewActivity(data){
  if(!overviewActivity)return;
- try{
-  const data=await overviewRead('activity?limit=12');overviewActivity.replaceChildren();
+ overviewActivity.replaceChildren();
   for(const item of data.items||[]){
    const card=overviewCard(overviewActivity,item.name||item.workId,item.status,[item.movement||'',item.movedAt?'ขยับล่าสุด '+displayTime(item.movedAt):'']);
    appendWorkFlow(card,item.status);
   }
   if(!(data.items||[]).length)overviewText(overviewActivity,'p','ตอนนี้ยังไม่มีการเคลื่อนไหวของงาน');
   if(overviewActivityStatus)overviewActivityStatus.textContent='อ่านจาก Centre Work truth · อัปเดต '+displayTime(data.checkedAt);
+}
+async function loadOverviewActivity(){
+ if(!overviewActivity)return;
+ try{
+  renderOverviewActivity(await overviewRead('activity?limit=12'));
  }catch{overviewActivity.replaceChildren();overviewText(overviewActivity,'p','ตอนนี้อ่านการเคลื่อนไหวไม่ได้');if(overviewActivityStatus)overviewActivityStatus.textContent='สถานะ UNKNOWN';}
 }
 async function loadOverviewHealth(){
@@ -540,6 +546,29 @@ async function loadOverviewSystem(){
  const root=document.querySelector('[data-overview-system]');if(!root)return;
  try{const data=await overviewRead('system');root.replaceChildren();for(const c of data.components)overviewCard(root,c.name,c.status==='LIVE'?'อ่านจุดเชื่อมต่อได้':'ยังตรวจการเชื่อมต่อไม่ได้',[displayTime(c.checkedAt)]);}catch{root.replaceChildren();overviewText(root,'p','ตอนนี้อ่านการเชื่อมต่อไม่ได้');}
 }
+function summaryLens(name,value,detail){
+ const card=dailySummary?.querySelector(`[data-summary-lens="${name}"]`);if(!card)return;
+ const strong=card.querySelector('strong'),paragraph=card.querySelector('p');if(strong)strong.textContent=String(value);if(paragraph)paragraph.textContent=String(detail);
+}
+async function loadDailySummary(){
+ if(!dailySummary)return;
+ try{
+  const data=await overviewRead('summary');
+  const partial=!(data.work.coverageComplete&&data.sales.coverageComplete&&data.money.coverageComplete);
+  summaryLens('SALES',data.sales.briefsReceived+' บรีฟ',`Quote ร่าง ${data.sales.quoteDrafts} · ส่งแล้ว ${data.sales.quotesSent}${data.sales.coverageComplete?'':' · บางส่วน'}`);
+  const totals=Object.entries(data.money.providerConfirmedByCurrency||{}).map(([currency,amount])=>new Intl.NumberFormat('th-TH',{maximumFractionDigits:2}).format(amount)+' '+currency).join(' · ');
+  summaryLens('MONEY',totals?('หลักฐาน '+totals):'ยังไม่พบหลักฐานยอด',`สถานะจาก provider · รอ provider ${data.money.pending} · รอ GO review ${data.money.goReviewRequired}${data.money.coverageComplete?'':' · coverage ไม่ครบ'}`);
+  summaryLens('WORK',data.work.active+' กำลังทำ',`รอ ${data.work.waiting} · UNKNOWN ${data.work.unknown} · อ่าน ${data.work.observed}/${data.work.total}`);
+  summaryLens('SYSTEM',data.system.live+'/'+data.system.total+' LIVE',`UNKNOWN ${data.system.unknown}`);
+  summaryLens('ATTENTION',data.attention.total,data.attention.total?`GO review · เงิน ${data.attention.moneyReview} · งาน ${data.attention.workUnknown+data.attention.ownerMismatches}${data.attention.coverageIncomplete?' · coverage ไม่ครบ':''}`:'ยังไม่มีจุดที่ต้องตรวจ');
+  if(summaryStatus)summaryStatus.textContent=(partial?'PARTIAL COVERAGE · ':'ครบตามชุดข้อมูลที่อ่าน · ')+'Owner-source readback · อัปเดต '+displayTime(data.checkedAt);
+  if(officePage==='home'){
+   loadedWorks.clear();for(const work of data.worksPreview||[])loadedWorks.set(work.workId,work);renderOverviewWorks();
+   if(overviewCoverage)overviewCoverage.textContent=`อ่าน ${data.work.observed}/${data.work.total} งานปัจจุบัน${data.work.coverageComplete?'':' · PARTIAL COVERAGE'}`;
+   renderOverviewActivity({items:data.activity||[],checkedAt:data.checkedAt});
+  }
+ }catch{if(summaryStatus)summaryStatus.textContent='ตอนนี้อ่านสรุปไม่ได้ · สถานะ UNKNOWN';}
+}
 async function loadOverviewSales(append=false){
  if(!overviewSales)return;const status=document.querySelector('[data-overview-sales-status]');
  const payments=document.querySelector('[data-overview-payments]');
@@ -558,7 +587,7 @@ async function loadOverviewSales(append=false){
 quoteForm?.addEventListener('submit',async event=>{event.preventDefault();const submit=quoteForm.querySelector('button[type="submit"]');submit.disabled=true;quoteStatus.textContent='กำลังบันทึก…';try{const form=new FormData(quoteForm),payload={quoteId:String(form.get('quoteId')||'').trim(),customerId:String(form.get('customerId')||'').trim(),workId:String(form.get('workId')||'').trim(),amount:Number(form.get('amount')),currency:String(form.get('currency')||'').trim().toUpperCase(),status:String(form.get('status')||'QUOTE_DRAFT')};const response=await fetch('/office/api/quotes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}),body=await response.json().catch(()=>({}));if(!response.ok)throw Error(body.code||'QUOTE_SAVE_FAILED');quoteStatus.textContent='บันทึก '+body.quote.quoteId+' แล้ว';await loadOverviewSales();}catch(error){quoteStatus.textContent='บันทึกไม่ได้: '+String(error.message||'UNKNOWN');}finally{submit.disabled=false;}});
 async function refreshOverview(){
  if(overviewBusy)return;overviewBusy=true;const workTarget=loadedWorks.size,salesTarget=loadedSales.size;
- try{await Promise.all([(async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),loadOverviewActivity(),loadOverviewHealth(),loadOverviewSystem(),(async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()]);}finally{overviewBusy=false;}
+ try{await Promise.all([loadDailySummary(),officePage==='home'?Promise.resolve():(async()=>{await loadOverviewWorks();while(overviewOffset!==null&&loadedWorks.size<workTarget){const before=overviewOffset;await loadOverviewWorks(true);if(before===overviewOffset)break;}})(),officePage==='home'?Promise.resolve():loadOverviewActivity(),loadOverviewHealth(),loadOverviewSystem(),(async()=>{await loadOverviewSales();while(salesCursor&&loadedSales.size<salesTarget){const before=salesCursor;await loadOverviewSales(true);if(before===salesCursor)break;}})()]);}finally{overviewBusy=false;}
 }
 document.querySelector('[data-overview-refresh]')?.addEventListener('click',refreshOverview);
 overviewMore?.addEventListener('click',async()=>{overviewMore.disabled=true;try{await loadOverviewWorks(true);}finally{overviewMore.disabled=false;}});
