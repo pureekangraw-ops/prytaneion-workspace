@@ -8,6 +8,9 @@ test("Universal Work Protocol exposes shared events, statuses, actors, and invar
   ]);
   assert.ok(protocol.UNIVERSAL_WORK_ACTORS.includes("PIXIE"));
   assert.ok(protocol.UNIVERSAL_WORK_ACTORS.includes("LIGHT"));
+  assert.ok(protocol.UNIVERSAL_WORK_ACTORS.includes("SPECTRUM_PRIME"));
+  assert.ok(protocol.UNIVERSAL_WORK_ACTORS.includes("OLYMPUS"));
+  assert.equal(protocol.UNIVERSAL_WORK_ACTORS.includes("SPECTRUM"), false);
   assert.ok(protocol.UNIVERSAL_WORK_STATUSES.includes("WAIT_VERIFY"));
   assert.ok(protocol.universalWorkProtocolOverview().invariants.includes("RETURN_IS_NOT_COMPLETE"));
 });
@@ -38,6 +41,14 @@ test("actor adapters preserve source vocabulary while mapping to shared lifecycl
   assert.equal(adaptActorAction({ actor: "PIXIE", action: "result packet" }).event, "RETURN");
   assert.equal(adaptActorAction({ actor: "GO", action: "verification" }).event, "VERIFY");
   assert.equal(adaptActorAction({ actor: "HERMES", action: "return_tablet" }).event, "RETURN");
+  const spectrum = adaptActorAction({ actor: "SPECTRUM", action: "status brief" });
+  assert.equal(spectrum.actor, "SPECTRUM_PRIME");
+  assert.equal(spectrum.event, "RETURN");
+  assert.equal(adaptActorAction({ actor: "OLYMPUS", action: "verify" }).event, "VERIFY");
+  assert.throws(
+    () => adaptActorAction({ actor: "OLYMPUS", action: "execute" }),
+    /UNIVERSAL_WORK_ACTOR_ACTION_UNKNOWN:OLYMPUS:execute/,
+  );
 
   const mapped = adaptActorAction({ actor: "LIGHT", action: "resume", sourceEvent: "LIGHT_RESUME" });
   assert.equal(mapped.sourceEvent, "LIGHT_RESUME");

@@ -41,9 +41,10 @@ export const UNIVERSAL_WORK_ACTORS = Object.freeze([
   "GO",
   "LIGHT",
   "PIXIE",
-  "SPECTRUM",
+  "SPECTRUM_PRIME",
   "HERMES",
   "MIMIR",
+  "OLYMPUS",
   "HUMAN",
 ]);
 
@@ -103,7 +104,7 @@ const ACTOR_ACTION_MAP = Object.freeze({
     interrupt: "INTERRUPTED",
     eject: "EJECTED",
   }),
-  SPECTRUM: Object.freeze({
+  SPECTRUM_PRIME: Object.freeze({
     intake: "RECEIVED",
     receive: "RECEIVED",
     acknowledge: "ACKNOWLEDGE",
@@ -134,6 +135,13 @@ const ACTOR_ACTION_MAP = Object.freeze({
     return: "RETURN",
     interrupt: "INTERRUPTED",
     eject: "EJECTED",
+  }),
+  OLYMPUS: Object.freeze({
+    receive: "RECEIVED",
+    acknowledge: "ACKNOWLEDGE",
+    verify: "VERIFY",
+    return: "RETURN",
+    interrupt: "INTERRUPTED",
   }),
   HUMAN: Object.freeze({
     create: "CREATE",
@@ -204,7 +212,8 @@ function normalizeStatus(value) {
 }
 
 function normalizeActor(value) {
-  const actor = normalizeToken(value);
+  const requested = normalizeToken(value);
+  const actor = requested === "SPECTRUM" ? "SPECTRUM_PRIME" : requested;
   if (!ACTOR_SET.has(actor) && actor !== "COUNTER") {
     throw new Error("UNIVERSAL_WORK_ACTOR_INVALID:" + actor);
   }
