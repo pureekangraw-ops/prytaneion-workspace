@@ -15,7 +15,13 @@ Produce a read-only diagnostic overlay on an intake packet or authorized Work re
 Include reason codes, evidence refs, observedAt, checkedAt and suggested next action. Do not replace canonical Work status, mutate source records or infer failure merely from pending.
 
 ## Routing
-GO intent -> HERMES Reception (context and duplicate check) -> MIMIR diagnostic (when needed) -> existing authorized Work/station/tool route. PIXIE remains Data Lifecycle and does not become an execution authority. High-risk/ambiguous results return to GO for review; simple CLEAR work should not be delayed by a new mandatory gate.
+GO intent -> HERMES Reception (context and duplicate check) -> MIMIR diagnostic (when needed) -> existing authorized Work/station/tool route. PIXIE owns Data Lifecycle responsibilities (data intake/lineage, evidence-preserving handoff, retention and retirement recommendations) and does not become an execution authority. The Dwarf (คนแคระ) is the factory runner/orchestrator and owns factory execution coordination; PIXIE Lab/Factory workbenches are not evidence that PIXIE owns factory orchestration. Do not reassign Dwarf-owned factory tools, runner, or deployment rights to PIXIE. High-risk/ambiguous results return to GO for review; simple CLEAR work should not be delayed by a new mandatory gate.
+
+## Ownership clarification (2026-10-09)
+- Dwarf / คนแคระ: factory runner, workbench/tool coordination and execution within existing granted authority.
+- PIXIE: Data Lifecycle, not factory runner; preserve provenance, custody, retention, archival and evidence. Do not assume the factory repository is the implementation home for PIXIE Data Lifecycle.
+- HERMES: reception and Work context intake. MIMIR: read-only Deep Scan diagnostics and evidence verification.
+- No new gate, owner, authority or deployment implied. The previously created factory branch `feat/pixie-data-lifecycle-training` has no committed implementation and is not part of this design.
 
 ## Acceptance checks before implementation
 1. Duplicate Work produces RESUME recommendation; no create_work call.
