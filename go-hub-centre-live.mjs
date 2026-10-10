@@ -26,7 +26,8 @@ function clone(value) {
 }
 
 const DEFAULT_LEASE_SECONDS = 15 * 60;
-const CENTRE_STALE_SCAN_MS = 60_000;
+// Stale is defined at 24 hours; a 15-minute scan avoids per-minute DO alarms.
+const CENTRE_STALE_SCAN_MS = 15 * 60_000;
 const CENTRE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const MAX_LEASE_SECONDS = 24 * 60 * 60;
 
