@@ -94,3 +94,20 @@ test("metadata rate limit falls back to verified GitHub source blob", async () =
   assert.equal(answer.sha,"f".repeat(40));
   assert.equal(requests.length,2);
 });
+
+test("LIGHT named Service Binding returns sanitized Notion probe without source manifest",async()=>{
+  const { probeLightProvider } = await import("./worker.mjs");
+  let argument;
+  const result=await probeLightProvider({LIGHT_LEGACY:{probe:async x=>{
+    argument=x;return {status:"CONNECTED",connected:true,secret:"DO_NOT_LEAK",pages:[{title:"PRIVATE"}]};
+  }}},"notion");
+  assert.equal(argument,"notion");
+  assert.equal(result.connected,true);
+  assert.equal(result.notionAiEnabled,false);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE|DO_NOT_LEAK/);
+});
+test("arbitrary LIGHT operation is never forwarded",async()=>{
+  const { probeLightProvider } = await import("./worker.mjs");
+  const r=await probeLightProvider({LIGHT_LEGACY:{probe:async()=>{throw Error("should not be called");}}},"delete_all");
+  assert.equal(r.status,"UNSUPPORTED_CAPABILITY");
+});
