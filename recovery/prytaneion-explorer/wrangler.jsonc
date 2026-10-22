@@ -13,6 +13,11 @@
       "binding": "PANTHEON_LIGHT",
       "service": "phatheon-workhub",
       "entrypoint": "LightBridge"
+    },
+    {
+      "binding": "LIGHT_LEGACY",
+      "service": "light-bookmark",
+      "entrypoint": "LegacyExplorerRead"
     }
   ]
 }
