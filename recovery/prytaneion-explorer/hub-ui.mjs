@@ -60,7 +60,7 @@ footer{padding:30px 0;color:#9badb7;font-size:12px}
 <pre id="source" aria-label="GitHub live source">No file loaded</pre>
 </section>
 <section><h2>ขอบเขตซ่อมบำรุง</h2>
-<p class="desc">Notion AI Ask/Search เดิมยังไม่เชื่อม OAuth กลับมา · Google แสดงผลเฉพาะสถานะ ไม่เผยชื่อไฟล์ · Cloudflare Management ยังไม่เปิดในหน้าสาธารณะ · Factory ไม่รับงานจากหน้านี้</p>
+<p class="desc">Notion AI Ask/Search เดิมยังไม่เชื่อม OAuth กลับมา (Notion REST ใช้แทนไม่ได้) · Google/Cloudflare แสดงเฉพาะสถานะ ไม่เผยข้อมูลส่วนตัว · Factory ไม่รับงานจากหน้านี้</p>
 <a href="https://github.com/pureekangraw-ops/prytaneion-workspace" rel="noopener noreferrer" target="_blank">ดู Source ต้นฉบับบน GitHub ↗</a>
 </section>
 <footer>GO Hub recovery • no work dispatch • no secret copying • no new gate maze</footer>
