@@ -43,8 +43,8 @@ footer{padding:30px 0;color:#9badb7;font-size:12px}
 <div class="slot"><strong>GitHub</strong><span class="state" id="github-state">ยังไม่ได้ทดสอบ</span></div>
 <div class="slot"><strong>Google Drive</strong><span class="state" id="google-state">ยังไม่ได้ทดสอบ</span></div>
 <div class="slot"><strong>PANTHEON</strong><span class="state" id="pantheon-state">ยังไม่ได้ทดสอบ</span></div>
-<div class="slot"><strong>Notion AI</strong><span class="state" id="notion-state">ต้องต่อ OAuth / Notion AI MCP</span></div>
-<div class="slot"><strong>Cloudflare</strong><span class="state" id="cloudflare-state">Explorer Worker ทำงาน · Provider ยังไม่ต่อ</span></div>
+<div class="slot"><strong>Notion REST</strong><span class="state" id="notion-state">กำลังทดสอบ LIGHT Notion API</span></div>
+<div class="slot"><strong>Cloudflare</strong><span class="state" id="cloudflare-state">กำลังทดสอบ LIGHT Cloudflare Reader</span></div>
 </div><p><button id="probe" type="button">ตรวจสายไฟจริง</button></p></section>
 <section><h2>เดินสำรวจ Source ของฮับเก่า</h2>
 <p class="desc">ใช้งาน GitHub REST จริง เฉพาะไฟล์สาธารณะใน PRYTANEION · ข้อมูลจาก Repository ไม่ได้คัดลอกมาแสดงล่วงหน้า</p>
