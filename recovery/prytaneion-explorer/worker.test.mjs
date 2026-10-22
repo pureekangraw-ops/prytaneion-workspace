@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { exploreLegacy, probePantheon } from "./worker.mjs";
+import worker, { exploreLegacy, probePantheon, probeGoogleDrive } from "./worker.mjs";
 
 const call = (path, opts = {}, env = {}) => worker.fetch(new Request("https://explorer.invalid" + path, opts), env);
 test("original GO Hub route and authority modules are executed", () => {
@@ -41,4 +41,40 @@ test("maintenance entrance works without calling protected RPC", async () => {
   assert.equal(calls, 0);
   const absent = await call("/random");
   assert.equal(absent.status, 404);
+});
+
+test("PANTHEON LIGHT service binding can power Google root read without exposing files", async () => {
+  let args;
+  const r = await probeGoogleDrive({ PANTHEON_LIGHT: { lightCall: async x => {
+    args = x;
+    return {ok:true,result:{source:"google_drive",read_only:true,roots:[{id:"private",name:"Do not reveal"}]}};
+  }}});
+  assert.deepEqual(args, {operation:"pantheon.drive.read",name:"light_drive_roots",args:{}});
+  assert.equal(r.status,"CONNECTED");
+  assert.equal(JSON.stringify(r).includes("Do not reveal"),false);
+});
+test("original repository read API only accepts allowlisted public source", async () => {
+  let called=0;
+  const src="export const testing = true;";
+  const fixture={type:"file",encoding:"base64",content:btoa(src),sha:"a".repeat(40)};
+  const { githubLegacyRoute } = await import("./read-service.mjs");
+  const ok=await githubLegacyRoute(new URL("https://hub.invalid/hub/api/github-workspace/file?repository=pureekangraw-ops%2Fprytaneion-workspace&path=go-hub-authority-map.js"), async () => {
+    called++;
+    return new Response(JSON.stringify(fixture),{status:200,headers:{"content-type":"application/json"}});
+  });
+  assert.equal(ok.status,200);
+  assert.equal((await ok.json()).content,src);
+  const forbidden=await githubLegacyRoute(new URL("https://hub.invalid/hub/api/github-workspace/file?repository=pureekangraw-ops%2Fprytaneion-workspace&path=.env"), async () => {called++;throw Error("unexpected")});
+  assert.equal(forbidden.status,403);
+  assert.equal(called,1);
+});
+test("GET root exposes working live source browser but no private provider data", async () => {
+  const page=await call("/");
+  const html=await page.text();
+  assert.match(html,/GitHub Workspace/);
+  assert.match(html,/UNDER MAINTENANCE/);
+  assert.match(html,/\/ui.js/);
+  const script=await call("/ui.js");
+  assert.equal(script.status,200);
+  assert.match(await script.text(),/api\/connections/);
 });
