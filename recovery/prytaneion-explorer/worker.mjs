@@ -136,21 +136,49 @@ export async function probeGoogleDrive(env) {
     return { status:"UNAVAILABLE", connected:false };
   }
 }
+export async function probeLightProvider(env, capability) {
+  if (!["notion","cloudflare","google"].includes(capability))
+    return { status:"UNSUPPORTED_CAPABILITY", connected:false };
+  if (!env?.LIGHT_LEGACY || typeof env.LIGHT_LEGACY.probe !== "function")
+    return { status:"NOT_CONNECTED", connected:false };
+  try {
+    const raw = await env.LIGHT_LEGACY.probe(capability);
+    const name = String(raw?.status||"UNVERIFIED").toUpperCase();
+    const status = /^[A-Z0-9_]{1,55}$/.test(name) ? name : "PROVIDER_UNVERIFIED";
+    return {
+      status, connected:raw?.connected === true,
+      provider:capability === "notion" ? "NOTION_REST_MANIFEST"
+        : capability === "cloudflare" ? "LIGHT_CLOUDFLARE_READ"
+        : "LIGHT_GOOGLE_DRIVE_READ",
+      ...(capability === "notion" ? { notionAiEnabled:false } : {}),
+      readOnly:true
+    };
+  } catch {
+    return { status:"UNAVAILABLE", connected:false, readOnly:true };
+  }
+}
 export async function inspectConnections(env, fetchImpl = fetch) {
   const now = Date.now();
   if (connectionCache && now - connectionCache.at < CACHE_MS) return connectionCache.data;
   if (connectionPending) return connectionPending;
   connectionPending = (async () => {
-    const [g,p,d] = await Promise.allSettled([
-      inspectLegacy(fetchImpl), probePantheon(env), probeGoogleDrive(env)
+    const [g,p,d,n,c,l] = await Promise.allSettled([
+      inspectLegacy(fetchImpl), probePantheon(env), probeGoogleDrive(env),
+      probeLightProvider(env,"notion"),
+      probeLightProvider(env,"cloudflare"),
+      probeLightProvider(env,"google")
     ]);
     const data = { system:"PRYTANEION", status:STATUS, mode:"READ_ONLY_EXPLORATION",
       connections:{
         github:{status: g.status==="fulfilled" ? "CONNECTED" : "UNAVAILABLE", method:"PUBLIC_REPOSITORY_REST" },
-        google: d.status==="fulfilled" ? d.value : {status:"UNAVAILABLE",connected:false},
+        google: l.status==="fulfilled" && l.value.connected ? l.value
+          : d.status==="fulfilled" ? d.value : {status:"UNAVAILABLE",connected:false},
+        googlePantheon: d.status==="fulfilled" ? d.value : {status:"UNAVAILABLE",connected:false},
+        googleLight: l.status==="fulfilled" ? l.value : {status:"UNAVAILABLE",connected:false},
         pantheon: p.status==="fulfilled" ? p.value : {status:"UNAVAILABLE",connected:false},
-        notion:{status:"NOTION_AI_UNROUTED", sourceModulePresent:true},
-        cloudflare:{status:"EXPLORER_DEPLOYED; MANAGEMENT_UNROUTED"}
+        notion: n.status==="fulfilled" ? n.value : {status:"UNAVAILABLE",connected:false},
+        notionAi:{status:"NOTION_AI_UNROUTED",sourceModulePresent:true},
+        cloudflare: c.status==="fulfilled" ? c.value : {status:"UNAVAILABLE",connected:false}
       },
       source:"CLOUDFLARE_WORKER_AT_REQUEST_TIME", privateDataReturned:false
     };
