@@ -110,7 +110,18 @@ export async function probeGoogleDrive(env) {
     });
     const live = r?.ok === true && r?.result?.source === "google_drive"
       && r?.result?.read_only === true;
-    return { status: live ? "CONNECTED" : "UNVERIFIED", connected: live,
+    // Only documented, bounded error categories; no returned folder names,
+    // token, OAuth response, upstream body, or stack traces.
+    const known = new Set([
+      "GOOGLE_OAUTH_NOT_CONFIGURED", "GOOGLE_DRIVE_SCOPE_UNVERIFIED",
+      "GOOGLE_DRIVE_READ_SCOPE_REQUIRED", "GOOGLE_AUTH_BAD_RESPONSE",
+      "UPSTREAM_HTTP_400", "UPSTREAM_HTTP_401", "UPSTREAM_HTTP_403",
+      "UPSTREAM_UNAVAILABLE", "PANTHEON_DRIVE_READ_DISABLED",
+      "INVALID_INPUT", "LIGHT_BRIDGE_DISABLED"
+    ]);
+    const category = typeof r?.status === "string" && known.has(r.status)
+      ? r.status : "PROVIDER_UNVERIFIED";
+    return { status: live ? "CONNECTED" : category, connected: live,
       via:"PANTHEON_LIGHT", readOnly:true };
   } catch {
     return { status:"UNAVAILABLE", connected:false };
