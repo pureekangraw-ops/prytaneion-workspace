@@ -1,5 +1,11 @@
 name: PRYTANEION Read-only Recovery Tests
 on:
+  push:
+    branches:
+      - go/restore-workspace-access-20261022
+    paths:
+      - "recovery/prytaneion-explorer/**"
+      - ".github/workflows/prytaneion-recovery-tests.yml"
   pull_request:
     paths:
       - "recovery/prytaneion-explorer/**"
@@ -20,6 +26,8 @@ jobs:
       - name: Check syntax of legacy modules and recovery entrance
         run: |
           node --check recovery/prytaneion-explorer/worker.mjs
+          node --check recovery/prytaneion-explorer/hub-ui.mjs
+          node --check recovery/prytaneion-explorer/read-service.mjs
           node --check go-hub-route-contract.js
           node --check go-hub-authority-map.js
       - name: Read-only entrypoint and bounded RPC tests
