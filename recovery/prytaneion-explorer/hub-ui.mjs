@@ -79,7 +79,7 @@ function setState(id,v){const x=byId(id);if(x)x.textContent=v;}
 async function loadConnections(){
   const b=byId('probe');b.disabled=true;b.textContent='กำลังตรวจระบบจริง...';
   try{
-    const r=await fetch('/api/connections',{cache:'no-store'});
+    const r=await fetch('/api/connections?refresh=1',{cache:'no-store'});
     const data=await r.json();
     const s=data.connections||{};
     for(const k of ['github','google','pantheon','notion','cloudflare']){
