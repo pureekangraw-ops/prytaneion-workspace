@@ -1,3 +1,5 @@
+import { inspectLegacy, githubLegacyRoute } from "./read-service.mjs";
+import { renderHubPage, renderUiScript } from "./hub-ui.mjs";
 import { CITY_DESTINATIONS, getCityDestination } from "../../go-hub-route-contract.js";
 import { authorityMap, authorityOwner, assertUniqueDecisionAuthority } from "../../go-hub-authority-map.js";
 
@@ -94,11 +96,59 @@ export async function probePantheon(env) {
   }
 }
 
+
+const CACHE_MS = 15 * 60 * 1000;
+let connectionCache = null;
+let connectionPending = null;
+export async function probeGoogleDrive(env) {
+  if (!env?.PANTHEON_LIGHT || typeof env.PANTHEON_LIGHT.lightCall !== "function") {
+    return { status:"NOT_CONNECTED", connected:false };
+  }
+  try {
+    const r = await env.PANTHEON_LIGHT.lightCall({
+      operation:"pantheon.drive.read", name:"light_drive_roots", args:{}
+    });
+    const live = r?.ok === true && r?.result?.source === "google_drive"
+      && r?.result?.read_only === true;
+    return { status: live ? "CONNECTED" : "UNVERIFIED", connected: live,
+      via:"PANTHEON_LIGHT", readOnly:true };
+  } catch {
+    return { status:"UNAVAILABLE", connected:false };
+  }
+}
+export async function inspectConnections(env, fetchImpl = fetch) {
+  const now = Date.now();
+  if (connectionCache && now - connectionCache.at < CACHE_MS) return connectionCache.data;
+  if (connectionPending) return connectionPending;
+  connectionPending = (async () => {
+    const [g,p,d] = await Promise.allSettled([
+      inspectLegacy(fetchImpl), probePantheon(env), probeGoogleDrive(env)
+    ]);
+    const data = { system:"PRYTANEION", status:STATUS, mode:"READ_ONLY_EXPLORATION",
+      connections:{
+        github:{status: g.status==="fulfilled" ? "CONNECTED" : "UNAVAILABLE", method:"PUBLIC_REPOSITORY_REST" },
+        google: d.status==="fulfilled" ? d.value : {status:"UNAVAILABLE",connected:false},
+        pantheon: p.status==="fulfilled" ? p.value : {status:"UNAVAILABLE",connected:false},
+        notion:{status:"NOTION_AI_UNROUTED", sourceModulePresent:true},
+        cloudflare:{status:"EXPLORER_DEPLOYED; MANAGEMENT_UNROUTED"}
+      },
+      source:"CLOUDFLARE_WORKER_AT_REQUEST_TIME", privateDataReturned:false
+    };
+    connectionCache={at:Date.now(),data};
+    return data;
+  })();
+  try { return await connectionPending; }
+  finally { connectionPending = null; }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method !== "GET") return json({ code: "READ_ONLY_MAINTENANCE" }, 405);
-    if (url.pathname === "/") return maintenancePage();
+    if (url.pathname === "/") return renderHubPage();
+    if (url.pathname === "/ui.js") return renderUiScript();
+    if (url.pathname === "/api/connections") return json(await inspectConnections(env));
+    if (url.pathname.startsWith("/hub/api/github-workspace/")) return githubLegacyRoute(url);
     if (url.pathname === "/health") {
       return json({ system: "PRYTANEION_EXPLORER", status: STATUS, readOnly: true });
     }
