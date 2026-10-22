@@ -78,3 +78,19 @@ test("GET root exposes working live source browser but no private provider data"
   assert.equal(script.status,200);
   assert.match(await script.text(),/api\/connections/);
 });
+
+test("metadata rate limit falls back to verified GitHub source blob", async () => {
+  const { inspectLegacy } = await import("./read-service.mjs");
+  let requests=[];
+  const answer=await inspectLegacy(async url=>{
+    requests.push(url);
+    if (url.endsWith("/prytaneion-workspace"))
+      return new Response("{}",{status:403});
+    return new Response(JSON.stringify({
+      type:"file",encoding:"base64",content:btoa("export const value=1;"),sha:"f".repeat(40)
+    }),{status:200,headers:{"content-type":"application/json"}});
+  });
+  assert.equal(answer.source,"GITHUB_VERIFIED_FILE_FALLBACK");
+  assert.equal(answer.sha,"f".repeat(40));
+  assert.equal(requests.length,2);
+});
