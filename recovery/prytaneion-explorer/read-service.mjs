@@ -44,13 +44,25 @@ async function github(path, fetchImpl = fetch) {
   }
 }
 export async function inspectLegacy(fetchImpl = fetch) {
-  const r = await github("", fetchImpl);
-  if (!r || r.full_name !== REPO || r.private === true) throw Error("REPOSITORY_ACCESS_DENIED");
-  return {
-    repository: REPO, branch: r.default_branch || "main", sha: null,
-    name: r.name, url: r.html_url, updated_at: r.updated_at || null,
-    public: true, source: "GITHUB_LIVE_READ", readOnly: true
-  };
+  try {
+    const r = await github("", fetchImpl);
+    if (!r || r.full_name !== REPO || r.private === true) throw Error("REPOSITORY_ACCESS_DENIED");
+    return {
+      repository: REPO, branch: r.default_branch || "main", sha: null,
+      name: r.name, url: r.html_url, updated_at: r.updated_at || null,
+      public: true, source: "GITHUB_LIVE_READ", readOnly: true
+    };
+  } catch (error) {
+    // Public /repos endpoint is often throttled on shared Cloudflare egress.
+    // Verify the public repository by reading a real source blob instead.
+    if (error?.message !== "GITHUB_RATE_LIMIT_OR_FORBIDDEN") throw error;
+    const sample = await legacyText("go-hub-authority-map.js", fetchImpl);
+    return {
+      repository: REPO, branch:"main", sha:sample.sha,
+      name:"prytaneion-workspace", url:"https://github.com/" + REPO,
+      public:true, source:"GITHUB_VERIFIED_FILE_FALLBACK", readOnly:true
+    };
+  }
 }
 export async function legacyText(path, fetchImpl = fetch) {
   if (!LEGACY_READABLE.includes(path)) throw Error("SOURCE_NOT_ALLOWLISTED");
