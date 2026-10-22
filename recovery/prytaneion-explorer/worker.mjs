@@ -121,8 +121,17 @@ export async function probeGoogleDrive(env) {
     ]);
     const category = typeof r?.status === "string" && known.has(r.status)
       ? r.status : "PROVIDER_UNVERIFIED";
+    const phases = new Set(["fetch","body","request_setup"]);
+    const stages = new Set(["oauth_token","drive_api"]);
+    const failures = new Set(["network","timeout","http"]);
     return { status: live ? "CONNECTED" : category, connected: live,
-      via:"PANTHEON_LIGHT", readOnly:true };
+      via:"PANTHEON_LIGHT", readOnly:true,
+      ...(!live ? { diagnostic: {
+        stage:stages.has(r?.upstream_stage) ? r.upstream_stage : "unknown",
+        phase:phases.has(r?.upstream_phase) ? r.upstream_phase : "unknown",
+        failure:failures.has(r?.upstream_failure) ? r.upstream_failure : "unknown"
+      }} : {})
+    };
   } catch {
     return { status:"UNAVAILABLE", connected:false };
   }
