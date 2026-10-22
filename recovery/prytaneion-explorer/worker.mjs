@@ -157,9 +157,9 @@ export async function probeLightProvider(env, capability) {
     return { status:"UNAVAILABLE", connected:false, readOnly:true };
   }
 }
-export async function inspectConnections(env, fetchImpl = fetch) {
+export async function inspectConnections(env, fetchImpl = fetch, { force = false } = {}) {
   const now = Date.now();
-  if (connectionCache && now - connectionCache.at < CACHE_MS) return connectionCache.data;
+  if (connectionCache && now - connectionCache.at < (force ? 30 * 1000 : CACHE_MS)) return connectionCache.data;
   if (connectionPending) return connectionPending;
   connectionPending = (async () => {
     const [g,p,d,n,c,l] = await Promise.allSettled([
@@ -195,7 +195,7 @@ export default {
     if (request.method !== "GET") return json({ code: "READ_ONLY_MAINTENANCE" }, 405);
     if (url.pathname === "/") return renderHubPage();
     if (url.pathname === "/ui.js") return renderUiScript();
-    if (url.pathname === "/api/connections") return json(await inspectConnections(env));
+    if (url.pathname === "/api/connections") return json(await inspectConnections(env, fetch, { force:url.searchParams.get("refresh")==="1" }));
     if (url.pathname.startsWith("/hub/api/github-workspace/")) return githubLegacyRoute(url);
     if (url.pathname === "/health") {
       return json({ system: "PRYTANEION_EXPLORER", status: STATUS, readOnly: true });
