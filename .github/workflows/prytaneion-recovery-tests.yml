@@ -1,0 +1,40 @@
+name: PRYTANEION Read-only Recovery Tests
+on:
+  push:
+    branches:
+      - go/restore-workspace-access-20261022
+    paths:
+      - "recovery/prytaneion-explorer/**"
+      - ".github/workflows/prytaneion-recovery-tests.yml"
+  pull_request:
+    paths:
+      - "recovery/prytaneion-explorer/**"
+      - "go-hub-route-contract.js"
+      - "go-hub-authority-map.js"
+      - ".github/workflows/prytaneion-recovery-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check syntax of legacy modules and recovery entrance
+        run: |
+          node --check recovery/prytaneion-explorer/worker.mjs
+          node --check recovery/prytaneion-explorer/hub-ui.mjs
+          node --check recovery/prytaneion-explorer/read-service.mjs
+          node --check go-hub-route-contract.js
+          node --check go-hub-authority-map.js
+      - name: Read-only entrypoint and bounded RPC tests
+        run: node --test recovery/prytaneion-explorer/worker.test.mjs
+      - name: Install isolated runtime harness
+        run: npm install --no-save --no-package-lock --ignore-scripts --prefix recovery/prytaneion-explorer miniflare@4
+      - name: Named Service Binding runtime test (synthetic credentials)
+        run: node --test recovery/prytaneion-explorer/direct-runtime.test.mjs
+      - name: Live public maintenance boundary smoke (no credentials)
+        run: node --test recovery/prytaneion-explorer/public-live-smoke.test.mjs
