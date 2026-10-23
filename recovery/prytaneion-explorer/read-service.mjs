@@ -133,6 +133,36 @@ function retryAfterMs(value, now) {
   else if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) delay = Date.parse(value) - now;
   return Number.isFinite(delay) ? Math.max(MIN_PROBE_INTERVAL_MS, Math.min(delay, MAX_RETRY_AFTER_MS)) : 60000;
 }
+// Parse bounded upstream JSON without ever retaining or returning provider data.
+async function readBoundedJson(response, isTimedOut) {
+  if (Number(response.headers.get("content-length")) > 16384) {
+    void response.body?.cancel().catch(() => {});
+    return { error: "RESPONSE_TOO_LARGE" };
+  }
+  if (!response.body) return { error: "INVALID_RESPONSE" };
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let raw = "";
+  let bytes = 0;
+  try {
+    while (!isTimedOut()) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 16384) return { error: "RESPONSE_TOO_LARGE" };
+      raw += decoder.decode(value, { stream: true });
+    }
+    if (isTimedOut()) return { error: "TIMEOUT" };
+    raw += decoder.decode();
+    try { return { data: JSON.parse(raw) }; }
+    catch { return { error: "INVALID_RESPONSE" }; }
+  } catch {
+    return { error: isTimedOut() ? "TIMEOUT" : "UPSTREAM_UNAVAILABLE" };
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+}
+
 export async function probeDirectProvider(env = {}, provider, fetchImpl = fetch) {
   if (!Object.hasOwn(DIRECT_PROVIDERS, provider)) return performDirectProbe(env, provider, fetchImpl);
   let states = directProviderState.get(env);
@@ -159,13 +189,19 @@ async function performDirectProbe(env, provider, fetchImpl, defer = () => {}) {
     via: "DIRECT", credentialSource: "GO_HUB_ONLY", readOnly: true,
     ...(config ? { operation: config.operation } : {}) });
   if (!config) return summary("UNSUPPORTED_CAPABILITY");
-  const token = env?.[config.credential];
-  if (typeof token !== "string" || !token.trim()) return summary("NOT_CONFIGURED");
-  // Reject malformed header values locally without echoing them.
-  if (!/^[\x21-\x7e]{1,8192}$/.test(token)) return summary("INVALID_CREDENTIAL_FORMAT");
+  // Prefer the long-lived refresh-token trio on Google. An access-token slot
+  // is optional for compatibility and is not required in Cloudflare.
+  const refreshKeys = ["GO_HUB_DIRECT_GOOGLE_CLIENT_ID", "GO_HUB_DIRECT_GOOGLE_CLIENT_SECRET", "GO_HUB_DIRECT_GOOGLE_REFRESH_TOKEN"];
+  const refreshValues = provider === "google" ? refreshKeys.map(key => env?.[key]) : [];
+  const refreshEnabled = refreshValues.length === 3 && refreshValues.every(v => typeof v === "string" && v.trim());
+  let token = env?.[config.credential];
+  if (!refreshEnabled && (typeof token !== "string" || !token.trim())) return summary("NOT_CONFIGURED");
+  // Reject malformed header/body values locally without echoing them.
+  const validCredential = value => typeof value === "string" && /^[\x21-\x7e]{1,8192}$/.test(value);
+  if (refreshEnabled ? !refreshValues.every(validCredential) : !validCredential(token))
+    return summary("INVALID_CREDENTIAL_FORMAT");
   const controller = new AbortController();
   let timer;
-  let reader;
   let timedOut = false;
   const deadline = new Promise(resolve => {
     timer = setTimeout(() => {
@@ -176,6 +212,29 @@ async function performDirectProbe(env, provider, fetchImpl, defer = () => {}) {
   });
   const read = async () => {
     try {
+      if (refreshEnabled) {
+        // Fixed OAuth token exchange: no caller-supplied URL, scope or operation.
+        // This acquires a short-lived bearer for a single read-only Drive GET.
+        const oauth = await fetchImpl("https://oauth2.googleapis.com/token", {
+          method: "POST", redirect: "manual", signal: controller.signal,
+          headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: refreshValues[0], client_secret: refreshValues[1],
+            refresh_token: refreshValues[2], grant_type: "refresh_token"
+          }).toString()
+        });
+        if (timedOut) { void oauth.body?.cancel().catch(() => {}); return summary("TIMEOUT"); }
+        if (oauth.status === 429) defer(retryAfterMs(oauth.headers.get("retry-after"), Date.now()));
+        if (oauth.status !== 200) {
+          void oauth.body?.cancel().catch(() => {});
+          const status = { 400: "UNAUTHORIZED", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 429: "RATE_LIMITED" }[oauth.status];
+          return summary(status || (oauth.status >= 300 && oauth.status < 400 ? "REDIRECT_BLOCKED" : "UPSTREAM_UNAVAILABLE"));
+        }
+        const result = await readBoundedJson(oauth, () => timedOut);
+        if (result.error) return summary(result.error);
+        token = result.data?.access_token;
+        if (!validCredential(token)) return summary("PROVIDER_UNVERIFIED");
+      }
       const response = await fetchImpl(config.url, {
         method: "GET", redirect: "manual", signal: controller.signal,
         headers: { accept: "application/json", ...config.headers, authorization: "Bearer " + token }
@@ -187,25 +246,9 @@ async function performDirectProbe(env, provider, fetchImpl, defer = () => {}) {
         const status = { 401: "UNAUTHORIZED", 403: "FORBIDDEN", 429: "RATE_LIMITED" }[response.status];
         return summary(status || (response.status >= 300 && response.status < 400 ? "REDIRECT_BLOCKED" : "UPSTREAM_UNAVAILABLE"));
       }
-      if (Number(response.headers.get("content-length")) > 16384) {
-        void response.body?.cancel().catch(() => {});
-        return summary("RESPONSE_TOO_LARGE");
-      }
-      if (!response.body) return summary("INVALID_RESPONSE");
-      reader = response.body.getReader();
-      let bytes = 0;
-      let raw = "";
-      const decoder = new TextDecoder("utf-8", { fatal: true });
-      while (!timedOut) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        bytes += value.byteLength;
-        if (bytes > 16384) return summary("RESPONSE_TOO_LARGE");
-        raw += decoder.decode(value, { stream: true });
-      }
-      if (timedOut) return summary("TIMEOUT");
-      raw += decoder.decode();
-      return summary(config.valid(JSON.parse(raw)) ? "CONNECTED" : "PROVIDER_UNVERIFIED");
+      const parsed = await readBoundedJson(response, () => timedOut);
+      if (parsed.error) return summary(parsed.error);
+      return summary(config.valid(parsed.data) ? "CONNECTED" : "PROVIDER_UNVERIFIED");
     } catch {
       return summary(timedOut ? "TIMEOUT" : "UPSTREAM_UNAVAILABLE");
     }
@@ -214,7 +257,6 @@ async function performDirectProbe(env, provider, fetchImpl, defer = () => {}) {
   finally {
     clearTimeout(timer);
     controller.abort();
-    if (reader) void reader.cancel().catch(() => {});
   }
 }
 
