@@ -337,3 +337,71 @@ test("Retry-After dates, malformed input, and extreme values are sanitized and b
     }
   } finally { Date.now = originalNow; }
 });
+
+
+test("Google direct read uses refresh credentials without an access-token slot", async () => {
+  const { probeDirectProvider } = await import("./read-service.mjs");
+  const secrets = {
+    GO_HUB_DIRECT_GOOGLE_CLIENT_ID: "SYNTHETIC_CLIENT_ID",
+    GO_HUB_DIRECT_GOOGLE_CLIENT_SECRET: "SYNTHETIC_CLIENT_SECRET",
+    GO_HUB_DIRECT_GOOGLE_REFRESH_TOKEN: "SYNTHETIC_REFRESH_TOKEN"
+  };
+  const calls = [];
+  const result = await probeDirectProvider(secrets, "google", async (url, init) => {
+    calls.push(url);
+    assert.equal(init.redirect, "manual");
+    if (url === "https://oauth2.googleapis.com/token") {
+      assert.equal(init.method, "POST");
+      assert.equal(init.headers.authorization, undefined);
+      const params = new URLSearchParams(init.body);
+      assert.deepEqual(Object.fromEntries(params), {
+        client_id: secrets.GO_HUB_DIRECT_GOOGLE_CLIENT_ID,
+        client_secret: secrets.GO_HUB_DIRECT_GOOGLE_CLIENT_SECRET,
+        refresh_token: secrets.GO_HUB_DIRECT_GOOGLE_REFRESH_TOKEN,
+        grant_type: "refresh_token"
+      });
+      return new Response(JSON.stringify({
+        access_token: "SYNTHETIC_ACCESS_PRIVATE",
+        refresh_token: "SHOULD_NEVER_RETURN",
+        expires_in: 3600
+      }));
+    }
+    assert.equal(url, "https://www.googleapis.com/drive/v3/files?pageSize=1&fields=kind");
+    assert.equal(init.method, "GET");
+    assert.equal(init.headers.authorization, "Bearer SYNTHETIC_ACCESS_PRIVATE");
+    return new Response(JSON.stringify({ kind: "drive#fileList", files: [{ name: "PRIVATE_DOCUMENT" }] }));
+  });
+  assert.deepEqual(calls, [
+    "https://oauth2.googleapis.com/token",
+    "https://www.googleapis.com/drive/v3/files?pageSize=1&fields=kind"
+  ]);
+  assert.equal(result.status, "CONNECTED");
+  assert.equal(result.readOnly, true);
+  assert.doesNotMatch(JSON.stringify(result), /SYNTHETIC|PRIVATE|SHOULD_NEVER_RETURN|https:/);
+});
+
+test("Google OAuth failures do not fall back to service bindings or expose secrets", async () => {
+  const { probeDirectProvider } = await import("./read-service.mjs");
+  const base = {
+    GO_HUB_DIRECT_GOOGLE_CLIENT_ID: "client",
+    GO_HUB_DIRECT_GOOGLE_CLIENT_SECRET: "secret",
+    GO_HUB_DIRECT_GOOGLE_REFRESH_TOKEN: "refresh"
+  };
+  const absent = await probeDirectProvider({ GO_HUB_DIRECT_GOOGLE_CLIENT_ID: "client" }, "google",
+    () => assert.fail("Missing credential must never call upstream"));
+  assert.equal(absent.status, "NOT_CONFIGURED");
+  let calls = 0;
+  const bad = await probeDirectProvider({ ...base, LIGHT_LEGACY: { probe: () => assert.fail("Must not borrow LIGHT") } },
+    "google", async url => {
+      calls++;
+      assert.equal(url, "https://oauth2.googleapis.com/token");
+      return new Response(JSON.stringify({ error: "invalid_grant", debug: "PRIVATE" }), { status: 400 });
+    });
+  assert.equal(calls, 1);
+  assert.equal(bad.status, "UNAUTHORIZED");
+  assert.equal(bad.connected, false);
+  assert.doesNotMatch(JSON.stringify(bad), /PRIVATE|secret|refresh|invalid_grant/);
+  const oversized = await probeDirectProvider({ ...base }, "google", async () =>
+    new Response(JSON.stringify({ access_token: "P".repeat(17000) })));
+  assert.equal(oversized.status, "RESPONSE_TOO_LARGE");
+});
