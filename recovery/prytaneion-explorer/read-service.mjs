@@ -235,11 +235,29 @@ async function performDirectProbe(env, provider, fetchImpl, defer = () => {}) {
         token = result.data?.access_token;
         if (!validCredential(token)) return summary("PROVIDER_UNVERIFIED");
       }
-      const response = await fetchImpl(config.url, {
-        method: "GET", redirect: "manual", signal: controller.signal,
-        headers: { accept: "application/json", ...config.headers, authorization: "Bearer " + token }
-      });
-      if (timedOut) { void response.body?.cancel().catch(() => {}); return summary("TIMEOUT"); }
+      // Account-owned tokens use a different Cloudflare verification endpoint.
+      // Only the two fixed token-verification routes are reachable (never caller URLs).
+      const accountId = env?.GO_HUB_DIRECT_CLOUDFLARE_ACCOUNT_ID;
+      const accountVerify = provider === "cloudflare"
+        && typeof accountId === "string" && /^[a-f0-9]{32}$/.test(accountId)
+        ? "https://api.cloudflare.com/client/v4/accounts/" + accountId + "/tokens/verify"
+        : null;
+      const verifyUrls = accountVerify ? [accountVerify, config.url] : [config.url];
+      let response;
+      for (let i = 0; i < verifyUrls.length; i++) {
+        response = await fetchImpl(verifyUrls[i], {
+          method: "GET", redirect: "manual", signal: controller.signal,
+          headers: { accept: "application/json", ...config.headers, authorization: "Bearer " + token }
+        });
+        if (timedOut) { void response.body?.cancel().catch(() => {}); return summary("TIMEOUT"); }
+        // An account-token endpoint cannot verify a user-owned token, and vice versa.
+        // Try the other *fixed* endpoint only on unauthorized/forbidden responses.
+        if (i + 1 < verifyUrls.length && [401, 403].includes(response.status)) {
+          void response.body?.cancel().catch(() => {});
+          continue;
+        }
+        break;
+      }
       if (response.status === 429) defer(retryAfterMs(response.headers.get("retry-after"), Date.now()));
       if (response.status !== 200) {
         void response.body?.cancel().catch(() => {});
