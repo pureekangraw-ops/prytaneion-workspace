@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # Recovery-only source synchronization is NOT a legacy go-hub release.
+    # Keep the legacy auto-deploy behavior for changes to actual GO Hub code.
+    paths-ignore:
+      - 'recovery/prytaneion-explorer/**'
+      - 'docs/workspace-access-recovery-20261022.md'
+      - '.github/workflows/prytaneion-recovery-tests.yml'
+      - '.github/workflows/go-hub-deploy.yml'
 
 permissions:
   contents: read
