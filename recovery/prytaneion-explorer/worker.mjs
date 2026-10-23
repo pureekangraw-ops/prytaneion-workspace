@@ -1,4 +1,4 @@
-import { inspectLegacy, githubLegacyRoute } from "./read-service.mjs";
+import { inspectLegacy, githubLegacyRoute, inspectDirectProviders } from "./read-service.mjs";
 import { renderHubPage, renderUiScript } from "./hub-ui.mjs";
 import { CITY_DESTINATIONS, getCityDestination } from "../../go-hub-route-contract.js";
 import { authorityMap, authorityOwner, assertUniqueDecisionAuthority } from "../../go-hub-authority-map.js";
@@ -189,12 +189,55 @@ export async function inspectConnections(env, fetchImpl = fetch, { force = false
   finally { connectionPending = null; }
 }
 
+// Separate cache and endpoint: direct evidence never replaces binding evidence.
+// Key by the Worker environment so results cannot cross credential principals.
+const directCache = new WeakMap();
+// Internal-only activation seam; deliberately not called by the HTTP handler.
+export async function inspectDirectConnections(env = {}, fetchImpl = fetch, { force = false } = {}) {
+  const prior = directCache.get(env);
+  if (prior?.pending) return directSnapshot(await prior.pending);
+  if (prior && Date.now() - prior.at < (force ? 30000 : CACHE_MS)) return directSnapshot(prior.data);
+  const entry = {};
+  directCache.set(env, entry);
+  entry.pending = inspectDirectProviders(env, fetchImpl).then(data => {
+    entry.data = data;
+    entry.at = Date.now();
+    return data;
+  });
+  try { return directSnapshot(await entry.pending); }
+  finally { entry.pending = null; }
+}
+
+function directSnapshot(data) {
+  const now = Date.now();
+  const connections = Object.fromEntries(Object.entries(data.connections).map(([name, value]) => {
+    const fresh = now < value.expiresAt;
+    return [name, { ...value, freshness: fresh ? "FRESH" : "EXPIRED",
+      ...(fresh ? {} : { status: "STALE", lastStatus: value.status, connected: false }) }];
+  }));
+  const values = Object.values(connections);
+  return { ...data, connections, observedAt: Math.min(...values.map(v => v.observedAt)),
+    expiresAt: Math.min(...values.map(v => v.expiresAt)),
+    freshness: values.every(v => v.freshness === "FRESH") ? "FRESH" : "EXPIRED" };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method !== "GET") return json({ code: "READ_ONLY_MAINTENANCE" }, 405);
     if (url.pathname === "/") return renderHubPage();
     if (url.pathname === "/ui.js") return renderUiScript();
+    if (url.pathname === "/api/direct-connections") {
+      // Recovery has no trusted caller verifier. Never activate credentialed
+      // work from HTTP, including cold/expired cache reads or supplied headers.
+      if (url.searchParams.has("refresh")) return json({ code: "DIRECT_REFRESH_PROTECTED_ACTIVATION_PENDING" }, 403);
+      const cached = directCache.get(env)?.data;
+      return json(cached ? { ...directSnapshot(cached), snapshotOnly: true } : {
+        evidence: "DIRECT_PROVIDER_READ", status: "PROTECTED_ACTIVATION_PENDING",
+        connections: {}, observedAt: null, expiresAt: null, freshness: "UNOBSERVED",
+        snapshotOnly: true, privateDataReturned: false, readOnly: true
+      });
+    }
     if (url.pathname === "/api/connections") return json(await inspectConnections(env, fetch, { force:url.searchParams.get("refresh")==="1" }));
     if (url.pathname.startsWith("/hub/api/github-workspace/")) return githubLegacyRoute(url);
     if (url.pathname === "/health") {

@@ -111,3 +111,229 @@ test("arbitrary LIGHT operation is never forwarded",async()=>{
   const r=await probeLightProvider({LIGHT_LEGACY:{probe:async()=>{throw Error("should not be called");}}},"delete_all");
   assert.equal(r.status,"UNSUPPORTED_CAPABILITY");
 });
+
+// Direct probes are status-only and never borrow a binding's principal.
+import { probeDirectProvider, inspectDirectProviders } from "./read-service.mjs";
+import { inspectDirectConnections, inspectConnections } from "./worker.mjs";
+import { readFileSync } from "node:fs";
+const directFixtures = {
+  github: ["GO_HUB_DIRECT_GITHUB_TOKEN", "https://api.github.com/user", { id: 1, login: "PRIVATE" }],
+  cloudflare: ["GO_HUB_DIRECT_CLOUDFLARE_TOKEN", "https://api.cloudflare.com/client/v4/user/tokens/verify", { success: true, result: { status: "active", id: "PRIVATE" } }],
+  notion: ["GO_HUB_DIRECT_NOTION_TOKEN", "https://api.notion.com/v1/users/me", { object: "user", type: "bot", id: "PRIVATE" }],
+  google: ["GO_HUB_DIRECT_GOOGLE_ACCESS_TOKEN", "https://www.googleapis.com/drive/v3/files?pageSize=1&fields=kind", { kind: "drive#fileList", files: [{ name: "PRIVATE" }] }]
+};
+const mockToken = "FAKE_TEST_TOKEN";
+const allDirect = Object.fromEntries(Object.values(directFixtures).map(([key]) => [key, mockToken]));
+const reply = payload => new Response(JSON.stringify(payload));
+
+test("each direct provider is independently disabled without its own credential", async () => {
+  let calls = 0;
+  const empty = await inspectDirectProviders({}, async () => { calls++; throw Error(); });
+  assert.equal(calls, 0);
+  for (const item of Object.values(empty.connections)) assert.equal(item.status, "NOT_CONFIGURED");
+  const partial = await inspectDirectProviders({ GO_HUB_DIRECT_GITHUB_TOKEN: mockToken }, async () => {
+    calls++; return reply(directFixtures.github[2]);
+  });
+  assert.equal(calls, 1);
+  assert.equal(partial.connections.github.connected, true);
+  assert.equal(partial.connections.google.status, "NOT_CONFIGURED");
+});
+
+test("fixed direct GET probes use only Hub credentials and discard private response data", async () => {
+  for (const [provider, [key, endpoint, fixture]] of Object.entries(directFixtures)) {
+    let calls = 0;
+    const result = await probeDirectProvider({ [key]: mockToken }, provider, async (url, init) => {
+      calls++;
+      assert.equal(url, endpoint);
+      assert.equal(init.method, "GET");
+      assert.equal(init.redirect, "manual");
+      assert.equal(init.headers.authorization, "Bearer " + mockToken);
+      assert.ok(init.signal instanceof AbortSignal);
+      assert.equal(init.body, undefined);
+      return reply({ ...fixture, secret: mockToken, url: "https://private.invalid/?token=" + mockToken });
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.status, "CONNECTED");
+    assert.equal(result.via, "DIRECT");
+    assert.equal(result.credentialSource, "GO_HUB_ONLY");
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE|FAKE_TEST_TOKEN|https:/);
+  }
+});
+
+test("401/403/429 and redirects never retry, follow redirects, or invoke bindings", async () => {
+  for (const provider of Object.keys(directFixtures)) {
+    for (const [status, expected] of [[401,"UNAUTHORIZED"],[403,"FORBIDDEN"],[429,"RATE_LIMITED"],[302,"REDIRECT_BLOCKED"],[500,"UPSTREAM_UNAVAILABLE"]]) {
+      let calls = 0;
+      const forbidden = () => { assert.fail("binding fallback"); };
+      const result = await probeDirectProvider({ ...allDirect,
+        PANTHEON_OWNER: { ownerCall: forbidden }, PANTHEON_LIGHT: { lightCall: forbidden }, LIGHT_LEGACY: { probe: forbidden }
+      }, provider, async () => {
+        calls++;
+        return new Response("PRIVATE " + mockToken, { status, headers: { location: "https://private.invalid/?token=" + mockToken, "retry-after": "0" } });
+      });
+      assert.equal(calls, 1);
+      assert.equal(result.status, expected);
+      assert.doesNotMatch(JSON.stringify(result), /PRIVATE|FAKE_TEST_TOKEN|https:/);
+    }
+  }
+});
+
+test("untrusted operations, credentials, malformed responses and errors are bounded and redacted", async () => {
+  for (const name of ["__proto__", "constructor", "delete_all", "https://evil.invalid"]) {
+    assert.equal((await probeDirectProvider({ ...allDirect }, name, () => assert.fail())).status, "UNSUPPORTED_CAPABILITY");
+  }
+  assert.equal((await probeDirectProvider({ GO_HUB_DIRECT_GITHUB_TOKEN: "bad\nheader" }, "github", () => assert.fail())).status, "INVALID_CREDENTIAL_FORMAT");
+  for (const fetchImpl of [async () => { throw Error("PRIVATE " + mockToken); }, async () => new Response("invalid PRIVATE"), async () => reply({ private: mockToken })]) {
+    const result = await probeDirectProvider({ ...allDirect }, "github", fetchImpl);
+    assert.equal(result.connected, false);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE|FAKE_TEST_TOKEN/);
+  }
+  for (const headers of [{}, {"content-length":"16385"}]) {
+    const result = await probeDirectProvider({ ...allDirect }, "github", async () => new Response("x".repeat(16385), { headers }));
+    assert.equal(result.status, "RESPONSE_TOO_LARGE");
+  }
+});
+
+test("fetch and body stalls have an eight-second deadline with no retry", async () => {
+  const signals = [];
+  let calls = 0;
+  const results = await Promise.all([
+    probeDirectProvider({ ...allDirect }, "google", async (_url, init) => { calls++; signals.push(init.signal); return new Promise(() => {}); }),
+    probeDirectProvider({ ...allDirect }, "notion", async (_url, init) => { calls++; signals.push(init.signal); return new Response(new ReadableStream({ start() {} })); })
+  ]);
+  assert.equal(calls, 2);
+  assert.ok(signals.every(signal => signal.aborted));
+  assert.deepEqual(results.map(r => r.status), ["TIMEOUT", "TIMEOUT"]);
+});
+
+test("direct cache coalesces requests, bounds refresh, and isolates environments", async () => {
+  const env = { ...allDirect };
+  let calls = 0;
+  const fetchImpl = async url => {
+    calls++;
+    return reply(Object.values(directFixtures).find(([,endpoint]) => endpoint === url)[2]);
+  };
+  const [first, second] = await Promise.all([inspectDirectConnections(env, fetchImpl), inspectDirectConnections(env, fetchImpl)]);
+  assert.deepEqual(first, second);
+  await inspectDirectConnections(env, fetchImpl, { force: true });
+  assert.equal(calls, 4);
+  const empty = await inspectDirectConnections({}, () => assert.fail());
+  assert.equal(empty.connections.github.status, "NOT_CONFIGURED");
+});
+
+test("direct route is status-only, ignores arbitrary destinations, and rejects writes", async () => {
+  const env = { LIGHT_LEGACY: { probe: () => assert.fail("direct must not invoke binding") } };
+  const response = await call("/api/direct-connections?url=https://evil.invalid&operation=delete_all", {}, env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json();
+  assert.equal(body.evidence, "DIRECT_PROVIDER_READ");
+  assert.equal(body.privateDataReturned, false);
+  assert.equal(body.status, "PROTECTED_ACTIVATION_PENDING");
+  assert.deepEqual(body.connections, {});
+  for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]) {
+    assert.equal((await call("/api/direct-connections", { method }, env)).status, 405);
+  }
+});
+
+test("existing binding and public probes still work without direct credentials", async () => {
+  const operations = [];
+  const env = {
+    PANTHEON_OWNER: { ownerCall: async x => { operations.push(x.operation); return { ok: true, upstream_status: 200, result: { factory: { connection: "CONNECTED" } } }; } },
+    PANTHEON_LIGHT: { lightCall: async x => { operations.push(x.operation); return { ok: true, result: { source: "google_drive", read_only: true } }; } },
+    LIGHT_LEGACY: { probe: async x => { operations.push(x); return { status: "CONNECTED", connected: true }; } }
+  };
+  const result = await inspectConnections(env, async (_url, init) => {
+    assert.equal(init.headers.authorization, undefined);
+    return reply({ full_name: "pureekangraw-ops/prytaneion-workspace", private: false });
+  });
+  assert.equal(result.connections.github.method, "PUBLIC_REPOSITORY_REST");
+  assert.equal(result.connections.googlePantheon.connected, true);
+  assert.equal(result.connections.googleLight.connected, true);
+  assert.equal(result.connections.notion.connected, true);
+  assert.equal(result.connections.cloudflare.connected, true);
+  assert.deepEqual(operations.sort(), ["factory_health","pantheon.drive.read","notion","cloudflare","google"].sort());
+  const config = JSON.parse(readFileSync(new URL("./wrangler.jsonc", import.meta.url), "utf8"));
+  assert.deepEqual(config.services, [
+    { binding: "PANTHEON_OWNER", service: "phatheon-workhub", entrypoint: "OwnerBridge" },
+    { binding: "PANTHEON_LIGHT", service: "phatheon-workhub", entrypoint: "LightBridge" },
+    { binding: "LIGHT_LEGACY", service: "light-bookmark", entrypoint: "LegacyExplorerRead" }
+  ]);
+});
+
+test("anonymous cold, cached and expired status reads never activate credentialed requests", async () => {
+  const env = { ...allDirect };
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let calls = 0;
+  const start = originalNow();
+  try {
+    globalThis.fetch = async () => { calls++; throw Error("HTTP must not fetch"); };
+    for (const query of ["?refresh=1", "?refresh=0", "?refresh=", "?refresh=1&provider=github"]) {
+      const r = await call("/api/direct-connections" + query, { headers: { authorization: "Bearer fake", "x-trusted-caller": "true" } }, env);
+      assert.equal(r.status, 403);
+    }
+    assert.equal((await (await call("/api/direct-connections", {}, env)).json()).status, "PROTECTED_ACTIVATION_PENDING");
+    await inspectDirectConnections(env, async url => reply(Object.values(directFixtures).find(([,endpoint]) => endpoint === url)[2]));
+    Date.now = () => start + 60 * 60 * 1000;
+    const snapshot = await (await call("/api/direct-connections", {}, env)).json();
+    assert.equal(snapshot.snapshotOnly, true);
+    assert.equal(snapshot.connections.github.status, "STALE");
+    assert.equal(snapshot.connections.github.lastStatus, "CONNECTED");
+    assert.equal(snapshot.connections.github.connected, false);
+    assert.equal(snapshot.freshness, "EXPIRED");
+    assert.ok(snapshot.observedAt <= start + 1000);
+    assert.ok(snapshot.expiresAt < Date.now());
+    assert.equal((await call("/api/direct-connections?refresh=1", {}, env)).status, 403);
+    assert.equal(calls, 0);
+  } finally { globalThis.fetch = originalFetch; Date.now = originalNow; }
+});
+
+test("internal refresh cannot bypass per-provider 429 cooldown; no scheduled retry", async () => {
+  const originalNow = Date.now;
+  const start = originalNow();
+  let now = start;
+  Date.now = () => now;
+  const env = { ...allDirect };
+  const calls = { github: 0, cloudflare: 0, notion: 0, google: 0 };
+  const fetchImpl = async url => {
+    const [provider, fixture] = Object.entries(directFixtures).find(([,v]) => v[1] === url);
+    calls[provider]++;
+    return provider === "github" ? new Response("PRIVATE", { status: 429, headers: { "retry-after": "120" } }) : reply(fixture[2]);
+  };
+  try {
+    await inspectDirectConnections(env, fetchImpl);
+    now += 31000;
+    const r = await inspectDirectConnections(env, fetchImpl, { force: true });
+    assert.equal(r.connections.github.status, "RATE_LIMITED");
+    assert.deepEqual(calls, { github: 1, cloudflare: 2, notion: 2, google: 2 });
+    assert.doesNotMatch(JSON.stringify(r), /retry-after|PRIVATE|120/);
+    now = start + 121000;
+    assert.equal(calls.github, 1); // Advancing time does not schedule a request.
+    await inspectDirectConnections(env, fetchImpl, { force: true });
+    assert.equal(calls.github, 2);
+  } finally { Date.now = originalNow; }
+});
+
+test("Retry-After dates, malformed input, and extreme values are sanitized and bounded", async () => {
+  const originalNow = Date.now;
+  const start = Date.UTC(2026, 9, 23);
+  let now = start;
+  Date.now = () => now;
+  try {
+    for (const [header, cooldown] of [[new Date(start + 90000).toUTCString(), 90000], ["PRIVATE token", 60000], ["9999999999", 86400000], ["0", 30000]]) {
+      now = start;
+      const env = { ...allDirect };
+      let calls = 0;
+      const fetchImpl = async () => { calls++; return new Response("PRIVATE", { status: 429, headers: { "retry-after": header } }); };
+      const first = await probeDirectProvider(env, "github", fetchImpl);
+      now = start + cooldown - 1;
+      assert.deepEqual(await probeDirectProvider(env, "github", fetchImpl), first);
+      assert.equal(calls, 1);
+      now++;
+      await probeDirectProvider(env, "github", fetchImpl);
+      assert.equal(calls, 2);
+      assert.doesNotMatch(JSON.stringify(first), /PRIVATE|token|GMT|9999999999/);
+    }
+  } finally { Date.now = originalNow; }
+});
