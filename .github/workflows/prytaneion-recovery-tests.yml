@@ -36,3 +36,5 @@ jobs:
         run: npm install --no-save --no-package-lock --ignore-scripts --prefix recovery/prytaneion-explorer miniflare@4
       - name: Named Service Binding runtime test (synthetic credentials)
         run: node --test recovery/prytaneion-explorer/direct-runtime.test.mjs
+      - name: Live public maintenance boundary smoke (no credentials)
+        run: node --test recovery/prytaneion-explorer/public-live-smoke.test.mjs
