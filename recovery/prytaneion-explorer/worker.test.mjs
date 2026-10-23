@@ -405,3 +405,51 @@ test("Google OAuth failures do not fall back to service bindings or expose secre
     new Response(JSON.stringify({ access_token: "P".repeat(17000) })));
   assert.equal(oversized.status, "RESPONSE_TOO_LARGE");
 });
+
+
+test("Cloudflare accepts account-owned token verification without exposing account metadata", async () => {
+  const { probeDirectProvider } = await import("./read-service.mjs");
+  const account = "a".repeat(32);
+  const token = "SYNTHETIC_CLOUDFLARE_TOKEN";
+  const routes = [];
+  const result = await probeDirectProvider({
+    GO_HUB_DIRECT_CLOUDFLARE_ACCOUNT_ID: account,
+    GO_HUB_DIRECT_CLOUDFLARE_TOKEN: token
+  }, "cloudflare", async (url, init) => {
+    routes.push(url);
+    assert.equal(init.method, "GET");
+    assert.equal(init.headers.authorization, "Bearer " + token);
+    return new Response(JSON.stringify({ success: true, result: { status: "active", id: "PRIVATE_ID" } }));
+  });
+  assert.deepEqual(routes, ["https://api.cloudflare.com/client/v4/accounts/" + account + "/tokens/verify"]);
+  assert.equal(result.status, "CONNECTED");
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_ID|SYNTHETIC|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+});
+
+test("Cloudflare account-token mismatch falls back only to fixed user-token verification", async () => {
+  const { probeDirectProvider } = await import("./read-service.mjs");
+  const account = "b".repeat(32);
+  let urls = [];
+  const result = await probeDirectProvider({
+    GO_HUB_DIRECT_CLOUDFLARE_ACCOUNT_ID: account,
+    GO_HUB_DIRECT_CLOUDFLARE_TOKEN: "SYNTHETIC"
+  }, "cloudflare", async url => {
+    urls.push(url);
+    return urls.length === 1
+      ? new Response("PRIVATE_NOT_AUTHORIZED", { status: 401 })
+      : new Response(JSON.stringify({ success: true, result: { status: "active" } }));
+  });
+  assert.deepEqual(urls, [
+    "https://api.cloudflare.com/client/v4/accounts/" + account + "/tokens/verify",
+    "https://api.cloudflare.com/client/v4/user/tokens/verify"
+  ]);
+  assert.equal(result.status, "CONNECTED");
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE|SYNTHETIC/);
+  const invalidId = await probeDirectProvider({
+    GO_HUB_DIRECT_CLOUDFLARE_ACCOUNT_ID: "https://evil.example", GO_HUB_DIRECT_CLOUDFLARE_TOKEN: "SYNTHETIC"
+  }, "cloudflare", async url => {
+    assert.equal(url, "https://api.cloudflare.com/client/v4/user/tokens/verify");
+    return new Response("PRIVATE", { status: 401 });
+  });
+  assert.equal(invalidId.status, "UNAUTHORIZED");
+});
