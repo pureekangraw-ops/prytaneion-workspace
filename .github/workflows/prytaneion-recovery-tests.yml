@@ -32,3 +32,7 @@ jobs:
           node --check go-hub-authority-map.js
       - name: Read-only entrypoint and bounded RPC tests
         run: node --test recovery/prytaneion-explorer/worker.test.mjs
+      - name: Install isolated runtime harness
+        run: npm install --no-save --no-package-lock --ignore-scripts --prefix recovery/prytaneion-explorer miniflare@4
+      - name: Named Service Binding runtime test (synthetic credentials)
+        run: node --test recovery/prytaneion-explorer/direct-runtime.test.mjs
