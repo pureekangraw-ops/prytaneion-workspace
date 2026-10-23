@@ -15,8 +15,17 @@ test("native named entrypoint invokes fixed reads; public HTTP cannot invoke pro
     "api.notion.com": { object: "user", type: "bot", id: "PRIVATE" },
     "www.googleapis.com": { kind: "drive#fileList", files: [{ name: "PRIVATE" }] }
   };
-  const outboundService = request => {
+  const outboundService = async request => {
     calls++;
+    if (new URL(request.url).hostname === "oauth2.googleapis.com") {
+      assert.equal(request.method, "POST");
+      assert.equal(request.headers.get("authorization"), null);
+      const form = new URLSearchParams(await request.text());
+      assert.equal(form.get("grant_type"), "refresh_token");
+      for (const field of ["client_id", "client_secret", "refresh_token"])
+        assert.equal(form.get(field), "SYNTHETIC_TEST_ONLY");
+      return Response.json({ access_token: "SYNTHETIC_TEST_ONLY", expires_in: 3600 });
+    }
     assert.equal(request.method, "GET");
     assert.equal(request.headers.get("authorization"), "Bearer SYNTHETIC_TEST_ONLY");
     const fixture = fixtures[new URL(request.url).hostname];
@@ -34,7 +43,7 @@ test("native named entrypoint invokes fixed reads; public HTTP cannot invoke pro
       }};` },
     { name: "hub", compatibilityDate: "2026-08-06", modulesRoot: root,
       modules: paths.map(path => ({ type: "ESModule", path: root + path, contents: readFileSync(root + path, "utf8") })),
-      bindings: Object.fromEntries(["GITHUB_TOKEN","CLOUDFLARE_TOKEN","NOTION_TOKEN","GOOGLE_ACCESS_TOKEN"].map(key => ["GO_HUB_DIRECT_" + key, "SYNTHETIC_TEST_ONLY"])),
+      bindings: Object.fromEntries(["GITHUB_TOKEN","CLOUDFLARE_TOKEN","NOTION_TOKEN","GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET","GOOGLE_REFRESH_TOKEN"].map(key => ["GO_HUB_DIRECT_" + key, "SYNTHETIC_TEST_ONLY"])),
       outboundService }
   ] });
   try {
@@ -43,7 +52,7 @@ test("native named entrypoint invokes fixed reads; public HTTP cannot invoke pro
     assert.equal((await (await mf.dispatchFetch("http://test/invalid")).json()).status, "INVALID_INPUT");
     assert.equal(calls, 0);
     const data = await (await mf.dispatchFetch("http://test/probe")).json();
-    assert.equal(calls, 4);
+    assert.equal(calls, 5);
     assert.equal(data.freshness, "FRESH");
     assert.ok(data.expiresAt > data.observedAt);
     assert.ok(Object.values(data.connections).every(v => v.status === "CONNECTED"));
@@ -54,7 +63,7 @@ test("native named entrypoint invokes fixed reads; public HTTP cannot invoke pro
     assert.equal((await mf.dispatchFetch("http://test/api/direct-connections?refresh=1")).status, 403);
     assert.equal((await mf.dispatchFetch("http://test/api/direct-connections", { method: "POST" })).status, 405);
     assert.equal((await mf.dispatchFetch("http://test/HubDirectRead/probe")).status, 404);
-    assert.equal(calls, 4);
+    assert.equal(calls, 5);
     assert.equal((await mf.dispatchFetch("http://test/health")).status, 200);
   } finally { await mf.dispose(); }
 });
