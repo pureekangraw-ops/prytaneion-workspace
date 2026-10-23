@@ -19,12 +19,15 @@ file access. The legacy GO Brain `cloudflare_worker` tool's top-level
 - GO Brain caller deployed Worker version:
   `1435fbb4-b853-4a80-9a0e-6b675cdccc24` at 100%.
   Source commit: `cb10b1570cbb08a7f136e8f71f4b029516d9b926`.
-- Source review: [PRYTANEION Draft PR #407](https://github.com/pureekangraw-ops/prytaneion-workspace/pull/407)
+- Source review: [PRYTANEION PR #407](https://github.com/pureekangraw-ops/prytaneion-workspace/pull/407)
   retargeted **directly to main** so it brings the entire recovery entrance
   and direct probes together, without duplicate release PRs.
-- Caller review: [Go-Together Draft PR #10](https://github.com/pureekangraw-ops/Go-Together/pull/10)
-  still targets `main`, and retains existing owner OAuth, D1, assets and
-  PANTHEON bindings.
+- Caller source: [Go-Together PR #10](https://github.com/pureekangraw-ops/Go-Together/pull/10)
+  was squash-merged to `main` at `8ea26d6925201bfe5bc834bd2984d57b4f625e80`
+  with existing owner OAuth, D1, assets and PANTHEON bindings preserved.
+  Cloudflare Workers Builds has an existing auto-deploy trigger for
+  Go-Together `main`; distinguish Git source merge from Worker deployment
+  and inspect live version/health independently.
 - [Recovery CI run 39910962962](https://github.com/pureekangraw-ops/prytaneion-workspace/actions/runs/39910962962)
   PASS at source commit `c6f76c722551aa8e877cb1a4f190341ea14e26d6`:
   26 unit tests, 1 Miniflare Service Binding runtime test and
@@ -39,18 +42,33 @@ file access. The legacy GO Brain `cloudflare_worker` tool's top-level
 - No secret values were read, copied or modified; Hub remains
   **UNDER MAINTENANCE** and Factory work disabled.
 
-**Important release boundary:** Both currently live Worker versions are
-ahead of their repositories' `main` branches. Do **not** redeploy either
-Worker from stale `main`, as that would remove the working bridge.
-The legacy `.github/workflows/go-hub-deploy.yml` runs on every push to the
-PRYTANEION `main` branch and targets the separate legacy `go-hub`
-Worker. Merging #407 would trigger that workflow, whose safety/preflight
-behavior must be reviewed independently. Keep #407 and #10 Draft and
-do not merge or deploy the legacy `go-hub` merely to complete this
-read-only recovery. Obtain explicit owner release approval after checking
-the workflow and rollback plan.
+**Release boundary — merge authorized 23 Oct 2026:** The owner
+explicitly authorized merging both source PRs, not restarting Factory or
+releasing the legacy `go-hub` Worker. The companion caller PR #10 has been
+merged to `main`; PRYTANEION #407 now includes the entire recovery
+entrance and fixed direct read probes. Cloudflare `prytaneion-explorer`
+continues running the previously verified Worker version until changed
+separately.
+
+The legacy `.github/workflows/go-hub-deploy.yml` previously ran on
+**every push to PRYTANEION main** and targets a different, historical
+`go-hub` Worker. To prevent an accidental legacy deployment, this
+same PR adds `push.paths-ignore` for the recovery tree, this evidence
+document and both recovery/legacy workflow files. Therefore a push
+containing **only** those paths must not invoke the legacy deploy
+workflow; ordinary changes to the real GO Hub source still can.
+Keep `workflow_dispatch` for explicitly approved legacy deployment.
+Check the resulting GitHub Actions run list after merge and investigate
+any unexpected legacy deployment run immediately.
+
+Do not treat a successful merge or CI pass as a new live Worker deployment.
+After merging, verify Cloudflare deployment IDs and owner-authenticated
+GO Brain 4/4 status readback. Keep existing secrets, PANTHEON bindings,
+legacy maintenance boundary and Factory restrictions unchanged.
 
 ---
+
+## Historical 22 Oct checkpoint (superseded by the live evidence above)
 
 
 The owner authorized an exploration entrance only. No work queue, task
