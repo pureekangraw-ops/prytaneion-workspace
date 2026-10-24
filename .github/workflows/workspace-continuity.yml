@@ -25,7 +25,7 @@ jobs:
           git -C /tmp/hub-source checkout 3da763a3083654fe69945da0e8e6d5e86eb706e3
           npm ci --prefix /tmp/hub-source --ignore-scripts --no-audit --no-fund
           git clone https://github.com/pureekangraw-ops/Go-Together.git /tmp/go-source
-          git -C /tmp/go-source checkout b7a51b1da9944dc68edfb1e9c01f7364c9ab870d
+          git -C /tmp/go-source checkout e743e523171e118db7c75a8b126c6814624be1bb
       - name: GO regressions and paired continuity
         run: |
           node --test /tmp/go-source/tests/*.test.mjs

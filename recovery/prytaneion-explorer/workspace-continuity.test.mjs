@@ -34,7 +34,7 @@ test('idempotent replay, changed request collision, stale version and stale writ
 });
 test('interrupted writes reconcile committed slot; pre-commit loss retries same slot without duplicates',async()=>{
  for(const mode of ['before','after']){const f=fixture();try{f.state.mode=mode;
- if(mode==='before'){await assert.rejects(f.call('write',command()),/WRITE_UNCERTAIN/);assert.equal((await f.call('receipt',{workId:'WORK-ONE',writeRequestId:'req-1'})).status,'NOT_FOUND');}
+ if(mode==='before'){await assert.rejects(f.call('write',command()),/WRITE_UNCERTAIN/);assert.equal((await f.call('receipt',{workId:'WORK-ONE',writeRequestId:'req-1'})).status,'UNKNOWN');}
  else assert.equal((await f.call('write',command())).receipt.version,1);
  const final=await f.call('write',command());assert.equal(final.receipt.fileId,'root_file_id_01');assert.equal(f.db.prepare('SELECT count(*) n FROM files').get().n,1);
  }finally{f.db.close();}}
@@ -59,5 +59,41 @@ test('existing private Google MCP discovers and calls bounded Workspace operatio
  const list=await call('tools/list');assert.ok(list.result.tools.some(t=>t.name==='google_workspace_write'));
  const written=await call('tools/call',{name:'google_workspace_write',arguments:command()});const data=JSON.parse(written.result.content[0].text);assert.equal(data.receipt.version,1);
  assert.ok(!JSON.stringify(written).includes('SYNTHETIC_ONLY'));
+ }finally{f.db.close();}
+});
+
+test('committed handoff hidden by Drive404 cannot claim latest or definitely absent receipt',async()=>{
+ const f=fixture();try{
+ await f.call('write',command());
+ const handoff=await f.call('write',command({...initial(),currentWriter:'ATLAS',writerEpoch:1},{writeRequestId:'handoff',expectedVersion:1}));
+ f.state.hidden.add(handoff.receipt.fileId);
+ const visible=await f.call('read',{workId:'WORK-ONE'});
+ assert.equal(visible.status,'VISIBLE_PREFIX');assert.equal(visible.latest,'UNKNOWN');assert.equal(visible.receipt.version,1);
+ assert.equal((await f.call('receipt',{workId:'WORK-ONE',writeRequestId:'handoff'})).status,'UNKNOWN');
+ assert.equal((await f.call('read',{workId:'WORK-ONE',minimumVersion:2})).status,'UNKNOWN');
+ assert.equal((await f.call('read',{workId:'WORK-ONE',version:2})).status,'UNKNOWN');
+ f.state.hidden.clear();assert.equal((await f.call('read',{workId:'WORK-ONE',minimumVersion:2})).receipt.version,2);
+ }finally{f.db.close();}
+});
+test('lost response then404 remains unknown until visibility returns; no automatic resubmit',async()=>{
+ const f=fixture();try{f.state.mode='after-hidden';
+ await assert.rejects(f.call('write',command()),/WRITE_UNCERTAIN/);
+ assert.equal(f.state.creates,1);assert.equal(f.db.prepare('SELECT count(*) n FROM files').get().n,1);
+ assert.equal((await f.call('receipt',{workId:'WORK-ONE',writeRequestId:'req-1'})).status,'UNKNOWN');
+ assert.equal((await f.call('read',{workId:'WORK-ONE'})).status,'UNKNOWN');assert.equal(f.state.creates,1);
+ f.state.hidden.clear();assert.equal((await f.call('receipt',{workId:'WORK-ONE',writeRequestId:'req-1'})).version,1);
+ assert.equal((await f.call('write',command())).duplicate,true);assert.equal(f.state.creates,1);
+ }finally{f.db.close();}
+});
+test('receipt hashes exactly the returned manifest and identifies caller-declared provenance',async()=>{
+ const f=fixture();try{
+ const result=await f.call('write',command());
+ assert.equal(result.receipt.manifestHash,await hash(result.manifest));
+ const stored=JSON.parse(f.db.prepare('SELECT content FROM files WHERE id=?').get(result.receipt.fileId).content);
+ assert.equal(result.receipt.recordHash,await hash(stored.record));
+ assert.notEqual(result.receipt.recordHash,result.receipt.manifestHash);
+ assert.deepEqual(result.provenance,{evidence:'CALLER_DECLARED',liveIdentity:'CALLER_DECLARED_NOT_VERIFIED',currentWriter:'LOGICAL_LABEL_NOT_AUTHENTICATED_ACTOR'});
+ assert.deepEqual(result.receipt.provenance,result.provenance);
+ assert.deepEqual((await f.call('receipt',{workId:'WORK-ONE',writeRequestId:'missing'})).provenance,result.provenance);
  }finally{f.db.close();}
 });

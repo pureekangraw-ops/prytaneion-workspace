@@ -5,7 +5,7 @@ import {hash} from './workspace-continuity.mjs';
 const root='1z7oD62E_zdJe9gbl6ZoA4brtcoPeykSq',folder='1zXE9WehOb_dE1M53wUfb6AipWaIs-auK';
 export function fixture(path=':memory:'){
  const db=new DatabaseSync(path);db.exec('CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY, metadata TEXT, content TEXT);CREATE TABLE IF NOT EXISTS ids(n INTEGER PRIMARY KEY AUTOINCREMENT);');
- const state={mode:null,creates:0,calls:[],folderParent:root};
+ const state={mode:null,creates:0,calls:[],folderParent:root,hidden:new Set()};
  async function fetcher(url,options={}){
   state.calls.push({url,method:options.method||'GET'});
   assert.equal(options.redirect,'manual');assert.equal(options.headers.authorization,'Bearer SYNTHETIC_ONLY');
@@ -18,12 +18,13 @@ export function fixture(path=':memory:'){
    assert.deepEqual(metadata.parents,[folder]);assert.equal(metadata.mimeType,'application/json');
    if(state.mode==='before'){state.mode=null;throw Error('synthetic interruption before insert');}
    try{db.prepare('INSERT INTO files VALUES(?,?,?)').run(metadata.id,JSON.stringify(metadata),content);}catch(e){if(e.errcode===1555||String(e).includes('UNIQUE'))return Response.json({}, {status:409});throw e;}
+   if(state.mode==='after-hidden'){state.mode=null;state.hidden.add(metadata.id);throw Error('synthetic lost response with delayed visibility');}
    if(state.mode==='after'){state.mode=null;throw Error('synthetic lost upload response');}
    return Response.json({id:metadata.id});
   }
   const id=u.pathname.split('/').at(-1);
   if(id===folder)return Response.json({id,parents:[state.folderParent],mimeType:'application/vnd.google-apps.folder'});
-  const row=db.prepare('SELECT * FROM files WHERE id=?').get(id);if(!row)return Response.json({}, {status:404});
+  const row=db.prepare('SELECT * FROM files WHERE id=?').get(id);if(state.hidden.has(id)||!row)return Response.json({}, {status:404});
   if(u.searchParams.get('alt')==='media')return new Response(row.content);
   return Response.json({...JSON.parse(row.metadata),size:String(Buffer.byteLength(row.content))});
  }
