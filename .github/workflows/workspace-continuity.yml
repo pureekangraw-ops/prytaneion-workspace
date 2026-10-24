@@ -1,0 +1,32 @@
+name: Workspace continuity fixtures
+on:
+  pull_request:
+    paths:
+      - 'go-hub-google-drive-service.mjs'
+      - 'recovery/prytaneion-explorer/**'
+      - '.github/workflows/workspace-continuity.yml'
+  push:
+    branches: ['atlas/workspace-continuity-20261024']
+permissions:
+  contents: read
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Provider and Drive regressions
+        run: node --test recovery/prytaneion-explorer/{worker,provider-mcp,workspace-continuity}.test.mjs tests/go-hub-google-drive-{service,mcp}.test.cjs
+      - name: Fetch pinned public rail sources
+        run: |
+          git clone https://gitlab.com/pureekangraw/hubstation.git /tmp/hub-source
+          git -C /tmp/hub-source checkout 3da763a3083654fe69945da0e8e6d5e86eb706e3
+          npm ci --prefix /tmp/hub-source --ignore-scripts --no-audit --no-fund
+          git clone https://github.com/pureekangraw-ops/Go-Together.git /tmp/go-source
+          git -C /tmp/go-source checkout b7a51b1da9944dc68edfb1e9c01f7364c9ab870d
+      - name: GO regressions and paired continuity
+        run: |
+          node --test /tmp/go-source/tests/*.test.mjs
+          HUB_SOURCE=/tmp/hub-source GO_SOURCE=/tmp/go-source node recovery/prytaneion-explorer/workspace-hub.integration.mjs
