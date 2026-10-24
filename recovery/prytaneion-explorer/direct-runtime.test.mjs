@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 // or lockfile changes are required by this candidate.
 const { Miniflare, Log, LogLevel } = await import(process.env.GO_HUB_TEST_MINIFLARE || "miniflare");
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const paths = ["recovery/prytaneion-explorer/direct-entrypoint.mjs", "recovery/prytaneion-explorer/worker.mjs", "recovery/prytaneion-explorer/read-service.mjs", "recovery/prytaneion-explorer/hub-ui.mjs", "go-hub-route-contract.js", "go-hub-authority-map.js"];
+const paths = ["recovery/prytaneion-explorer/provider-mcp.mjs", "recovery/prytaneion-explorer/provider-catalog.mjs", "recovery/prytaneion-explorer/direct-entrypoint.mjs", "recovery/prytaneion-explorer/worker.mjs", "recovery/prytaneion-explorer/read-service.mjs", "recovery/prytaneion-explorer/hub-ui.mjs", "go-hub-route-contract.js", "go-hub-authority-map.js"];
 test("native named entrypoint invokes fixed reads; public HTTP cannot invoke probes", async () => {
   let calls = 0;
   const fixtures = {
