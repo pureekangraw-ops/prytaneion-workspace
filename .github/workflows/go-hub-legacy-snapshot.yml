@@ -1,0 +1,83 @@
+name: GO HUB legacy snapshot (no deploy)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/go-hub-legacy-snapshot.yml'
+      - 'scripts/archive-go-hub-snapshot.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  backup-source:
+    name: Snapshot unchanged main, metadata and recovery manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout archive utility (review branch only)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve archive utility from review branch
+        run: cp scripts/archive-go-hub-snapshot.py "$RUNNER_TEMP/archive-go-hub-snapshot.py"
+      - name: Checkout GO HUB main source, no deploy
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          clean: true
+      - name: Collect all git refs for history index
+        shell: bash
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --prune
+      - name: Create source snapshot, git lineage and exclusion manifest
+        run: python3 "$RUNNER_TEMP/archive-go-hub-snapshot.py"
+      - name: Collect GitHub repository metadata (titles, refs, dates only)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p go-hub-backup/github
+          for resource in pulls issues releases; do
+            if gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/$resource?state=all&per_page=100" > "$RUNNER_TEMP/$resource.json"; then
+              python3 - "$RUNNER_TEMP/$resource.json" "go-hub-backup/github/$resource-index.json" "$resource" <<'PY'
+          import json,sys
+          raw=json.load(open(sys.argv[1]))
+          flat=[y for x in raw for y in (x if isinstance(x,list) else [])]
+          keep={k:True for k in ['number','title','state','created_at','closed_at','merged_at','html_url','tag_name','published_at','draft','prerelease']}
+          safe=[{k:v for k,v in row.items() if k in keep} for row in flat if isinstance(row,dict)]
+          with open(sys.argv[2],'w') as f: json.dump({'collection':sys.argv[3],'entries':safe},f,indent=2)
+          PY
+            else
+              printf '{"error":"API_METADATA_UNAVAILABLE","collection":"%s"}\n' "$resource" > "go-hub-backup/github/$resource-index.json"
+            fi
+          done
+      - name: Checksum full backup package and inspect entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd go-hub-backup
+          sha256sum go-hub-main-source-sanitized.zip git-history-graph.tsv git-refs.txt snapshot-manifest.json > CHECKSUMS.sha256
+          python3 - <<'PY'
+          import json,os,zipfile
+          manifest=json.load(open('snapshot-manifest.json'))
+          with zipfile.ZipFile('go-hub-main-source-sanitized.zip') as z:
+              assert z.testzip() is None
+          assert manifest['sourceCommit']
+          assert manifest['mainSourceIncludedFiles']>0
+          assert os.path.getsize('git-history-graph.tsv')>0
+          print('GO HUB source snapshot verified; Cloudflare state not yet exported')
+          PY
+      - name: Upload archive to temporary GitHub Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-hub-legacy-source-${{ github.run_id }}
+          path: go-hub-backup/
+          if-no-files-found: error
+          retention-days: 90
