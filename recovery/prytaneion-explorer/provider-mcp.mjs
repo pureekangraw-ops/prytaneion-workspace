@@ -1,3 +1,4 @@
+import {workspaceAdapter} from './workspace-continuity.mjs';
 import { PROVIDER_TOOLS } from './provider-catalog.mjs';
 import { probeDirectProvider } from './read-service.mjs';
 const json=(v,status=200)=>Response.json(v,{status,headers:{'cache-control':'no-store'}});
@@ -13,6 +14,7 @@ const idRE=/^(?:[0-9a-f]{32}|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/i;
 export async function providerCall(env,group,name,args={},fetcher=fetch){
  const definition=PROVIDER_TOOLS[group]?.find(t=>t.name===name);if(!definition)throw Error('UNKNOWN_TOOL');
  if(!args||typeof args!=='object'||Array.isArray(args)||Object.keys(args).some(k=>!Object.hasOwn(definition.inputSchema.properties,k)))throw Error('INVALID_ARGUMENTS');
+ if(group==='google'&&name.startsWith('google_workspace_')){const adapter=workspaceAdapter(env,fetcher);return adapter[name.slice('google_workspace_'.length)](args);}
  if(name.endsWith('_status'))return probeDirectProvider(env,group,fetcher);
  const key={github:'GO_HUB_DIRECT_GITHUB_TOKEN',cloudflare:'GO_HUB_DIRECT_CLOUDFLARE_TOKEN',notion:'GO_HUB_DIRECT_NOTION_TOKEN'}[group];
  const token=env[key];if(!valid(token,/^[\x21-\x7e]{1,8192}$/))throw Error('CREDENTIAL_UNAVAILABLE');

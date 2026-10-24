@@ -488,7 +488,65 @@ export function createGoogleDriveService({
     });
   }
 
+  // Create-only continuity log. Same pre-generated ID is the atomic contention
+  // point; Drive rejects a second create with 409. Never PATCH existing files.
+  function continuityStore({ folderId }) {
+    const validId = id => typeof id === 'string' && /^[A-Za-z0-9_-]{10,160}$/.test(id);
+    const fail = code => { throw new Error(code); };
+    if (!validId(folderId) || !scopeRoot) fail('WORKSPACE_NOT_CONFIGURED');
+    async function call(url, init = {}) {
+      const auth = await bearerToken();
+      if (auth.response) fail('WORKSPACE_AUTH_UNAVAILABLE');
+      return fetchImpl(url, {...init, redirect:'manual', signal:AbortSignal.timeout(15000),
+        headers:{...init.headers, authorization:'Bearer '+auth.token}});
+    }
+    async function bounded(r) {
+      const reader=r.body?.getReader(); if(!reader) fail('WORKSPACE_INVALID_RESPONSE');
+      let size=0;const chunks=[];
+      try { for(;;){const {done,value}=await reader.read();if(done)break;
+        size+=value.byteLength;if(size>131072)fail('WORKSPACE_RESPONSE_TOO_LARGE');chunks.push(value);}
+      } finally {void reader.cancel().catch(()=>{});reader.releaseLock();}
+      const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.byteLength;}
+      return new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+    }
+    async function folder() {
+      const r=await call(DRIVE_API_ROOT+'/files/'+encode(folderId)+'?fields=id,parents,mimeType,trashed');
+      if(!r.ok)fail('WORKSPACE_FOLDER_UNAVAILABLE');const d=JSON.parse(await bounded(r));
+      if(d.id!==folderId||d.trashed||d.mimeType!=='application/vnd.google-apps.folder'||d.parents?.length!==1||d.parents[0]!==scopeRoot)fail('WORKSPACE_SCOPE_DENIED');
+    }
+    return Object.freeze({
+      async allocate() {
+        await folder();
+        const r=await call(DRIVE_API_ROOT+'/files/generateIds?count=1&space=drive&type=files');
+        if(!r.ok)fail('WORKSPACE_ID_UNAVAILABLE');const d=JSON.parse(await bounded(r));
+        if(d.ids?.length!==1||!validId(d.ids[0]))fail('WORKSPACE_INVALID_RESPONSE');return d.ids[0];
+      },
+      async read(fileId) {
+        if(!validId(fileId))fail('WORKSPACE_INVALID_ID');await folder();
+        const r=await call(DRIVE_API_ROOT+'/files/'+encode(fileId)+'?fields=id,parents,mimeType,trashed,size');
+        if(r.status===404)return null;if(!r.ok)fail('WORKSPACE_READ_UNAVAILABLE');const m=JSON.parse(await bounded(r));
+        if(m.id!==fileId||m.trashed||m.parents?.length!==1||m.parents[0]!==folderId||m.mimeType!=='application/json'||Number(m.size)>131072)fail('WORKSPACE_SCOPE_DENIED');
+        const body=await call(DRIVE_API_ROOT+'/files/'+encode(fileId)+'?alt=media');
+        if(!body.ok)fail('WORKSPACE_READ_UNAVAILABLE');return JSON.parse(await bounded(body));
+      },
+      async create(fileId, value) {
+        if(!validId(fileId))fail('WORKSPACE_INVALID_ID');await folder();
+        const bytes=new TextEncoder().encode(JSON.stringify(value));if(bytes.length>131072)fail('WORKSPACE_TOO_LARGE');
+        const boundary='workspace-'+crypto.randomUUID();
+        const metadata={id:fileId,name:'workspace-'+fileId+'.json',mimeType:'application/json',parents:[folderId]};
+        const body=new Blob(['--'+boundary+'\r\nContent-Type: application/json\r\n\r\n',JSON.stringify(metadata),
+          '\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n',bytes,'\r\n--'+boundary+'--']);
+        const r=await call(DRIVE_UPLOAD_API_ROOT+'/files?uploadType=multipart&fields=id',
+          {method:'POST',headers:{'content-type':'multipart/related; boundary='+boundary},body});
+        if(r.status===409){void r.body?.cancel().catch(()=>{});return {created:false};}
+        if(!r.ok){void r.body?.cancel().catch(()=>{});fail('WORKSPACE_WRITE_UNCERTAIN');}
+        const d=JSON.parse(await bounded(r));if(d.id!==fileId)fail('WORKSPACE_WRITE_UNCERTAIN');return {created:true};
+      }
+    });
+  }
+
   return Object.freeze({
+    continuityStore,
     async capabilities() {
       return json({
         configured: Boolean(authMode()),
