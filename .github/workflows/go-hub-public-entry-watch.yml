@@ -1,0 +1,102 @@
+name: GO Hub Public Entry Watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-hub-public-entry-watch
+  cancel-in-progress: false
+
+jobs:
+  public-entry:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve GO Hub workers.dev origin
+        id: origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::Cloudflare credentials required for public-entry watch."
+            exit 1
+          fi
+          payload="$(curl --fail-with-body --silent --show-error             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/subdomain"             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")"
+          subdomain="$(node -e 'const p=JSON.parse(process.argv[1]); const s=String(p?.result?.subdomain||"").trim(); if(!s) process.exit(2); process.stdout.write(s)' "$payload")"
+          origin="https://go-hub.${subdomain}.workers.dev"
+          echo "origin=${origin}" >> "$GITHUB_OUTPUT"
+
+      - name: Probe real GO Hub user entry
+        id: probe
+        continue-on-error: true
+        shell: bash
+        env:
+          GO_HUB_ORIGIN: ${{ steps.origin.outputs.origin }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            body="$(mktemp)"
+            code="$(curl --location --silent --show-error               --max-time 20               --output "$body"               --write-out "%{http_code}"               "${GO_HUB_ORIGIN}/?go_hub_entry_watch=${GITHUB_RUN_ID}-${attempt}" || true)"
+            if [ "$code" = "200" ] &&
+               grep -Fq "<title>GO Hub</title>" "$body" &&
+               grep -Fq "CENTRE" "$body"; then
+              echo "GO Hub public entry is healthy."
+              exit 0
+            fi
+            echo "::warning::Public entry probe attempt ${attempt} failed (HTTP ${code:-NONE})."
+            sleep $((attempt * 5))
+          done
+          echo "::error::GO Hub public entry is unavailable."
+          exit 1
+
+      - name: Install deployment dependency for recovery
+        if: steps.probe.outcome == 'failure'
+        run: npm install --no-audit --no-fund
+
+      - name: Redeploy current main once
+        if: steps.probe.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::Public entry failed; redeploying the exact current main once."
+          npx wrangler deploy --config wrangler.go-hub.jsonc
+
+      - name: Verify public entry after recovery
+        if: steps.probe.outcome == 'failure'
+        shell: bash
+        env:
+          GO_HUB_ORIGIN: ${{ steps.origin.outputs.origin }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6 7 8; do
+            body="$(mktemp)"
+            code="$(curl --location --silent --show-error               --max-time 20               --output "$body"               --write-out "%{http_code}"               "${GO_HUB_ORIGIN}/?go_hub_recovery_verify=${GITHUB_RUN_ID}-${attempt}" || true)"
+            if [ "$code" = "200" ] &&
+               grep -Fq "<title>GO Hub</title>" "$body" &&
+               grep -Fq "CENTRE" "$body"; then
+              echo "GO Hub public entry recovered."
+              exit 0
+            fi
+            echo "::warning::Recovery verification attempt ${attempt} failed (HTTP ${code:-NONE})."
+            sleep $((attempt * 5))
+          done
+          echo "::error::GO Hub public entry is still unavailable after one controlled redeploy."
+          exit 1
