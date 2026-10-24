@@ -18,6 +18,9 @@ test("roles match current operating model without publishing new authority", asy
   assert.equal(family.AGENT_ROLES.PIXIE.homeRuntime, "PIXIE_LAB_GO_WORKS");
   assert.deepEqual(family.AGENT_ROLES.PIXIE.reportsTo, ["GO"]);
   assert.equal(family.AGENT_ROLES.SPECTRUM.homeRuntime, "WEB_OFFICE_STOREFRONT");
+  assert.equal(family.AGENT_ROLES.SPECTRUM.id, "SPECTRUM");
+  assert.equal(family.AGENT_ROLES.SPECTRUM.displayName, "SPECTRUM PRIME");
+  assert.equal(family.AGENT_ROLES.SPECTRUM.rank, "PRIME");
   assert.ok(family.AGENT_ROLES.SPECTRUM.reportsTo.includes("BIG"));
   assert.equal(family.AGENT_ROLES.HERMES.stationary, true);
   assert.equal(family.AGENT_ROLES.MIMIR.homeRuntime, "CENTRE_HOUSEKEEPING");
