@@ -3,6 +3,11 @@ const OUTPUT_TYPES = new Set(["FILE", "REF"]);
 const CHECK_STATUSES = new Set(["PENDING", "PASS", "FAIL", "UNKNOWN"]);
 const GO_WORKS_DISPLAY_NAME = "GO WORKS";
 const GO_WORKS_FLOW_VERSION = "GO_WORKS_V2";
+const FACTORY_OPERATING_DIRECTIVE = Object.freeze({
+  mode: "MAXIMIZE_AUTHORIZED_CAPABILITY",
+  instruction: "Use all current authorized available tools, capabilities, evidence, and resources that materially improve the verified result. Prefer the strongest proven workflow over a merely sufficient shortcut so the owner gets full value from the resources already provided.",
+  authorityBoundary: "DO_NOT_EXPAND_AUTHORITY",
+});
 
 function text(value) {
   return String(value ?? "").trim();
@@ -127,6 +132,7 @@ export function enterFactoryV4({ work, form = {} } = {}) {
     factoryProjectId: projectId,
     displayName: GO_WORKS_DISPLAY_NAME,
     flowVersion: GO_WORKS_FLOW_VERSION,
+    operatingDirective: FACTORY_OPERATING_DIRECTIVE,
     projectRef: {
       type: "FACTORY",
       ref: projectId,
@@ -330,6 +336,7 @@ export function factoryBoardView(state) {
     projectId: state.projectId || `FACTORY-${state.workId}`,
     displayName: state.displayName || GO_WORKS_DISPLAY_NAME,
     flowVersion: state.flowVersion || GO_WORKS_FLOW_VERSION,
+    operatingDirective: state.operatingDirective || FACTORY_OPERATING_DIRECTIVE,
     flowPhase: goWorksFlowPhase(state),
     flowPath: [
       "PIXIE_LAB_HANDOFF",
@@ -352,4 +359,4 @@ export function factoryBoardView(state) {
   });
 }
 
-export { STAGES, GO_WORKS_DISPLAY_NAME, GO_WORKS_FLOW_VERSION };
+export { STAGES, GO_WORKS_DISPLAY_NAME, GO_WORKS_FLOW_VERSION, FACTORY_OPERATING_DIRECTIVE };
