@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import worker, { inspectDirectConnections } from "./worker.mjs";
+import { providerMcp } from './provider-mcp.mjs';
 
 // Preserve public HTTP behavior. No public route can activate these probes.
 export default worker;
@@ -12,3 +13,8 @@ export class HubDirectRead extends WorkerEntrypoint {
     return inspectDirectConnections(this.env, fetch, { force: true });
   }
 }
+// Only the Hub V2 named binding receives this capability. No public HTTP route.
+export class ProviderTools extends WorkerEntrypoint {
+  fetch(request) { return providerMcp(request, this.env); }
+}
+

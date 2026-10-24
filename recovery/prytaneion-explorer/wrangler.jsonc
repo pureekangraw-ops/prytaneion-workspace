@@ -3,21 +3,5 @@
   "main": "direct-entrypoint.mjs",
   "compatibility_date": "2026-10-22",
   "workers_dev": true,
-  "services": [
-    {
-      "binding": "PANTHEON_OWNER",
-      "service": "phatheon-workhub",
-      "entrypoint": "OwnerBridge"
-    },
-    {
-      "binding": "PANTHEON_LIGHT",
-      "service": "phatheon-workhub",
-      "entrypoint": "LightBridge"
-    },
-    {
-      "binding": "LIGHT_LEGACY",
-      "service": "light-bookmark",
-      "entrypoint": "LegacyExplorerRead"
-    }
-  ]
+  "services": []
 }
