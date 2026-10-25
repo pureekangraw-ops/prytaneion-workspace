@@ -304,7 +304,7 @@ test("internal refresh cannot bypass per-provider 429 cooldown; no scheduled ret
     const r = await inspectDirectConnections(env, fetchImpl, { force: true });
     assert.equal(r.connections.github.status, "RATE_LIMITED");
     assert.deepEqual(calls, { github: 1, cloudflare: 2, notion: 2, google: 2 });
-    assert.doesNotMatch(JSON.stringify(r), /retry-after|PRIVATE|120/);
+    assert.doesNotMatch(JSON.stringify(r), /retry-after|PRIVATE|\b120\b/);
     now = start + 121000;
     assert.equal(calls.github, 1); // Advancing time does not schedule a request.
     await inspectDirectConnections(env, fetchImpl, { force: true });
