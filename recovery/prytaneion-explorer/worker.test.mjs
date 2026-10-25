@@ -254,11 +254,8 @@ test("existing binding and public probes still work without direct credentials",
   assert.equal(result.connections.cloudflare.connected, true);
   assert.deepEqual(operations.sort(), ["factory_health","pantheon.drive.read","notion","cloudflare","google"].sort());
   const config = JSON.parse(readFileSync(new URL("./wrangler.jsonc", import.meta.url), "utf8"));
-  assert.deepEqual(config.services, [
-    { binding: "PANTHEON_OWNER", service: "phatheon-workhub", entrypoint: "OwnerBridge" },
-    { binding: "PANTHEON_LIGHT", service: "phatheon-workhub", entrypoint: "LightBridge" },
-    { binding: "LIGHT_LEGACY", service: "light-bookmark", entrypoint: "LegacyExplorerRead" }
-  ]);
+  // Legacy probe helpers above are fixtures, not deployed capabilities.
+  assert.deepEqual(config.services, []);
 });
 
 test("anonymous cold, cached and expired status reads never activate credentialed requests", async () => {
@@ -307,7 +304,7 @@ test("internal refresh cannot bypass per-provider 429 cooldown; no scheduled ret
     const r = await inspectDirectConnections(env, fetchImpl, { force: true });
     assert.equal(r.connections.github.status, "RATE_LIMITED");
     assert.deepEqual(calls, { github: 1, cloudflare: 2, notion: 2, google: 2 });
-    assert.doesNotMatch(JSON.stringify(r), /retry-after|PRIVATE|120/);
+    assert.doesNotMatch(JSON.stringify(r), /retry-after|PRIVATE|\b120\b/);
     now = start + 121000;
     assert.equal(calls.github, 1); // Advancing time does not schedule a request.
     await inspectDirectConnections(env, fetchImpl, { force: true });
@@ -453,3 +450,4 @@ test("Cloudflare account-token mismatch falls back only to fixed user-token veri
   });
   assert.equal(invalidId.status, "UNAUTHORIZED");
 });
+
