@@ -65,3 +65,37 @@ Not duplicates to delete:
 - observatory-web is a browser-local Leaflet map; observatory-shared-browser is the remote browser runtime.
 - Shop sandbox and production are separate environments.
 No additional runtime mutation occurred during this expanded survey.
+
+## Applied repairs and destination readback — 26 October 2026, ~06:54 Thailand
+Owner explicitly requested fixes after the survey.
+
+### Resolved/configured (8 of the 9 findings)
+1. Legacy provider public entrance remains disabled, previews disabled.
+2. GO main reconciled through PR24, merge914f0d34feccf26720c8189e72ec9758d6fd4a86. Retains main's Factory visual upload/status/ZIP features; no Workspace/Stamper draft imported. Main entry now worker/hub-entry.mjs, four correct service bindings. New scripts/assert-current-routing.mjs rejects old entry, retired/wrong targets and duplicate bindings. Local82tests PASS, candidate CI40246450601 SUCCESS, postmerge CI40246534629 SUCCESS. Old conflicting PR18 closed as superseded.
+3. Provider recovery config synchronized to main via PR408, merged d11ea1a311d869609cf51b31a82f6de537ca5a0d. workers_dev=false, preview_urls=false, services=[] independently read back on main. Candidate Recovery40246225463 and Safety40246226334 SUCCESS.
+4. Legacy go-hub-deploy.yml deploy job has if:false on main. It cannot recreate retired go-hub through either main push or manual workflow dispatch.
+6. LIGHT secret binding names normalized in-place via inherit.old_name: CLOUDFARE_TOKEN -> LIGHT_CF_READ_TOKEN; CLOUDFAIR_ID -> LIGHT_CF_ACCOUNT_ID. No credential values read/exported. Native readback confirmed all15bindings retained, old two names absent and new two secret_text names present. Config change created version830e89b6-b85b-4f8b-8935-8771c25c0182/deploymentba9be6d7-b17f-4091-88f7-54ae315befd8. Direct authenticated LIGHT tool invocation was not available in this host: provider-operation acceptance remains untested beyond config readback.
+7. Unconfigured pantheon-workhub-staging workers.dev and preview entrances disabled; script/data not deleted.
+8. HubStation MR2 retargeted from its stacked development target to main and merged after successful exact-source CI2985431065. Canonical main4b2542a10ec94be7dc5ea07b6ac8f8ad6dafa8b8 now contains deployed local-provider source/config. Main branch/file readback confirmed. MR1 became merged/included with this reconciliation. No Hub code deployment performed.
+9. Deleted duplicate unguarded shop Cloudflare Builds trigger cbad94f9-d104-4d31-8e07-7f4bb9603437. Readback returned empty shop Builds triggers. Existing guarded GitHub release workflow retained. GO's sole main Builds trigger50c7ff04-88dc-4122-9df5-7b8592883267 now runs node scripts/assert-current-routing.mjs && node --test tests/*.test.mjs as build_command; deploy_command begins with the same routing gate.
+
+### Finding5 is CONTAINED/BLOCKED, not repaired end-to-end
+- Removed service_deleted METROPOLIS_SERVICE from runtime, retained rail secret/D1/queue producer.
+- Cleared greenhouse-transport cron schedules.
+- Set pixie-delivery-v1 settings.delivery_paused=true, retaining consumer, DLQ and original345600-second retention. Pausing delivery does not suspend retention expiry.
+- Did not purge/read/replay business messages, delete queues or migrate data.
+- Source hold prepared in Greenhouse Draft PR20 headbe9d278fbb5811f79975757acd5ae9520b4deee7. It removes deleted service and cron. NOT merged: main is also Pages production branch and automatic publication would involve unrelated frontend source.
+- No current receiver implementing original station dispatch/readback/observatory-ingest contract has been verified. Repointing to the Hub alone would be incorrect. A real receiver integration and acceptance test are required before resume.
+
+### Post-change live checks
+- Native Cloudflare readback: both retired public entrances off; PIXIE queue paused; cron empty; deleted binding absent; LIGHT canonical names present; shop duplicate Builds triggers empty.
+- GO hub_connections returned YGG_CONNECTION_HUB_V2,8connectors; GitHub/Cloudflare/Notion/Google all CONNECTED.
+- Factory direct status receipt a0befb44-c39d-4e71-8edc-7a90cd8685a5: AUTHENTICATED, commandReady=true, runtime READY, CODE/VISUAL/LOGIC READY. Read-only probe; no job dispatched.
+- No GO or Hub code upload/deployment performed during these source repairs. Active GO deployment observed c7f94695-834c-4f83-9d81-2cfc42252094/version4f21eebe-940b-4a00-bf1b-49bbd88e2392; new main's later Factory features are source-tested, not claimed newly deployed.
+
+### Rollback details (metadata only)
+LIGHT: inverse inherit rename of the two names, retaining every other binding; no credential re-entry required.
+Staging: restore enabled=true, previews_enabled=false only if a functioning staging environment is intentionally required.
+PIXIE: resume delivery and restore cron */2 * * * * only after compatible receiver readback. The deleted Metropolis target cannot be restored merely by re-adding its name.
+GO main trigger previous commands: build_command empty; deploy_command npx wrangler deploy. Do not restore unguarded behavior without source review.
+Removed shop trigger recreation metadata: external_script_id38f8b4a53df740fa82c33f927e3e67b7; repo_connection_uuid31264dca-db35-4d55-a7e4-da4be5743a38; build_token_uuid2820a122-7b4b-449b-b403-fdd04803c711; trigger_name38f8b4a53df740fa82c33f927e3e67b7; root_directory/; branch_includes[main], branch_excludes[]; path_includes[*], path_excludes[]; build_command empty; deploy_command npx wrangler deploy; build_caching_enabled=true. These are identifiers, not token values. Preferred release path remains the existing guarded GitHub workflow.
