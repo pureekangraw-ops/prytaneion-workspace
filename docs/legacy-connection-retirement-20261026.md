@@ -35,7 +35,7 @@ Inventory:
 - No missing named entrypoint among existing service targets.
 - 14 enabled workers.dev entrances, 6 enabled preview entrances. Preview presence alone does not prove duplication or an auth bypass.
 - 3 custom domains -> yggmetro-web; no zone Worker routes.
-- 8 Cloudflare Builds triggers on 7 Workers. GO has two branch-disjoint triggers (main vs non-main), not two identical triggers.
+- 7 Cloudflare Builds triggers on 6 Workers. GO has two branch-disjoint triggers (main vs non-main), not two identical triggers.
 - PIXIE queue producer/consumer -> greenhouse-transport; its dead-letter queue is referenced by the consumer and is not orphaned.
 - Only configured cron: greenhouse-transport, */2 * * * *.
 - Factory source repo label Factory-District- in Cloudflare is stale display metadata: repo ID 1405687194 matches canonical Factory-District. Do not count it as a second source repository.
