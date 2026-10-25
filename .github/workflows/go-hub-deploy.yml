@@ -17,6 +17,8 @@ permissions:
 
 jobs:
   deploy:
+    # Retired owner route: Hub V2 is deployed from HubStation; never recreate go-hub.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
